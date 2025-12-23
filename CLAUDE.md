@@ -71,8 +71,9 @@ We develop locally, simulating a PR process. All development follows the task br
    ```
 5. **Update CHANGELOG.md** under `[Unreleased]`
 6. **Commit** with PR-style message (see Git Workflow below)
-7. **Request review**: Present the branch for GO/NOGO approval
-8. **On approval**: Rebase onto main and fast-forward merge
+7. **Run pr-review-agent**: Validate implementation against TASKS.md and design docs
+8. **Request review**: Present the branch for GO/NOGO approval
+9. **On approval**: Rebase onto main and fast-forward merge
 
 ### Git Workflow
 
@@ -95,13 +96,15 @@ git rebase -i main
 
 # 3. Write a proper PR-style commit message (see format below)
 
-# 4. Request GO/NOGO approval from reviewer
+# 4. Run pr-review-agent to validate against TASKS.md and design docs
 
-# 5. On approval: rebase onto main and fast-forward merge
+# 5. Request GO/NOGO approval from reviewer
+
+# 6. On approval: rebase onto main and fast-forward merge
 git checkout main
 git merge --ff-only feat/feature-name
 
-# 6. Clean up feature branch
+# 7. Clean up feature branch
 git branch -d feat/feature-name
 ```
 
@@ -152,6 +155,7 @@ Every feature branch must meet these criteria before GO approval:
 - [ ] Include usage examples in docstrings or tests
 - [ ] Single squashed commit with PR-style message
 - [ ] Clean rebase onto current main
+- [ ] Pass pr-review-agent validation against TASKS.md and design docs
 
 ### After Making Changes
 
