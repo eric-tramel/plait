@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Development plan and task breakdown
 - Initial package structure with `py.typed` marker (PEP 561)
 - Parameter class for learnable string values that can be optimized via backward passes
+- InferenceModule base class with automatic child/parameter registration
 
 ### Changed
 - N/A
