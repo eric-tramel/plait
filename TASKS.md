@@ -6,7 +6,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [ ] **Phase 1: Foundation** (4/7)
+- [ ] **Phase 1: Foundation** (5/7)
 - [ ] **Phase 2: Tracing** (0/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 4/74 PRs completed**
+**Total: 5/74 PRs completed**
 
 ---
 
@@ -81,7 +81,7 @@ Every PR must:
   - `tests/unit/test_module.py` (all iterator methods)
 - **CHANGELOG**: "Add InferenceModule introspection methods"
 
-### - [ ] PR-005: InferenceModule forward and call
+### - [x] PR-005: InferenceModule forward and call
 - **Branch**: `feat/inference-module-forward`
 - **Description**: Add `forward()` abstract method and `__call__` delegation
 - **Design Docs**:
