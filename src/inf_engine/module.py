@@ -310,3 +310,123 @@ class InferenceModule:
             10
         """
         return self.forward(*args, **kwargs)
+
+
+class LLMInference(InferenceModule):
+    """Atomic module for LLM API calls.
+
+    This is the fundamental building block for LLM operations. All other
+    modules ultimately compose LLMInference instances to build complex
+    inference pipelines.
+
+    The alias parameter decouples the module from specific endpoints,
+    allowing the same module to run against different models/endpoints
+    based on resource configuration at runtime.
+
+    Args:
+        alias: Resource binding key that maps to an endpoint configuration.
+            This allows the same module to use different LLM providers
+            depending on the ResourceConfig passed to run().
+        system_prompt: System prompt for the LLM. Can be a string (converted
+            to a non-learnable Parameter) or a Parameter instance (for
+            learnable prompts). Empty string results in no system prompt.
+        temperature: Sampling temperature for the LLM. Higher values produce
+            more random outputs. Defaults to 1.0.
+        max_tokens: Maximum number of tokens to generate. None means no limit
+            (use model default).
+        response_format: Expected response format type for structured output.
+            None means plain text response.
+
+    Example:
+        >>> llm = LLMInference(alias="fast_llm", temperature=0.7)
+        >>> llm.alias
+        'fast_llm'
+        >>> llm.temperature
+        0.7
+
+    Example with system prompt:
+        >>> llm = LLMInference(
+        ...     alias="assistant",
+        ...     system_prompt="You are a helpful assistant.",
+        ...     temperature=0.5,
+        ... )
+        >>> llm.system_prompt.value
+        'You are a helpful assistant.'
+        >>> llm.system_prompt.requires_grad
+        False
+
+    Note:
+        LLMInference.forward() should not be called directly. Use the run()
+        function to execute modules, which handles tracing and resource
+        management.
+    """
+
+    alias: str
+    system_prompt: Parameter | None
+    temperature: float
+    max_tokens: int | None
+    response_format: type | None
+
+    def __init__(
+        self,
+        alias: str,
+        system_prompt: str | Parameter = "",
+        temperature: float = 1.0,
+        max_tokens: int | None = None,
+        response_format: type | None = None,
+    ) -> None:
+        """Initialize the LLMInference module.
+
+        Args:
+            alias: Resource binding key for endpoint resolution.
+            system_prompt: System prompt string or Parameter.
+            temperature: Sampling temperature (0.0 to 2.0 typical).
+            max_tokens: Maximum tokens to generate.
+            response_format: Type for structured output parsing.
+        """
+        super().__init__()
+        self.alias = alias
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.response_format = response_format
+
+        # Handle system_prompt: wrap strings as Parameters, pass through Parameters
+        from inf_engine.parameter import Parameter
+
+        if isinstance(system_prompt, str):
+            if system_prompt:
+                # Non-empty string: wrap as non-learnable Parameter
+                self.system_prompt = Parameter(system_prompt, requires_grad=False)
+            else:
+                # Empty string: no system prompt
+                self.system_prompt = None
+        else:
+            # Already a Parameter: use as-is (may be learnable)
+            self.system_prompt = system_prompt
+
+    def forward(self, prompt: str) -> str:
+        """Execute the LLM call.
+
+        This method should not be called directly. During tracing, the tracer
+        intercepts calls and records them in the graph. During execution, the
+        runtime handles the actual API call through the ResourceManager.
+
+        Args:
+            prompt: The user prompt to send to the LLM.
+
+        Returns:
+            The LLM's response text.
+
+        Raises:
+            RuntimeError: Always raised because direct execution is not
+                supported. Use run() to execute modules.
+
+        Note:
+            The runtime replaces this with actual LLM calls. This placeholder
+            exists to define the expected signature and to catch accidental
+            direct invocations.
+        """
+        raise RuntimeError(
+            "LLMInference.forward() should not be called directly. "
+            "Use run() to execute the module."
+        )

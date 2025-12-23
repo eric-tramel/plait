@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - InferenceModule base class with automatic child/parameter registration
 - InferenceModule introspection methods: `children()`, `modules()`, `parameters()`, and `named_*` variants
 - InferenceModule `forward()` abstract method and `__call__()` delegation
+- LLMInference atomic module for LLM API calls
 
 ### Changed
 - N/A
