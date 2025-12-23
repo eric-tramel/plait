@@ -6,7 +6,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [ ] **Phase 1: Foundation** (5/7)
+- [ ] **Phase 1: Foundation** (6/7)
 - [ ] **Phase 2: Tracing** (0/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 5/74 PRs completed**
+**Total: 6/74 PRs completed**
 
 ---
 
@@ -92,7 +92,7 @@ Every PR must:
   - `tests/unit/test_module.py` (forward raises, call delegates)
 - **CHANGELOG**: "Add InferenceModule forward() and __call__()"
 
-### - [ ] PR-006: LLMInference class
+### - [x] PR-006: LLMInference class
 - **Branch**: `feat/llm-inference`
 - **Description**: Implement `LLMInference` with alias, system_prompt, temperature, max_tokens
 - **Design Docs**:
