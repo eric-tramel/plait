@@ -253,3 +253,162 @@ class TestRegularAttributes:
         module = MyModule()
         assert module._children == {}
         assert module.optional_child is None
+
+
+class TestEdgeCases:
+    """Tests for edge cases and unusual scenarios."""
+
+    def test_reassign_parameter_to_module(self) -> None:
+        """Reassigning from Parameter to Module updates both registries."""
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.thing = Parameter("initial")
+
+        module = MyModule()
+        assert "thing" in module._parameters
+        assert "thing" not in module._children
+
+        # Reassign to a Module
+        module.thing = InferenceModule()
+
+        # Should now be in _children, but _parameters is NOT auto-cleaned
+        # (this matches PyTorch behavior - old registrations are not removed)
+        assert "thing" in module._children
+        assert "thing" in module._parameters  # Stale entry remains
+
+    def test_reassign_module_to_parameter(self) -> None:
+        """Reassigning from Module to Parameter updates both registries."""
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.thing = InferenceModule()
+
+        module = MyModule()
+        assert "thing" in module._children
+        assert "thing" not in module._parameters
+
+        # Reassign to a Parameter
+        module.thing = Parameter("now a param")
+
+        # Should now be in _parameters, but _children is NOT auto-cleaned
+        assert "thing" in module._parameters
+        assert "thing" in module._children  # Stale entry remains
+
+    def test_module_assigned_to_multiple_parents(self) -> None:
+        """A module assigned to multiple parents gets last parent's name."""
+        shared_child = InferenceModule()
+
+        class Parent1(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child_a = shared_child
+
+        class Parent2(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child_b = shared_child
+
+        parent1 = Parent1()
+        assert shared_child._name == "child_a"
+
+        parent2 = Parent2()
+        # Name is overwritten by second parent
+        assert shared_child._name == "child_b"
+
+        # Both parents still have it registered
+        assert parent1._children["child_a"] is shared_child
+        assert parent2._children["child_b"] is shared_child
+
+    def test_parameter_assigned_to_multiple_modules(self) -> None:
+        """A parameter assigned to multiple modules gets last module's name."""
+        shared_param = Parameter("shared value")
+
+        class Module1(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt_a = shared_param
+
+        class Module2(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt_b = shared_param
+
+        mod1 = Module1()
+        assert shared_param._name == "prompt_a"
+
+        mod2 = Module2()
+        # Name is overwritten by second module
+        assert shared_param._name == "prompt_b"
+
+        # Both modules still have it registered
+        assert mod1._parameters["prompt_a"] is shared_param
+        assert mod2._parameters["prompt_b"] is shared_param
+
+    def test_subclass_without_super_init_raises(self) -> None:
+        """Subclass that forgets super().__init__() raises AttributeError."""
+        import pytest
+
+        class BadModule(InferenceModule):
+            def __init__(self) -> None:
+                # Forgot to call super().__init__()
+                pass
+
+        # Instantiation works, but assigning a child fails
+        bad = BadModule()
+        with pytest.raises(AttributeError):
+            bad.child = InferenceModule()
+
+    def test_empty_string_parameter_registered(self) -> None:
+        """Empty string parameters are still registered."""
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.empty = Parameter("")
+
+        module = MyModule()
+        assert "empty" in module._parameters
+        assert module.empty.value == ""
+
+    def test_attribute_accessible_after_registration(self) -> None:
+        """Verify attributes are accessible after registration (not just registered)."""
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child = InferenceModule()
+                self.param = Parameter("test")
+                self.regular = "plain"
+
+        module = MyModule()
+
+        # All attributes should be directly accessible
+        assert isinstance(module.child, InferenceModule)
+        assert isinstance(module.param, Parameter)
+        assert module.regular == "plain"
+
+        # And should match what's in the registries
+        assert module.child is module._children["child"]
+        assert module.param is module._parameters["param"]
+
+    def test_reassign_to_regular_value_leaves_stale_registration(self) -> None:
+        """Reassigning a child/param to regular value leaves stale registration."""
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.thing = InferenceModule()
+
+        module = MyModule()
+        assert "thing" in module._children
+
+        # Reassign to a regular value
+        module.thing = "just a string"
+
+        # Stale entry remains in _children (matches PyTorch behavior)
+        assert "thing" in module._children
+        # But the actual attribute is the string
+        assert module.thing == "just a string"
