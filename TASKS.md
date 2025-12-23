@@ -7,7 +7,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 ## Progress
 
 - [x] **Phase 1: Foundation** (7/7)
-- [ ] **Phase 2: Tracing** (1/11)
+- [ ] **Phase 2: Tracing** (2/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
 - [ ] **Phase 5: Production Features** (0/11)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 8/74 PRs completed**
+**Total: 9/74 PRs completed**
 
 ---
 
@@ -129,7 +129,7 @@ Every PR must:
   - `tests/unit/test_trace_context.py` (default, set/get, cleared after)
 - **CHANGELOG**: "Add trace context infrastructure"
 
-### - [ ] PR-009: Proxy class
+### - [x] PR-009: Proxy class
 - **Branch**: `feat/proxy`
 - **Description**: Implement `Proxy` dataclass for symbolic values during tracing
 - **Design Docs**:
