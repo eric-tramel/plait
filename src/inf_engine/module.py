@@ -253,3 +253,60 @@ class InferenceModule:
         for name, child in self.named_children():
             child_prefix = f"{prefix}.{name}" if prefix else name
             yield from child.named_parameters(child_prefix)
+
+    # ─────────────────────────────────────────────────────────────
+    # Forward and Call (Core Execution Interface)
+    # ─────────────────────────────────────────────────────────────
+
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        """Define the inference computation.
+
+        Override this method to implement your module's logic.
+        During tracing, this receives Proxy objects representing
+        symbolic values. During execution, this receives actual values.
+
+        Args:
+            *args: Positional arguments for the computation.
+            **kwargs: Keyword arguments for the computation.
+
+        Returns:
+            The result of the inference computation.
+
+        Raises:
+            NotImplementedError: If not overridden in a subclass.
+
+        Example:
+            >>> class Greeter(InferenceModule):
+            ...     def forward(self, name: str) -> str:
+            ...         return f"Hello, {name}!"
+            ...
+            >>> greeter = Greeter()
+            >>> greeter("World")
+            'Hello, World!'
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} must implement forward()")
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute the module.
+
+        Delegates to forward() to perform the actual computation.
+        In the future, this will also handle trace context for
+        automatic DAG capture during tracing.
+
+        Args:
+            *args: Positional arguments passed to forward().
+            **kwargs: Keyword arguments passed to forward().
+
+        Returns:
+            The result from forward().
+
+        Example:
+            >>> class Doubler(InferenceModule):
+            ...     def forward(self, x: int) -> int:
+            ...         return x * 2
+            ...
+            >>> doubler = Doubler()
+            >>> doubler(5)
+            10
+        """
+        return self.forward(*args, **kwargs)

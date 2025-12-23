@@ -1295,3 +1295,632 @@ class TestIntrospectionEdgeCases:
         # No double dots
         for name in named_dict:
             assert ".." not in name, f"Name '{name}' contains double dot"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR-005: Forward and Call Methods Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestForwardMethod:
+    """Tests for forward() method."""
+
+    def test_forward_raises_not_implemented_on_base_class(self) -> None:
+        """forward() raises NotImplementedError on base InferenceModule."""
+        import pytest
+
+        module = InferenceModule()
+        with pytest.raises(NotImplementedError) as exc_info:
+            module.forward()
+
+        assert "InferenceModule must implement forward()" in str(exc_info.value)
+
+    def test_forward_error_includes_class_name(self) -> None:
+        """forward() error message includes the actual class name."""
+        import pytest
+
+        class MyCustomModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+        module = MyCustomModule()
+        with pytest.raises(NotImplementedError) as exc_info:
+            module.forward()
+
+        assert "MyCustomModule must implement forward()" in str(exc_info.value)
+
+    def test_forward_can_be_overridden(self) -> None:
+        """forward() can be overridden in subclasses."""
+
+        class Greeter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, name: str) -> str:
+                return f"Hello, {name}!"
+
+        greeter = Greeter()
+        result = greeter.forward("World")
+
+        assert result == "Hello, World!"
+
+    def test_forward_accepts_args_and_kwargs(self) -> None:
+        """forward() accepts arbitrary args and kwargs."""
+
+        class Formatter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, template: str, *args: str, **kwargs: str) -> str:
+                return template.format(*args, **kwargs)
+
+        formatter = Formatter()
+        result = formatter.forward("{} says {greeting}", "Alice", greeting="hello")
+
+        assert result == "Alice says hello"
+
+    def test_forward_can_return_any_type(self) -> None:
+        """forward() can return any type."""
+
+        class DictReturner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> dict[str, int]:
+                return {"value": x, "squared": x * x}
+
+        module = DictReturner()
+        result = module.forward(5)
+
+        assert result == {"value": 5, "squared": 25}
+
+    def test_forward_can_return_none(self) -> None:
+        """forward() can return None."""
+
+        class NoneReturner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self) -> None:
+                pass
+
+        module = NoneReturner()
+        result = module.forward()
+
+        assert result is None
+
+    def test_forward_with_variadic_args_only(self) -> None:
+        """forward() can accept only *args (no named parameters)."""
+
+        class Summer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, *args: int) -> int:
+                return sum(args)
+
+        module = Summer()
+
+        assert module.forward(1, 2, 3, 4, 5) == 15
+        assert module.forward(10) == 10
+        assert module.forward() == 0  # Empty sum
+
+    def test_forward_with_kwargs_only(self) -> None:
+        """forward() can accept only **kwargs (no positional parameters)."""
+
+        class Collector(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, **kwargs: str) -> dict[str, str]:
+                return kwargs
+
+        module = Collector()
+
+        assert module.forward(a="1", b="2") == {"a": "1", "b": "2"}
+        assert module.forward() == {}  # Empty kwargs
+        assert module.forward(single="value") == {"single": "value"}
+
+    def test_forward_with_none_argument(self) -> None:
+        """forward() can receive None as an argument."""
+
+        class NoneHandler(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: str | None) -> str:
+                return x if x is not None else "default"
+
+        module = NoneHandler()
+
+        assert module.forward(None) == "default"
+        assert module.forward("value") == "value"
+
+    def test_forward_with_default_parameter(self) -> None:
+        """forward() can have default parameter values."""
+
+        class Greeter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, name: str = "World", punctuation: str = "!") -> str:
+                return f"Hello, {name}{punctuation}"
+
+        module = Greeter()
+
+        # All defaults
+        assert module.forward() == "Hello, World!"
+        # Override first default
+        assert module.forward("Alice") == "Hello, Alice!"
+        # Override both defaults
+        assert module.forward("Bob", "?") == "Hello, Bob?"
+        # Override only second via keyword
+        assert module.forward(punctuation="...") == "Hello, World..."
+
+    def test_forward_with_empty_string_argument(self) -> None:
+        """forward() handles empty string arguments correctly."""
+
+        class Wrapper(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, text: str) -> str:
+                return f"[{text}]"
+
+        module = Wrapper()
+
+        assert module.forward("") == "[]"
+        assert module.forward("content") == "[content]"
+
+
+class TestCallMethod:
+    """Tests for __call__() method."""
+
+    def test_call_delegates_to_forward(self) -> None:
+        """__call__ delegates to forward()."""
+
+        class Doubler(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> int:
+                return x * 2
+
+        doubler = Doubler()
+        result = doubler(5)
+
+        assert result == 10
+
+    def test_call_passes_positional_args(self) -> None:
+        """__call__ passes positional args to forward()."""
+
+        class Adder(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, a: int, b: int, c: int) -> int:
+                return a + b + c
+
+        adder = Adder()
+        result = adder(1, 2, 3)
+
+        assert result == 6
+
+    def test_call_passes_keyword_args(self) -> None:
+        """__call__ passes keyword args to forward()."""
+
+        class Greeter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, name: str, greeting: str = "Hello") -> str:
+                return f"{greeting}, {name}!"
+
+        greeter = Greeter()
+        result = greeter("Alice", greeting="Hi")
+
+        assert result == "Hi, Alice!"
+
+    def test_call_passes_mixed_args_and_kwargs(self) -> None:
+        """__call__ passes both positional and keyword args to forward()."""
+
+        class Formatter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(
+                self, template: str, *values: str, prefix: str = "", suffix: str = ""
+            ) -> str:
+                formatted = template.format(*values)
+                return f"{prefix}{formatted}{suffix}"
+
+        formatter = Formatter()
+        result = formatter("{} + {}", "A", "B", prefix="[", suffix="]")
+
+        assert result == "[A + B]"
+
+    def test_call_raises_when_forward_not_implemented(self) -> None:
+        """__call__ raises NotImplementedError when forward() is not implemented."""
+        import pytest
+
+        module = InferenceModule()
+        with pytest.raises(NotImplementedError) as exc_info:
+            module()
+
+        assert "InferenceModule must implement forward()" in str(exc_info.value)
+
+    def test_call_on_subclass_without_forward_raises(self) -> None:
+        """__call__ raises NotImplementedError on subclass without forward()."""
+        import pytest
+
+        class EmptyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+        module = EmptyModule()
+        with pytest.raises(NotImplementedError) as exc_info:
+            module("test")
+
+        assert "EmptyModule must implement forward()" in str(exc_info.value)
+
+    def test_call_with_no_args(self) -> None:
+        """__call__ works with no arguments."""
+
+        class ConstantReturner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self) -> str:
+                return "constant"
+
+        module = ConstantReturner()
+        result = module()
+
+        assert result == "constant"
+
+    def test_call_returns_forward_result(self) -> None:
+        """__call__ returns exactly what forward() returns."""
+
+        class ListReturner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, items: list[int]) -> list[int]:
+                return [x * 2 for x in items]
+
+        module = ListReturner()
+        input_list = [1, 2, 3]
+        result = module(input_list)
+
+        assert result == [2, 4, 6]
+        assert result is not input_list  # New list created
+
+    def test_call_with_variadic_args_only(self) -> None:
+        """__call__ works with forward() that accepts only *args."""
+
+        class Multiplier(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, *args: int) -> int:
+                result = 1
+                for arg in args:
+                    result *= arg
+                return result
+
+        module = Multiplier()
+
+        assert module(2, 3, 4) == 24
+        assert module(5) == 5
+        assert module() == 1  # Empty product
+
+    def test_call_with_kwargs_only(self) -> None:
+        """__call__ works with forward() that accepts only **kwargs."""
+
+        class ConfigBuilder(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, **kwargs: str) -> str:
+                return ", ".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
+
+        module = ConfigBuilder()
+
+        assert module(host="localhost", port="8080") == "host=localhost, port=8080"
+        assert module() == ""  # Empty config
+
+    def test_call_with_none_argument(self) -> None:
+        """__call__ passes None argument to forward() correctly."""
+
+        class OptionalProcessor(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, value: int | None, default: int = 0) -> int:
+                return value if value is not None else default
+
+        module = OptionalProcessor()
+
+        assert module(None) == 0
+        assert module(None, default=42) == 42
+        assert module(10) == 10
+
+    def test_call_uses_default_parameter_values(self) -> None:
+        """__call__ uses default values when arguments are omitted."""
+
+        class Formatter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(
+                self, value: str = "default", prefix: str = "[", suffix: str = "]"
+            ) -> str:
+                return f"{prefix}{value}{suffix}"
+
+        module = Formatter()
+
+        # All defaults
+        assert module() == "[default]"
+        # Override first
+        assert module("custom") == "[custom]"
+        # Override via keyword
+        assert module(prefix="<", suffix=">") == "<default>"
+        # Override all
+        assert module("text", "{", "}") == "{text}"
+
+    def test_call_and_forward_produce_identical_results(self) -> None:
+        """__call__ and forward() produce identical results for same inputs."""
+
+        class Calculator(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int, y: int, operation: str = "add") -> int:
+                if operation == "add":
+                    return x + y
+                elif operation == "multiply":
+                    return x * y
+                else:
+                    return x - y
+
+        module = Calculator()
+
+        # Test various input combinations - verify equivalence explicitly
+        assert module(1, 2) == module.forward(1, 2)
+        assert module(5, 3, "add") == module.forward(5, 3, "add")
+        assert module(4, 7, operation="multiply") == module.forward(
+            4, 7, operation="multiply"
+        )
+        assert module(10, 3, "subtract") == module.forward(10, 3, "subtract")
+
+        # Also verify with keyword-only style
+        assert module(x=2, y=3) == module.forward(x=2, y=3)
+        assert module(x=4, y=5, operation="multiply") == module.forward(
+            x=4, y=5, operation="multiply"
+        )
+
+    def test_call_with_empty_string_argument(self) -> None:
+        """__call__ handles empty string arguments correctly."""
+
+        class Validator(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, text: str) -> bool:
+                return len(text) > 0
+
+        module = Validator()
+
+        assert module("") is False
+        assert module("content") is True
+
+    def test_call_with_many_arguments(self) -> None:
+        """__call__ handles many arguments correctly (stress test)."""
+
+        class ArgCounter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, *args: int, **kwargs: str) -> dict[str, int]:
+                return {
+                    "positional_count": len(args),
+                    "keyword_count": len(kwargs),
+                    "positional_sum": sum(args),
+                }
+
+        module = ArgCounter()
+
+        # 10 positional args
+        result = module(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+        assert result["positional_count"] == 10
+        assert result["positional_sum"] == 55
+
+        # 10 keyword args
+        kwargs = {f"key{i}": f"val{i}" for i in range(10)}
+        result = module(**kwargs)
+        assert result["keyword_count"] == 10
+
+        # Mix of both
+        result = module(1, 2, 3, a="x", b="y", c="z")
+        assert result["positional_count"] == 3
+        assert result["keyword_count"] == 3
+
+
+class TestForwardCallIntegration:
+    """Integration tests for forward() and __call__() methods."""
+
+    def test_nested_module_calls(self) -> None:
+        """Nested modules can call each other through __call__."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> int:
+                return x + 1
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.inner = Inner()
+
+            def forward(self, x: int) -> int:
+                return self.inner(x) * 2
+
+        outer = Outer()
+        result = outer(5)
+
+        # (5 + 1) * 2 = 12
+        assert result == 12
+
+    def test_deeply_nested_calls(self) -> None:
+        """Deeply nested module calls work correctly."""
+
+        class Level3(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> int:
+                return x + 1
+
+        class Level2(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.level3 = Level3()
+
+            def forward(self, x: int) -> int:
+                return self.level3(x) * 2
+
+        class Level1(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.level2 = Level2()
+
+            def forward(self, x: int) -> int:
+                return self.level2(x) + 10
+
+        root = Level1()
+        result = root(5)
+
+        # ((5 + 1) * 2) + 10 = 22
+        assert result == 22
+
+    def test_parallel_module_calls(self) -> None:
+        """Module can call multiple child modules."""
+
+        class Adder(InferenceModule):
+            def __init__(self, amount: int) -> None:
+                super().__init__()
+                self.amount = amount
+
+            def forward(self, x: int) -> int:
+                return x + self.amount
+
+        class ParallelProcessor(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.add_one = Adder(1)
+                self.add_ten = Adder(10)
+                self.add_hundred = Adder(100)
+
+            def forward(self, x: int) -> dict[str, int]:
+                return {
+                    "plus_one": self.add_one(x),
+                    "plus_ten": self.add_ten(x),
+                    "plus_hundred": self.add_hundred(x),
+                }
+
+        processor = ParallelProcessor()
+        result = processor(5)
+
+        assert result == {
+            "plus_one": 6,
+            "plus_ten": 15,
+            "plus_hundred": 105,
+        }
+
+    def test_module_with_parameters_in_forward(self) -> None:
+        """Module can use parameters in forward()."""
+
+        class Prefixer(InferenceModule):
+            def __init__(self, prefix: str) -> None:
+                super().__init__()
+                self.prefix = Parameter(prefix)
+
+            def forward(self, text: str) -> str:
+                return f"{self.prefix.value}: {text}"
+
+        prefixer = Prefixer("INFO")
+        result = prefixer("hello")
+
+        assert result == "INFO: hello"
+
+    def test_sequential_module_composition(self) -> None:
+        """Modules can be composed sequentially."""
+
+        class Upper(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, text: str) -> str:
+                return text.upper()
+
+        class Reverse(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, text: str) -> str:
+                return text[::-1]
+
+        class Pipeline(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.upper = Upper()
+                self.reverse = Reverse()
+
+            def forward(self, text: str) -> str:
+                return self.reverse(self.upper(text))
+
+        pipeline = Pipeline()
+        result = pipeline("hello")
+
+        # "hello" -> "HELLO" -> "OLLEH"
+        assert result == "OLLEH"
+
+    def test_forward_can_access_self_attributes(self) -> None:
+        """forward() can access self attributes set in __init__."""
+
+        class Multiplier(InferenceModule):
+            def __init__(self, factor: int) -> None:
+                super().__init__()
+                self.factor = factor
+
+            def forward(self, x: int) -> int:
+                return x * self.factor
+
+        multiplier = Multiplier(3)
+        result = multiplier(7)
+
+        assert result == 21
+
+    def test_call_propagates_exceptions_from_forward(self) -> None:
+        """__call__ propagates exceptions raised in forward()."""
+        import pytest
+
+        class RaisingModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> int:
+                if x < 0:
+                    raise ValueError("x must be non-negative")
+                return x
+
+        module = RaisingModule()
+
+        # Positive value works
+        assert module(5) == 5
+
+        # Negative value raises
+        with pytest.raises(ValueError, match="x must be non-negative"):
+            module(-1)
