@@ -6,7 +6,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [ ] **Phase 1: Foundation** (2/7)
+- [ ] **Phase 1: Foundation** (3/7)
 - [ ] **Phase 2: Tracing** (0/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 2/74 PRs completed**
+**Total: 3/74 PRs completed**
 
 ---
 
@@ -58,7 +58,7 @@ Every PR must:
   - `tests/unit/test_parameter.py` (creation, str, accumulate, apply, zero)
 - **CHANGELOG**: "Add Parameter class for learnable values"
 
-### - [ ] PR-003: InferenceModule base class - core
+### - [x] PR-003: InferenceModule base class - core
 - **Branch**: `feat/inference-module-core`
 - **Description**: Implement `InferenceModule` with `__init__`, `__setattr__`, child/parameter registration
 - **Design Docs**:
