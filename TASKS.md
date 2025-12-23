@@ -6,7 +6,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [ ] **Phase 1: Foundation** (1/7)
+- [ ] **Phase 1: Foundation** (2/7)
 - [ ] **Phase 2: Tracing** (0/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 1/74 PRs completed**
+**Total: 2/74 PRs completed**
 
 ---
 
@@ -46,7 +46,7 @@ Every PR must:
 - **Tests**: Verify package imports correctly
 - **CHANGELOG**: "Initial package structure"
 
-### - [ ] PR-002: Parameter class
+### - [x] PR-002: Parameter class
 - **Branch**: `feat/parameter`
 - **Description**: Implement the `Parameter` class for learnable string values
 - **Design Docs**:
