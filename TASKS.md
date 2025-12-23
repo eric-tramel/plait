@@ -6,7 +6,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [ ] **Phase 1: Foundation** (3/7)
+- [ ] **Phase 1: Foundation** (4/7)
 - [ ] **Phase 2: Tracing** (0/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 3/74 PRs completed**
+**Total: 4/74 PRs completed**
 
 ---
 
@@ -70,7 +70,7 @@ Every PR must:
   - `tests/unit/test_module.py` (registration, basic instantiation)
 - **CHANGELOG**: "Add InferenceModule base class with auto-registration"
 
-### - [ ] PR-004: InferenceModule introspection methods
+### - [x] PR-004: InferenceModule introspection methods
 - **Branch**: `feat/inference-module-introspection`
 - **Description**: Add `children()`, `modules()`, `parameters()`, `named_*` iterators
 - **Design Docs**:
