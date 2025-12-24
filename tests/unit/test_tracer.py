@@ -1178,6 +1178,177 @@ class TestCollectOutputIds:
         assert result == ["input:a"]
 
 
+class TestCaptureOutputStructure:
+    """Tests for Tracer._capture_output_structure()."""
+
+    def test_capture_single_proxy(self) -> None:
+        """Captures single proxy as node_id string."""
+        tracer = Tracer()
+        proxy = tracer._create_input_node("text", "value")
+
+        result = tracer._capture_output_structure(proxy)
+
+        assert result == "input:text"
+
+    def test_capture_dict_preserves_keys(self) -> None:
+        """Captures dict output preserving user-defined keys."""
+        tracer = Tracer()
+        proxy1 = tracer._create_input_node("a", "val1")
+        proxy2 = tracer._create_input_node("b", "val2")
+
+        result = tracer._capture_output_structure(
+            {"summary": proxy1, "analysis": proxy2}
+        )
+
+        assert result == {"summary": "input:a", "analysis": "input:b"}
+
+    def test_capture_list_preserves_order(self) -> None:
+        """Captures list output preserving order."""
+        tracer = Tracer()
+        proxy1 = tracer._create_input_node("a", "val1")
+        proxy2 = tracer._create_input_node("b", "val2")
+
+        result = tracer._capture_output_structure([proxy1, proxy2])
+
+        assert result == ["input:a", "input:b"]
+
+    def test_capture_tuple_as_list(self) -> None:
+        """Captures tuple output as list."""
+        tracer = Tracer()
+        proxy1 = tracer._create_input_node("a", "val1")
+        proxy2 = tracer._create_input_node("b", "val2")
+
+        result = tracer._capture_output_structure((proxy1, proxy2))
+
+        assert result == ["input:a", "input:b"]
+
+    def test_capture_nested_dict(self) -> None:
+        """Captures nested dict structure."""
+        tracer = Tracer()
+        proxy1 = tracer._create_input_node("a", "val1")
+        proxy2 = tracer._create_input_node("b", "val2")
+
+        result = tracer._capture_output_structure(
+            {
+                "outer": {"inner": proxy1},
+                "simple": proxy2,
+            }
+        )
+
+        assert result == {
+            "outer": {"inner": "input:a"},
+            "simple": "input:b",
+        }
+
+    def test_capture_mixed_list_in_dict(self) -> None:
+        """Captures list inside dict structure."""
+        tracer = Tracer()
+        proxy1 = tracer._create_input_node("a", "val1")
+        proxy2 = tracer._create_input_node("b", "val2")
+
+        result = tracer._capture_output_structure(
+            {
+                "results": [proxy1, proxy2],
+            }
+        )
+
+        assert result == {"results": ["input:a", "input:b"]}
+
+    def test_capture_literal_returns_none(self) -> None:
+        """Literal values return None."""
+        tracer = Tracer()
+
+        assert tracer._capture_output_structure("literal") is None
+        assert tracer._capture_output_structure(42) is None
+        assert tracer._capture_output_structure(None) is None
+
+    def test_capture_empty_dict_returns_none(self) -> None:
+        """Empty dict returns None."""
+        tracer = Tracer()
+
+        result = tracer._capture_output_structure({})
+
+        assert result is None
+
+    def test_capture_empty_list_returns_none(self) -> None:
+        """Empty list returns None."""
+        tracer = Tracer()
+
+        result = tracer._capture_output_structure([])
+
+        assert result is None
+
+    def test_capture_mixed_proxies_and_literals(self) -> None:
+        """Only captures proxy values, ignores literals."""
+        tracer = Tracer()
+        proxy = tracer._create_input_node("a", "val1")
+
+        result = tracer._capture_output_structure(
+            {
+                "proxy": proxy,
+                "literal": "string",
+            }
+        )
+
+        # Only the proxy key is captured
+        assert result == {"proxy": "input:a"}
+
+
+class TestTraceOutputStructure:
+    """Tests for output_structure in trace() results."""
+
+    def test_trace_captures_dict_output_structure(self) -> None:
+        """trace() captures dict output structure with user keys."""
+
+        class DictOutput(InferenceModule):
+            def forward(self, a: str, b: str) -> dict[str, Proxy]:
+                return {"summary": a, "analysis": b}  # type: ignore
+
+        tracer = Tracer()
+        graph = tracer.trace(DictOutput(), "first", "second")
+
+        assert graph.output_structure == {
+            "summary": "input:input_0",
+            "analysis": "input:input_1",
+        }
+
+    def test_trace_captures_single_output_structure(self) -> None:
+        """trace() captures single proxy output as string."""
+
+        class SingleOutput(InferenceModule):
+            def forward(self, x: str) -> Proxy:
+                return x  # type: ignore
+
+        tracer = Tracer()
+        graph = tracer.trace(SingleOutput(), "input")
+
+        assert graph.output_structure == "input:input_0"
+
+    def test_trace_captures_list_output_structure(self) -> None:
+        """trace() captures list output structure."""
+
+        class ListOutput(InferenceModule):
+            def forward(self, a: str, b: str) -> list[Proxy]:
+                return [a, b]  # type: ignore
+
+        tracer = Tracer()
+        graph = tracer.trace(ListOutput(), "first", "second")
+
+        assert graph.output_structure == ["input:input_0", "input:input_1"]
+
+    def test_trace_literal_output_has_none_structure(self) -> None:
+        """trace() with literal output has None structure."""
+
+        class LiteralOutput(InferenceModule):
+            def forward(self) -> str:
+                return "constant"
+
+        tracer = Tracer()
+        graph = tracer.trace(LiteralOutput())
+
+        assert graph.output_structure is None
+
+
 class TestTraceMethod:
     """Tests for Tracer.trace()."""
 

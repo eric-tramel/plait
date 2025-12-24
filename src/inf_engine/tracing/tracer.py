@@ -518,6 +518,62 @@ class Tracer:
         else:
             return []
 
+    def _capture_output_structure(
+        self, output: Any
+    ) -> str | dict[str, Any] | list[Any] | None:
+        """Capture the original structure of forward() output with node IDs.
+
+        Preserves the structure of the output (dict keys, list order) while
+        replacing Proxy objects with their node IDs. This allows reconstruction
+        of results with user-defined keys after execution.
+
+        Args:
+            output: The output from forward(), which may be a Proxy,
+                a collection containing Proxies, or a literal value.
+
+        Returns:
+            The output structure with Proxy objects replaced by node IDs.
+            - For a single Proxy: returns the node_id string
+            - For a dict: returns dict with same keys, node_ids as values
+            - For a list/tuple: returns list with node_ids
+            - For non-Proxy values: returns None
+
+        Example:
+            >>> tracer = Tracer()
+            >>> proxy1 = tracer._create_input_node("a", "val1")
+            >>> proxy2 = tracer._create_input_node("b", "val2")
+            >>>
+            >>> # Single proxy output
+            >>> tracer._capture_output_structure(proxy1)
+            'input:a'
+            >>>
+            >>> # Dict output preserves keys
+            >>> tracer._capture_output_structure({"summary": proxy1, "analysis": proxy2})
+            {'summary': 'input:a', 'analysis': 'input:b'}
+            >>>
+            >>> # List output preserves order
+            >>> tracer._capture_output_structure([proxy1, proxy2])
+            ['input:a', 'input:b']
+        """
+        if isinstance(output, Proxy):
+            return output.node_id
+        elif isinstance(output, dict):
+            result: dict[str, Any] = {}
+            for key, value in output.items():
+                captured = self._capture_output_structure(value)
+                if captured is not None:
+                    result[key] = captured
+            return result if result else None
+        elif isinstance(output, (list, tuple)):
+            result_list: list[Any] = []
+            for item in output:
+                captured = self._capture_output_structure(item)
+                if captured is not None:
+                    result_list.append(captured)
+            return result_list if result_list else None
+        else:
+            return None
+
     def trace(
         self,
         module: InferenceModule,
@@ -585,12 +641,14 @@ class Tracer:
             # Execute forward with proxies
             output = module.forward(*input_proxies, **kwarg_proxies)
 
-            # Collect output node IDs
+            # Collect output node IDs and preserve structure
             self.output_ids = self._collect_output_ids(output)
+            output_structure = self._capture_output_structure(output)
 
         return InferenceGraph(
             nodes=dict(self.nodes),
             input_ids=list(self.input_ids),
             output_ids=list(self.output_ids),
+            output_structure=output_structure,
             parameters=dict(module.named_parameters()),
         )

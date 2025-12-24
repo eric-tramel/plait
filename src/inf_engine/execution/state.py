@@ -670,14 +670,15 @@ class ExecutionState:
         """Get the final output values from completed output nodes.
 
         Retrieves the result values for all output nodes in the graph that
-        have completed successfully. Output nodes are the terminal nodes
-        of the graph as specified by graph.output_ids.
+        have completed successfully. If the graph has output_structure set
+        (from tracing a forward() that returns a dict), the original dict
+        keys are preserved in the output.
 
         Returns:
-            A dictionary mapping output node IDs to their result values.
-            Only includes outputs that have completed successfully (have
-            a result in self.results). Nodes that failed, were cancelled,
-            or are still pending are not included.
+            A dictionary mapping keys to result values. If output_structure
+            is a dict, the original user-defined keys are used. Otherwise,
+            node IDs are used as keys. Only includes outputs that have
+            completed successfully (have a result in self.results).
 
         Note:
             This method should typically be called after is_complete()
@@ -686,24 +687,99 @@ class ExecutionState:
             from outputs that have completed so far.
 
         Example:
-            >>> # After completing all tasks in a linear graph
+            >>> # forward() returned {"summary": proxy1, "analysis": proxy2}
             >>> outputs = state.get_outputs()
             >>> outputs
-            {'LLMInference_2': 'final result text'}
+            {'summary': 'Summary text', 'analysis': 'Analysis text'}
 
-            >>> # For a graph with multiple outputs
+            >>> # forward() returned a single proxy
             >>> outputs = state.get_outputs()
             >>> outputs
-            {'output_1': 'result A', 'output_2': 'result B'}
+            {'LLMInference_1': 'result text'}
 
-            >>> # When some outputs failed, only successful ones are included
-            >>> # If output_1 completed but output_2 failed:
+            >>> # forward() returned [proxy1, proxy2]
             >>> outputs = state.get_outputs()
             >>> outputs
-            {'output_1': 'result A'}
+            {0: 'result A', 1: 'result B'}
         """
-        return {
-            output_id: self.results[output_id].value
-            for output_id in self.graph.output_ids
-            if output_id in self.results
-        }
+        return self._resolve_output_structure(self.graph.output_structure)
+
+    def _resolve_output_structure(
+        self, structure: str | dict[str, Any] | list[Any] | None
+    ) -> dict[str, Any]:
+        """Resolve output structure to actual values from results.
+
+        Recursively traverses the output structure, replacing node IDs
+        with actual result values.
+
+        Args:
+            structure: The output structure from InferenceGraph, containing
+                node IDs in place of Proxy objects.
+
+        Returns:
+            A dictionary with resolved values. Dict structures preserve
+            their keys. List structures use indices as keys.
+        """
+        if structure is None:
+            # Fall back to node IDs as keys
+            return {
+                output_id: self.results[output_id].value
+                for output_id in self.graph.output_ids
+                if output_id in self.results
+            }
+        elif isinstance(structure, str):
+            # Single output - use node_id as key
+            if structure in self.results:
+                return {structure: self.results[structure].value}
+            return {}
+        elif isinstance(structure, dict):
+            # Dict output - preserve user keys
+            result: dict[str, Any] = {}
+            for key, value in structure.items():
+                resolved = self._resolve_single_output(value)
+                if resolved is not None:
+                    result[key] = resolved
+            return result
+        elif isinstance(structure, list):
+            # List output - use indices as keys
+            result = {}
+            for i, value in enumerate(structure):
+                resolved = self._resolve_single_output(value)
+                if resolved is not None:
+                    result[i] = resolved
+            return result
+        else:
+            return {}
+
+    def _resolve_single_output(self, value: Any) -> Any:
+        """Resolve a single output value from the structure.
+
+        Args:
+            value: Either a node_id string, or a nested structure.
+
+        Returns:
+            The resolved value, or None if not available.
+        """
+        if isinstance(value, str):
+            # It's a node_id
+            if value in self.results:
+                return self.results[value].value
+            return None
+        elif isinstance(value, dict):
+            # Nested dict
+            result: dict[str, Any] = {}
+            for k, v in value.items():
+                resolved = self._resolve_single_output(v)
+                if resolved is not None:
+                    result[k] = resolved
+            return result if result else None
+        elif isinstance(value, list):
+            # Nested list
+            result_list: list[Any] = []
+            for item in value:
+                resolved = self._resolve_single_output(item)
+                if resolved is not None:
+                    result_list.append(resolved)
+            return result_list if result_list else None
+        else:
+            return None

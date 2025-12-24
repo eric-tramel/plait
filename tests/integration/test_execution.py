@@ -240,10 +240,9 @@ class TestParallelGraphExecution:
 
         result = await run(Parallel(), "input")
         assert isinstance(result, dict)
-        # Results are keyed by node ID, not original dict keys
-        values = list(result.values())
-        assert "A:input" in values
-        assert "B:input" in values
+        # User-defined dict keys are preserved
+        assert result["a"] == "A:input"
+        assert result["b"] == "B:input"
 
     @pytest.mark.asyncio
     async def test_three_way_parallel_execution(self) -> None:
@@ -264,11 +263,10 @@ class TestParallelGraphExecution:
                 }
 
         result = await run(ThreeWayParallel(), "test")
-        # Results are keyed by node ID, not original dict keys
-        values = list(result.values())
-        assert "A:test" in values
-        assert "B:test" in values
-        assert "C:test" in values
+        # User-defined dict keys are preserved
+        assert result["a"] == "A:test"
+        assert result["b"] == "B:test"
+        assert result["c"] == "C:test"
 
     @pytest.mark.asyncio
     async def test_parallel_with_different_processing(self) -> None:
@@ -287,10 +285,9 @@ class TestParallelGraphExecution:
                 }
 
         result = await run(DifferentBranches(), "hello")
-        # Results are keyed by node ID, not original dict keys
-        values = list(result.values())
-        assert "HELLO" in values
-        assert "PREFIX:hello" in values
+        # User-defined dict keys are preserved
+        assert result["upper"] == "HELLO"
+        assert result["prefixed"] == "PREFIX:hello"
 
     @pytest.mark.asyncio
     async def test_parallel_execution_is_concurrent(self) -> None:
@@ -319,10 +316,10 @@ class TestParallelGraphExecution:
         # Use generous margin for CI environment variability
         assert elapsed_ms < 200, f"Took {elapsed_ms}ms, expected concurrent execution"
 
-        # Verify results are correct (keyed by node ID)
-        values = list(result.values())
-        assert all("delayed:test" in v for v in values)
-        assert len(values) == 3
+        # Verify results are correct with user-defined keys
+        assert result["a"] == "delayed:test"
+        assert result["b"] == "delayed:test"
+        assert result["c"] == "delayed:test"
 
     @pytest.mark.asyncio
     async def test_parallel_list_output(self) -> None:
@@ -343,9 +340,12 @@ class TestParallelGraphExecution:
                 ]
 
         result = await run(ListOutput(), "x")
-        # Result is dict with output IDs as keys since there are multiple outputs
+        # Result is dict with indices as keys for list outputs
         assert isinstance(result, dict)
         assert len(result) == 3
+        assert result[0] == "1:x"
+        assert result[1] == "2:x"
+        assert result[2] == "3:x"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -926,3 +926,6 @@ class TestEdgeCases:
         result = await run(MultiOutput(), "test")
         assert isinstance(result, dict)
         assert len(result) == 2
+        # User-defined keys are preserved
+        assert result["first"] == "A:test"
+        assert result["second"] == "B:test"

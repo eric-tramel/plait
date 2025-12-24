@@ -124,6 +124,10 @@ class InferenceGraph:
         nodes: Dictionary mapping node IDs to GraphNode instances.
         input_ids: List of node IDs that are entry points (no dependencies).
         output_ids: List of node IDs that are exit points (graph outputs).
+        output_structure: The original structure of the forward() return value,
+            with node IDs in place of Proxy objects. Used to reconstruct
+            results with user-defined keys. Can be a string (single node ID),
+            dict (mapping user keys to node IDs), list, or None.
         parameters: Dictionary mapping parameter names to Parameter instances
             collected from the traced module tree.
 
@@ -146,6 +150,7 @@ class InferenceGraph:
     nodes: dict[str, GraphNode]
     input_ids: list[str]
     output_ids: list[str]
+    output_structure: str | dict[str, Any] | list[Any] | None = None
     parameters: dict[str, Parameter] = field(default_factory=dict)
 
     def topological_order(self) -> list[str]:

@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Proxy data access operations: `__getitem__`, `__iter__`, `keys()`, `values()`, `items()`
 - Tracer methods for data access: `record_getitem()`, `record_iter()`, `record_method()`
 - Operation classes: `GetItemOp`, `IterOp`, `MethodOp` for representing data access in graphs
+- Preserve user-defined output keys when forward() returns a dict, list, or nested structure
 
 ### Changed
 - N/A
