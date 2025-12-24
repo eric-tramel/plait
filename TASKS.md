@@ -7,7 +7,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 ## Progress
 
 - [x] **Phase 1: Foundation** (7/7)
-- [ ] **Phase 2: Tracing** (3/11)
+- [ ] **Phase 2: Tracing** (4/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
 - [ ] **Phase 5: Production Features** (0/11)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 10/74 PRs completed**
+**Total: 11/74 PRs completed**
 
 ---
 
@@ -153,7 +153,7 @@ Every PR must:
   - `tests/unit/test_graph.py` (creation, basic operations)
 - **CHANGELOG**: "Add GraphNode and InferenceGraph data structures"
 
-### - [ ] PR-011: InferenceGraph topological ordering
+### - [x] PR-011: InferenceGraph topological ordering
 - **Branch**: `feat/graph-toposort`
 - **Description**: Implement `topological_order()` method on InferenceGraph
 - **Design Docs**:
