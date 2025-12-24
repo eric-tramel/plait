@@ -7,7 +7,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 ## Progress
 
 - [x] **Phase 1: Foundation** (7/7)
-- [ ] **Phase 2: Tracing** (7/11)
+- [ ] **Phase 2: Tracing** (8/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
 - [ ] **Phase 5: Production Features** (0/11)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 14/74 PRs completed**
+**Total: 15/74 PRs completed**
 
 ---
 
@@ -197,7 +197,7 @@ Every PR must:
   - `tests/unit/test_tracer.py` (input nodes created correctly)
 - **CHANGELOG**: "Add input node creation to Tracer"
 
-### - [ ] PR-015: Tracer - record_call method
+### - [x] PR-015: Tracer - record_call method
 - **Branch**: `feat/tracer-record-call`
 - **Description**: Implement `record_call()` to capture module invocations
 - **Design Docs**:
