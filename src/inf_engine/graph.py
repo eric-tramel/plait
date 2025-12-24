@@ -331,3 +331,83 @@ class InferenceGraph:
                     queue.append(nid)
 
         return result
+
+
+def visualize_graph(graph: InferenceGraph) -> str:
+    """Generate a DOT representation of an inference graph.
+
+    Creates a Graphviz DOT format string suitable for rendering with
+    graphviz or online tools like viz.js. Useful for debugging and
+    understanding pipeline structure.
+
+    Args:
+        graph: The InferenceGraph to visualize.
+
+    Returns:
+        A string in DOT format representing the graph. Can be rendered
+        using Graphviz: `echo "output" | dot -Tpng -o graph.png`
+
+    Example:
+        >>> from inf_engine.graph import GraphNode, InferenceGraph, visualize_graph
+        >>> from inf_engine.tracing.tracer import InputNode
+        >>> from inf_engine.module import LLMInference
+        >>>
+        >>> # Create a simple graph: input -> llm
+        >>> input_node = GraphNode(
+        ...     id="input:text",
+        ...     module=InputNode(value="hello"),
+        ...     args=(),
+        ...     kwargs={},
+        ...     dependencies=[],
+        ...     module_name="Input(text)",
+        ... )
+        >>> llm_node = GraphNode(
+        ...     id="LLMInference_1",
+        ...     module=LLMInference(alias="fast"),
+        ...     args=(),
+        ...     kwargs={},
+        ...     dependencies=["input:text"],
+        ... )
+        >>> graph = InferenceGraph(
+        ...     nodes={"input:text": input_node, "LLMInference_1": llm_node},
+        ...     input_ids=["input:text"],
+        ...     output_ids=["LLMInference_1"],
+        ... )
+        >>> dot = visualize_graph(graph)
+        >>> "digraph InferenceGraph" in dot
+        True
+        >>> '"input:text" -> "LLMInference_1"' in dot
+        True
+
+    Note:
+        Input nodes are rendered as boxes, output nodes as double octagons,
+        and other nodes as ellipses. Branch conditions (if present) are
+        shown in the node label.
+    """
+    lines = ["digraph InferenceGraph {"]
+    lines.append("  rankdir=TB;")
+
+    # Add nodes with appropriate shapes
+    for node_id, node in graph.nodes.items():
+        label = node.module_name if node.module_name else node_id
+
+        # Add branch information to label if present
+        if node.branch_condition is not None:
+            label += f"\\n[{node.branch_value}]"
+
+        # Determine shape based on node role
+        shape = "ellipse"
+        if node_id in graph.input_ids:
+            shape = "box"
+        elif node_id in graph.output_ids:
+            shape = "doubleoctagon"
+
+        lines.append(f'  "{node_id}" [label="{label}", shape={shape}];')
+
+    # Add edges for dependencies
+    for node_id, node in graph.nodes.items():
+        for dep_id in node.dependencies:
+            lines.append(f'  "{dep_id}" -> "{node_id}";')
+
+    lines.append("}")
+    return "\n".join(lines)

@@ -1310,3 +1310,379 @@ class TestInferenceGraphDescendants:
         # If processor fails, formatter and output should be cancelled
         nodes_to_cancel = graph.descendants("processor")
         assert nodes_to_cancel == {"formatter", "output"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Graph Visualization Tests (PR-036)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestVisualizeGraph:
+    """Tests for visualize_graph() function generating DOT format."""
+
+    def test_visualize_empty_graph(self) -> None:
+        """visualize_graph handles empty graph."""
+        from inf_engine.graph import visualize_graph
+
+        graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
+        dot = visualize_graph(graph)
+
+        assert "digraph InferenceGraph" in dot
+        assert "rankdir=TB" in dot
+        assert dot.endswith("}")
+
+    def test_visualize_single_node(self) -> None:
+        """visualize_graph renders single input node correctly."""
+        from inf_engine.graph import visualize_graph
+
+        node = GraphNode(
+            id="input:text",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input(text)",
+        )
+        graph = InferenceGraph(
+            nodes={"input:text": node},
+            input_ids=["input:text"],
+            output_ids=["input:text"],
+        )
+        dot = visualize_graph(graph)
+
+        assert "digraph InferenceGraph" in dot
+        assert '"input:text"' in dot
+        assert 'label="Input(text)"' in dot
+        # Node is both input and output, but input takes precedence
+        assert "shape=box" in dot
+
+    def test_visualize_input_node_shape(self) -> None:
+        """Input nodes are rendered with box shape."""
+        from inf_engine.graph import visualize_graph
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input(x)",
+        )
+        llm_node = GraphNode(
+            id="LLM_1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+            module_name="LLMInference",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "LLM_1": llm_node},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+        dot = visualize_graph(graph)
+
+        assert '"input:x" [label="Input(x)", shape=box]' in dot
+
+    def test_visualize_output_node_shape(self) -> None:
+        """Output nodes are rendered with doubleoctagon shape."""
+        from inf_engine.graph import visualize_graph
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input(x)",
+        )
+        llm_node = GraphNode(
+            id="LLM_1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+            module_name="LLMInference",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "LLM_1": llm_node},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+        dot = visualize_graph(graph)
+
+        assert '"LLM_1" [label="LLMInference", shape=doubleoctagon]' in dot
+
+    def test_visualize_intermediate_node_shape(self) -> None:
+        """Intermediate nodes are rendered with ellipse shape."""
+        from inf_engine.graph import visualize_graph
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input",
+        )
+        middle_node = GraphNode(
+            id="middle",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+            module_name="Middle",
+        )
+        output_node = GraphNode(
+            id="output",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["middle"],
+            module_name="Output",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "middle": middle_node, "output": output_node},
+            input_ids=["input:x"],
+            output_ids=["output"],
+        )
+        dot = visualize_graph(graph)
+
+        assert '"middle" [label="Middle", shape=ellipse]' in dot
+
+    def test_visualize_edges(self) -> None:
+        """visualize_graph renders edges for dependencies."""
+        from inf_engine.graph import visualize_graph
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input",
+        )
+        llm_node = GraphNode(
+            id="LLM_1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+            module_name="LLM",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "LLM_1": llm_node},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+        dot = visualize_graph(graph)
+
+        assert '"input:x" -> "LLM_1"' in dot
+
+    def test_visualize_diamond_graph(self) -> None:
+        """visualize_graph renders diamond graph with multiple edges."""
+        from inf_engine.graph import visualize_graph
+
+        input_node = GraphNode(
+            id="input",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input",
+        )
+        branch_a = GraphNode(
+            id="branch_a",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input"],
+            module_name="BranchA",
+        )
+        branch_b = GraphNode(
+            id="branch_b",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input"],
+            module_name="BranchB",
+        )
+        merge = GraphNode(
+            id="merge",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["branch_a", "branch_b"],
+            module_name="Merge",
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input": input_node,
+                "branch_a": branch_a,
+                "branch_b": branch_b,
+                "merge": merge,
+            },
+            input_ids=["input"],
+            output_ids=["merge"],
+        )
+        dot = visualize_graph(graph)
+
+        # Check all edges
+        assert '"input" -> "branch_a"' in dot
+        assert '"input" -> "branch_b"' in dot
+        assert '"branch_a" -> "merge"' in dot
+        assert '"branch_b" -> "merge"' in dot
+
+    def test_visualize_with_branch_condition(self) -> None:
+        """visualize_graph shows branch condition in label."""
+        from inf_engine.graph import visualize_graph
+
+        node = GraphNode(
+            id="conditional",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Conditional",
+            branch_condition="condition_1",
+            branch_value=True,
+        )
+        graph = InferenceGraph(
+            nodes={"conditional": node},
+            input_ids=["conditional"],
+            output_ids=["conditional"],
+        )
+        dot = visualize_graph(graph)
+
+        # Branch value should be in label
+        assert r"Conditional\n[True]" in dot
+
+    def test_visualize_uses_node_id_when_no_module_name(self) -> None:
+        """visualize_graph uses node_id as label when module_name is empty."""
+        from inf_engine.graph import visualize_graph
+
+        node = GraphNode(
+            id="unnamed_node",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="",  # Empty module name
+        )
+        graph = InferenceGraph(
+            nodes={"unnamed_node": node},
+            input_ids=["unnamed_node"],
+            output_ids=["unnamed_node"],
+        )
+        dot = visualize_graph(graph)
+
+        assert 'label="unnamed_node"' in dot
+
+    def test_visualize_is_valid_dot_syntax(self) -> None:
+        """visualize_graph output is valid DOT syntax structure."""
+        from inf_engine.graph import visualize_graph
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input",
+        )
+        llm_node = GraphNode(
+            id="LLM_1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+            module_name="LLM",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "LLM_1": llm_node},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+        dot = visualize_graph(graph)
+
+        # Should start and end correctly
+        assert dot.startswith("digraph InferenceGraph {")
+        assert dot.endswith("}")
+
+        # Should have proper indentation
+        lines = dot.split("\n")
+        assert lines[1].startswith("  ")  # rankdir=TB
+
+    def test_visualize_complex_graph(self) -> None:
+        """visualize_graph handles complex graph structure."""
+        from inf_engine.graph import visualize_graph
+
+        # Create a more complex graph with multiple paths
+        nodes = {
+            "input:a": GraphNode(
+                id="input:a",
+                module=None,
+                args=(),
+                kwargs={},
+                dependencies=[],
+                module_name="Input(a)",
+            ),
+            "input:b": GraphNode(
+                id="input:b",
+                module=None,
+                args=(),
+                kwargs={},
+                dependencies=[],
+                module_name="Input(b)",
+            ),
+            "llm1": GraphNode(
+                id="llm1",
+                module=None,
+                args=(),
+                kwargs={},
+                dependencies=["input:a"],
+                module_name="LLM1",
+            ),
+            "llm2": GraphNode(
+                id="llm2",
+                module=None,
+                args=(),
+                kwargs={},
+                dependencies=["input:b"],
+                module_name="LLM2",
+            ),
+            "merge": GraphNode(
+                id="merge",
+                module=None,
+                args=(),
+                kwargs={},
+                dependencies=["llm1", "llm2"],
+                module_name="Merge",
+            ),
+        }
+        graph = InferenceGraph(
+            nodes=nodes,
+            input_ids=["input:a", "input:b"],
+            output_ids=["merge"],
+        )
+        dot = visualize_graph(graph)
+
+        # All nodes present
+        assert '"input:a"' in dot
+        assert '"input:b"' in dot
+        assert '"llm1"' in dot
+        assert '"llm2"' in dot
+        assert '"merge"' in dot
+
+        # Input nodes are boxes
+        assert "shape=box" in dot  # At least one box
+
+        # Output node is doubleoctagon
+        assert "shape=doubleoctagon" in dot
+
+        # All edges present
+        assert '"input:a" -> "llm1"' in dot
+        assert '"input:b" -> "llm2"' in dot
+        assert '"llm1" -> "merge"' in dot
+        assert '"llm2" -> "merge"' in dot
