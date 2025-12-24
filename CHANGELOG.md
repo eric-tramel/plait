@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ExecutionState `get_outputs()` method for retrieving final output values
 - Scheduler class with concurrency control via semaphore
 - Scheduler `execute()` method for running tasks with TaskGroup and dependency management
+- `run()` function for tracing and executing modules end-to-end
 
 ### Changed
 - N/A

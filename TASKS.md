@@ -8,14 +8,14 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 - [x] **Phase 1: Foundation** (7/7)
 - [x] **Phase 2: Tracing** (11/11)
-- [ ] **Phase 3: Execution** (8/10)
+- [ ] **Phase 3: Execution** (9/10)
 - [ ] **Phase 4: Resources** (0/10)
 - [ ] **Phase 5: Production Features** (0/11)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 26/74 PRs completed**
+**Total: 27/74 PRs completed**
 
 ---
 
@@ -333,7 +333,7 @@ Every PR must:
   - `tests/unit/test_scheduler.py` (executes all tasks, respects dependencies)
 - **CHANGELOG**: "Add Scheduler.execute() method"
 
-### - [ ] PR-027: Basic executor and run() function
+### - [x] PR-027: Basic executor and run() function
 - **Branch**: `feat/run-function`
 - **Description**: Implement `run()` function that traces and executes
 - **Design Docs**:
