@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ExecutionState initialization with graph analysis and dependency tracking
 - ExecutionState task management methods: `get_next_task()`, `mark_complete()`, `is_complete()`
 - ExecutionState failure handling with `mark_failed()` and descendant cancellation
+- ExecutionState `requeue()` method for retrying tasks with descendant dropping
 
 ### Changed
 - N/A

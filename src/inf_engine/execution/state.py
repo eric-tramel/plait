@@ -582,6 +582,61 @@ class ExecutionState:
 
         return cancelled
 
+    def requeue(self, node_id: str) -> list[str]:
+        """Re-enqueue a task and drop all its descendants.
+
+        Used when a task hits rate limiting and needs to retry. The task is
+        removed from in_progress, its retry_count is incremented, and it's
+        placed back in the pending queue. All descendant nodes are reset to
+        BLOCKED status with their dependencies restored.
+
+        Args:
+            node_id: The ID of the node to requeue.
+
+        Returns:
+            List of node IDs that were dropped (reset to BLOCKED).
+            Returns empty list if the node was not in progress.
+
+        Note:
+            This method is designed for handling transient failures like
+            rate limits. For permanent failures, use mark_failed() instead.
+
+            Descendants are dropped rather than cancelled because the requeued
+            task may eventually succeed, at which point they'll become ready
+            again through the normal dependency resolution process.
+
+        Example:
+            >>> # When a task hits a rate limit
+            >>> dropped = state.requeue("LLMInference_1")
+            >>> print(dropped)
+            ['LLMInference_2', 'LLMInference_3']
+            >>> state.status["LLMInference_1"]
+            <TaskStatus.PENDING: 1>
+            >>> state.status["LLMInference_2"]
+            <TaskStatus.BLOCKED: 2>
+        """
+        # Remove from in-progress
+        task = self.in_progress.pop(node_id, None)
+        if task is None:
+            return []
+
+        # Drop all descendants back to BLOCKED
+        dropped: list[str] = []
+        descendants = self.graph.descendants(node_id)
+        for desc_id in descendants:
+            self.status[desc_id] = TaskStatus.BLOCKED
+            # Restore dependencies
+            node = self.graph.nodes[desc_id]
+            self.waiting_on[desc_id] = set(node.dependencies)
+            dropped.append(desc_id)
+
+        # Re-queue the task with incremented retry count
+        task.retry_count += 1
+        self.status[node_id] = TaskStatus.PENDING
+        self.pending.put_nowait(task)
+
+        return dropped
+
     def is_complete(self) -> bool:
         """Check if all tasks are done (completed, failed, or cancelled).
 
