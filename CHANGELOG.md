@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - N/A
 
 ### Fixed
-- N/A
+- Standardize priority ordering convention to "lower value = higher precedence" across GraphNode and Task
 
 ### Security
 - N/A

@@ -64,8 +64,8 @@ class GraphNode:
             or literal values.
         dependencies: List of node IDs this node depends on. The node
             cannot execute until all dependencies have completed.
-        priority: Execution priority for scheduling. Higher values indicate
-            higher priority. Defaults to 0.
+        priority: Execution priority for scheduling. Lower values indicate
+            higher precedence (0 runs before 1). Defaults to 0.
         branch_condition: Node ID of the condition proxy for conditional
             execution. None if this node is unconditional.
         branch_value: The branch value (True/False) this node belongs to.

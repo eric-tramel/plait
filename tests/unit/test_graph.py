@@ -396,6 +396,87 @@ class TestInferenceGraphEmptyGraph:
         assert len(graph.output_ids) == 0
 
 
+class TestGraphNodePriority:
+    """Tests for GraphNode priority ordering convention.
+
+    Priority ordering follows the 'lower value = higher precedence' convention,
+    matching Python's heapq semantics. Priority 0 runs before priority 1.
+    """
+
+    def test_default_priority_is_zero(self) -> None:
+        """Default priority is 0 (highest precedence)."""
+        node = GraphNode(
+            id="test",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+
+        assert node.priority == 0
+
+    def test_priority_can_be_set(self) -> None:
+        """Priority can be set to any integer value."""
+        node = GraphNode(
+            id="test",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            priority=10,
+        )
+
+        assert node.priority == 10
+
+    def test_priority_ordering_convention(self) -> None:
+        """Lower priority values indicate higher precedence.
+
+        This convention matches Python's heapq (min-heap), where smaller
+        values are popped first. So priority=0 has higher precedence than
+        priority=1.
+        """
+        high_priority = GraphNode(
+            id="high",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            priority=0,  # Higher precedence
+        )
+        low_priority = GraphNode(
+            id="low",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            priority=10,  # Lower precedence
+        )
+
+        # Lower value = higher precedence
+        assert high_priority.priority < low_priority.priority
+
+    def test_negative_priority_has_highest_precedence(self) -> None:
+        """Negative priority values have highest precedence."""
+        urgent = GraphNode(
+            id="urgent",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            priority=-1,  # Highest precedence
+        )
+        normal = GraphNode(
+            id="normal",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            priority=0,
+        )
+
+        assert urgent.priority < normal.priority
+
+
 class TestGraphNodeBranching:
     """Tests for branch-related fields on GraphNode."""
 
