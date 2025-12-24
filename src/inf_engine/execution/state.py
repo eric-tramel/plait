@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
+from inf_engine.graph import NodeRef
+
 if TYPE_CHECKING:
     from inf_engine.graph import InferenceGraph
     from inf_engine.module import InferenceModule
@@ -386,54 +388,54 @@ class ExecutionState:
         self.pending.put_nowait(task)
 
     def _resolve_args(self, args: tuple[Any, ...]) -> tuple[Any, ...]:
-        """Resolve node ID references in args to actual result values.
+        """Resolve NodeRef references in args to actual result values.
 
-        For each argument that is a string matching a completed node ID,
-        replaces it with the corresponding result value. Non-string arguments
-        and strings that don't match result IDs are passed through unchanged.
+        For each argument that is a NodeRef, replaces it with the
+        corresponding result value. All other arguments are passed
+        through unchanged.
 
         Args:
-            args: Tuple of arguments, which may contain node ID references.
+            args: Tuple of arguments, which may contain NodeRef references.
 
         Returns:
-            Tuple with node ID references replaced by their result values.
+            Tuple with NodeRef references replaced by their result values.
 
         Example:
             >>> # After node "input:input_0" completes with value "hello"
-            >>> state._resolve_args(("input:input_0", "literal"))
+            >>> state._resolve_args((NodeRef("input:input_0"), "literal"))
             ("hello", "literal")
         """
         resolved: list[Any] = []
         for arg in args:
-            if isinstance(arg, str) and arg in self.results:
-                resolved.append(self.results[arg].value)
+            if isinstance(arg, NodeRef):
+                resolved.append(self.results[arg.node_id].value)
             else:
                 resolved.append(arg)
         return tuple(resolved)
 
     def _resolve_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Resolve node ID references in kwargs to actual result values.
+        """Resolve NodeRef references in kwargs to actual result values.
 
-        For each value that is a string matching a completed node ID,
-        replaces it with the corresponding result value. Non-string values
-        and strings that don't match result IDs are passed through unchanged.
+        For each value that is a NodeRef, replaces it with the
+        corresponding result value. All other values are passed
+        through unchanged.
 
         Args:
             kwargs: Dictionary of keyword arguments, which may contain
-                node ID references as values.
+                NodeRef references as values.
 
         Returns:
-            Dictionary with node ID references replaced by their result values.
+            Dictionary with NodeRef references replaced by their result values.
 
         Example:
             >>> # After node "input:context" completes with value "world"
-            >>> state._resolve_kwargs({"context": "input:context", "temp": 0.7})
+            >>> state._resolve_kwargs({"context": NodeRef("input:context"), "temp": 0.7})
             {"context": "world", "temp": 0.7}
         """
         resolved: dict[str, Any] = {}
         for key, value in kwargs.items():
-            if isinstance(value, str) and value in self.results:
-                resolved[key] = self.results[value].value
+            if isinstance(value, NodeRef):
+                resolved[key] = self.results[value.node_id].value
             else:
                 resolved[key] = value
         return resolved

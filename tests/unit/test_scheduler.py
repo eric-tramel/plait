@@ -6,7 +6,7 @@ import pytest
 
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import InferenceModule
 from inf_engine.tracing.tracer import InputNode
 
@@ -472,7 +472,7 @@ def create_simple_graph() -> InferenceGraph:
     process_node = GraphNode(
         id="process_1",
         module=SimpleModule(),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
@@ -495,21 +495,21 @@ def create_linear_graph() -> InferenceGraph:
     a_node = GraphNode(
         id="a_1",
         module=SimpleModule(),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     b_node = GraphNode(
         id="b_2",
         module=SimpleModule(),
-        args=("a_1",),
+        args=(NodeRef("a_1"),),
         kwargs={},
         dependencies=["a_1"],
     )
     c_node = GraphNode(
         id="c_3",
         module=SimpleModule(),
-        args=("b_2",),
+        args=(NodeRef("b_2"),),
         kwargs={},
         dependencies=["b_2"],
     )
@@ -537,14 +537,14 @@ def create_parallel_graph() -> InferenceGraph:
     a_node = GraphNode(
         id="a_1",
         module=SimpleModule(),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     b_node = GraphNode(
         id="b_2",
         module=SimpleModule(),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
@@ -567,14 +567,14 @@ def create_diamond_graph() -> InferenceGraph:
     a_node = GraphNode(
         id="a_1",
         module=SimpleModule(),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     b_node = GraphNode(
         id="b_2",
         module=SimpleModule(),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
@@ -583,7 +583,7 @@ def create_diamond_graph() -> InferenceGraph:
     merge_node = GraphNode(
         id="merge_3",
         module=merge_module,
-        args=("a_1",),  # In real usage, this would combine both
+        args=(NodeRef("a_1"),),  # In real usage, this would combine both
         kwargs={},
         dependencies=["a_1", "b_2"],
     )
@@ -674,7 +674,7 @@ class TestSchedulerExecute:
             nodes[node_id] = GraphNode(
                 id=node_id,
                 module=SlowModule(),
-                args=("input:input_0",),
+                args=(NodeRef("input:input_0"),),
                 kwargs={},
                 dependencies=["input:input_0"],
             )
@@ -759,7 +759,7 @@ class TestSchedulerExecuteWithAsync:
         async_node = GraphNode(
             id="async_1",
             module=AsyncModule(),
-            args=("input:input_0",),
+            args=(NodeRef("input:input_0"),),
             kwargs={},
             dependencies=["input:input_0"],
         )
@@ -792,7 +792,7 @@ class TestSchedulerExecuteFailure:
         failing_node = GraphNode(
             id="failing_1",
             module=FailingModule(),
-            args=("input:input_0",),
+            args=(NodeRef("input:input_0"),),
             kwargs={},
             dependencies=["input:input_0"],
         )
@@ -826,7 +826,7 @@ class TestSchedulerExecuteFailure:
         failing_node = GraphNode(
             id="failing_1",
             module=FailingModule(),
-            args=("input:input_0",),
+            args=(NodeRef("input:input_0"),),
             kwargs={},
             dependencies=["input:input_0"],
         )
@@ -862,14 +862,14 @@ class TestSchedulerExecuteFailure:
         failing_node = GraphNode(
             id="failing_1",
             module=FailingModule(),
-            args=("input:input_0",),
+            args=(NodeRef("input:input_0"),),
             kwargs={},
             dependencies=["input:input_0"],
         )
         dependent_node = GraphNode(
             id="dependent_2",
             module=SimpleModule(),
-            args=("failing_1",),
+            args=(NodeRef("failing_1"),),
             kwargs={},
             dependencies=["failing_1"],
         )
@@ -919,21 +919,21 @@ class TestSchedulerExecuteDependencies:
         a_node = GraphNode(
             id="a_1",
             module=TrackingModule("a"),
-            args=("input:input_0",),
+            args=(NodeRef("input:input_0"),),
             kwargs={},
             dependencies=["input:input_0"],
         )
         b_node = GraphNode(
             id="b_2",
             module=TrackingModule("b"),
-            args=("a_1",),
+            args=(NodeRef("a_1"),),
             kwargs={},
             dependencies=["a_1"],
         )
         c_node = GraphNode(
             id="c_3",
             module=TrackingModule("c"),
-            args=("b_2",),
+            args=(NodeRef("b_2"),),
             kwargs={},
             dependencies=["b_2"],
         )

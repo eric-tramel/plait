@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.tracing.context import trace_context
 from inf_engine.tracing.proxy import Proxy
 
@@ -297,19 +297,19 @@ class Tracer:
 
         # Extract dependencies from proxy arguments
         dependencies: list[str] = []
-        processed_args: list[str | Any] = []
+        processed_args: list[NodeRef | Any] = []
         for arg in args:
             if isinstance(arg, Proxy):
                 dependencies.append(arg.node_id)
-                processed_args.append(arg.node_id)
+                processed_args.append(NodeRef(arg.node_id))
             else:
                 processed_args.append(arg)
 
-        processed_kwargs: dict[str, str | Any] = {}
+        processed_kwargs: dict[str, NodeRef | Any] = {}
         for key, value in kwargs.items():
             if isinstance(value, Proxy):
                 dependencies.append(value.node_id)
-                processed_kwargs[key] = value.node_id
+                processed_kwargs[key] = NodeRef(value.node_id)
             else:
                 processed_kwargs[key] = value
 
@@ -369,7 +369,7 @@ class Tracer:
         node = GraphNode(
             id=node_id,
             module=GetItemOp(key=key),
-            args=(proxy.node_id,),
+            args=(NodeRef(proxy.node_id),),
             kwargs={},
             dependencies=[proxy.node_id],
             branch_condition=branch_condition,
@@ -411,7 +411,7 @@ class Tracer:
         node = GraphNode(
             id=node_id,
             module=IterOp(),
-            args=(proxy.node_id,),
+            args=(NodeRef(proxy.node_id),),
             kwargs={},
             dependencies=[proxy.node_id],
             branch_condition=branch_condition,
@@ -456,7 +456,7 @@ class Tracer:
         node = GraphNode(
             id=node_id,
             module=MethodOp(method=method),
-            args=(proxy.node_id,),
+            args=(NodeRef(proxy.node_id),),
             kwargs={},
             dependencies=[proxy.node_id],
             branch_condition=branch_condition,

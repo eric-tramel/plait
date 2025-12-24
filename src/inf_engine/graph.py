@@ -45,6 +45,45 @@ if TYPE_CHECKING:
     from inf_engine.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp
 
 
+@dataclass(frozen=True)
+class NodeRef:
+    """A typed reference to a node in the execution graph.
+
+    NodeRef wraps a node ID string to distinguish it from literal string
+    values in args and kwargs. This prevents collision when a literal string
+    argument happens to match a node ID.
+
+    Attributes:
+        node_id: The ID of the referenced node.
+
+    Example:
+        >>> ref = NodeRef("LLMInference_1")
+        >>> ref.node_id
+        'LLMInference_1'
+        >>> str(ref)
+        'NodeRef(LLMInference_1)'
+
+        >>> # Used in GraphNode args to reference another node's output
+        >>> node = GraphNode(
+        ...     id="LLMInference_2",
+        ...     module=module,
+        ...     args=(NodeRef("LLMInference_1"),),  # Reference, not literal
+        ...     kwargs={"literal_key": "literal_value"},  # Literal string
+        ...     dependencies=["LLMInference_1"],
+        ... )
+
+    Note:
+        NodeRef is frozen (immutable) and can be used as a dict key or
+        in sets. Two NodeRefs with the same node_id are considered equal.
+    """
+
+    node_id: str
+
+    def __repr__(self) -> str:
+        """Return a string representation of the NodeRef."""
+        return f"NodeRef({self.node_id})"
+
+
 @dataclass
 class GraphNode:
     """A single operation in the execution graph.
@@ -59,9 +98,9 @@ class GraphNode:
             InferenceModule instance. For input nodes, an InputNode
             containing the input value. For data access operations,
             a GetItemOp, IterOp, or MethodOp. May be None for special cases.
-        args: Positional arguments as a tuple of node IDs (for Proxy args)
-            or literal values.
-        kwargs: Keyword arguments as a dict of node IDs (for Proxy kwargs)
+        args: Positional arguments as a tuple of NodeRef (for references
+            to other nodes) or literal values.
+        kwargs: Keyword arguments as a dict of NodeRef (for references)
             or literal values.
         dependencies: List of node IDs this node depends on. The node
             cannot execute until all dependencies have completed.
@@ -78,10 +117,11 @@ class GraphNode:
 
     Example:
         >>> from inf_engine.module import LLMInference
+        >>> from inf_engine.graph import NodeRef
         >>> node = GraphNode(
         ...     id="LLMInference_1",
         ...     module=LLMInference(alias="gpt4"),
-        ...     args=("input:prompt",),
+        ...     args=(NodeRef("input:prompt"),),
         ...     kwargs={"temperature": 0.7},
         ...     dependencies=["input:prompt"],
         ... )
@@ -93,8 +133,8 @@ class GraphNode:
 
     id: str
     module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
-    args: tuple[str | Any, ...]
-    kwargs: dict[str, str | Any]
+    args: tuple[NodeRef | Any, ...]
+    kwargs: dict[str, NodeRef | Any]
     dependencies: list[str]
     priority: int = 0
     branch_condition: str | None = None

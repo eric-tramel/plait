@@ -3,7 +3,7 @@
 import pytest
 
 from inf_engine.execution.state import ExecutionState, TaskResult, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import LLMInference
 from inf_engine.tracing.tracer import InputNode
 
@@ -40,14 +40,14 @@ def create_linear_graph() -> InferenceGraph:
     llm1_node = GraphNode(
         id="LLMInference_1",
         module=LLMInference(alias="fast"),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     llm2_node = GraphNode(
         id="LLMInference_2",
         module=LLMInference(alias="smart"),
-        args=("LLMInference_1",),
+        args=(NodeRef("LLMInference_1"),),
         kwargs={},
         dependencies=["LLMInference_1"],
     )
@@ -74,14 +74,14 @@ def create_parallel_graph() -> InferenceGraph:
     llm1_node = GraphNode(
         id="LLMInference_1",
         module=LLMInference(alias="a"),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     llm2_node = GraphNode(
         id="LLMInference_2",
         module=LLMInference(alias="b"),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
@@ -108,21 +108,21 @@ def create_diamond_graph() -> InferenceGraph:
     branch_a = GraphNode(
         id="LLMInference_1",
         module=LLMInference(alias="a"),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     branch_b = GraphNode(
         id="LLMInference_2",
         module=LLMInference(alias="b"),
-        args=("input:input_0",),
+        args=(NodeRef("input:input_0"),),
         kwargs={},
         dependencies=["input:input_0"],
     )
     merge_node = GraphNode(
         id="LLMInference_3",
         module=LLMInference(alias="merge"),
-        args=("LLMInference_1", "LLMInference_2"),
+        args=(NodeRef("LLMInference_1"), NodeRef("LLMInference_2")),
         kwargs={},
         dependencies=["LLMInference_1", "LLMInference_2"],
     )
@@ -157,7 +157,7 @@ def create_multi_input_graph() -> InferenceGraph:
     llm_node = GraphNode(
         id="LLMInference_1",
         module=LLMInference(alias="test"),
-        args=("input:input_0", "input:input_1"),
+        args=(NodeRef("input:input_0"), NodeRef("input:input_1")),
         kwargs={},
         dependencies=["input:input_0", "input:input_1"],
     )
@@ -372,8 +372,8 @@ class TestExecutionStateResolveArgs:
         resolved = state._resolve_args(("input:input_0", "literal", 42))
         assert resolved == ("input:input_0", "literal", 42)
 
-    def test_resolve_args_replaces_completed_node_ids(self) -> None:
-        """Args referencing completed nodes are replaced with values."""
+    def test_resolve_args_replaces_node_refs(self) -> None:
+        """Args with NodeRef are replaced with result values."""
         graph = create_linear_graph()
         state = ExecutionState(graph)
 
@@ -384,7 +384,7 @@ class TestExecutionStateResolveArgs:
             duration_ms=10.0,
         )
 
-        resolved = state._resolve_args(("input:input_0", "literal"))
+        resolved = state._resolve_args((NodeRef("input:input_0"), "literal"))
         assert resolved == ("resolved_value", "literal")
 
     def test_resolve_kwargs_passes_through_when_no_results(self) -> None:
@@ -395,8 +395,8 @@ class TestExecutionStateResolveArgs:
         resolved = state._resolve_kwargs({"key": "input:input_0", "temp": 0.7})
         assert resolved == {"key": "input:input_0", "temp": 0.7}
 
-    def test_resolve_kwargs_replaces_completed_node_ids(self) -> None:
-        """Kwargs referencing completed nodes are replaced with values."""
+    def test_resolve_kwargs_replaces_node_refs(self) -> None:
+        """Kwargs with NodeRef are replaced with result values."""
         graph = create_linear_graph()
         state = ExecutionState(graph)
 
@@ -407,7 +407,9 @@ class TestExecutionStateResolveArgs:
             duration_ms=10.0,
         )
 
-        resolved = state._resolve_kwargs({"context": "input:input_0", "temp": 0.7})
+        resolved = state._resolve_kwargs(
+            {"context": NodeRef("input:input_0"), "temp": 0.7}
+        )
         assert resolved == {"context": "resolved_value", "temp": 0.7}
 
 

@@ -1,6 +1,6 @@
 """Unit tests for the Tracer class."""
 
-from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import InferenceModule, LLMInference
 from inf_engine.parameter import Parameter
 from inf_engine.tracing.context import get_trace_context
@@ -546,8 +546,8 @@ class TestRecordCall:
         assert node.kwargs == {"temperature": 0.7, "max_tokens": 100}
         assert node.dependencies == []
 
-    def test_record_call_replaces_proxy_args_with_node_ids(self) -> None:
-        """Proxy objects in args are replaced with their node_ids."""
+    def test_record_call_replaces_proxy_args_with_node_refs(self) -> None:
+        """Proxy objects in args are replaced with NodeRef wrappers."""
         tracer = Tracer()
         module = LLMInference(alias="test")
         input_proxy = tracer._create_input_node("text", "hello")
@@ -555,10 +555,10 @@ class TestRecordCall:
         output_proxy = tracer.record_call(module, (input_proxy, "literal"), {})
         node = tracer.nodes[output_proxy.node_id]
 
-        assert node.args == ("input:text", "literal")
+        assert node.args == (NodeRef("input:text"), "literal")
 
-    def test_record_call_replaces_proxy_kwargs_with_node_ids(self) -> None:
-        """Proxy objects in kwargs are replaced with their node_ids."""
+    def test_record_call_replaces_proxy_kwargs_with_node_refs(self) -> None:
+        """Proxy objects in kwargs are replaced with NodeRef wrappers."""
         tracer = Tracer()
         module = LLMInference(alias="test")
         input_proxy = tracer._create_input_node("context", {"key": "value"})
@@ -568,7 +568,7 @@ class TestRecordCall:
         )
         node = tracer.nodes[output_proxy.node_id]
 
-        assert node.kwargs == {"context": "input:context", "temp": 0.5}
+        assert node.kwargs == {"context": NodeRef("input:context"), "temp": 0.5}
 
     def test_record_call_multiple_nodes_increments_id(self) -> None:
         """Multiple record_call creates nodes with incrementing IDs."""
@@ -880,15 +880,15 @@ class TestRecordGetitem:
         node = tracer.nodes["getitem_1"]
         assert node.module_name == "getitem['my_key']"
 
-    def test_record_getitem_stores_source_in_args(self) -> None:
-        """Getitem node stores source node_id in args."""
+    def test_record_getitem_stores_source_as_node_ref(self) -> None:
+        """Getitem node stores source as NodeRef in args."""
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"key": "value"})
 
         tracer.record_getitem(input_proxy, "key")
 
         node = tracer.nodes["getitem_1"]
-        assert node.args == ("input:data",)
+        assert node.args == (NodeRef("input:data"),)
 
 
 class TestRecordIter:

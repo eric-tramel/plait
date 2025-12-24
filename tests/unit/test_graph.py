@@ -1,8 +1,72 @@
 """Unit tests for the GraphNode and InferenceGraph data structures."""
 
-from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import InferenceModule, LLMInference
 from inf_engine.parameter import Parameter
+
+
+class TestNodeRef:
+    """Tests for NodeRef type."""
+
+    def test_node_ref_creation(self) -> None:
+        """NodeRef wraps a node_id string."""
+        ref = NodeRef("input:text")
+
+        assert ref.node_id == "input:text"
+
+    def test_node_ref_repr(self) -> None:
+        """NodeRef has a readable string representation."""
+        ref = NodeRef("LLMInference_1")
+
+        assert repr(ref) == "NodeRef(LLMInference_1)"
+
+    def test_node_ref_equality(self) -> None:
+        """NodeRefs with same node_id are equal."""
+        ref1 = NodeRef("test_node")
+        ref2 = NodeRef("test_node")
+
+        assert ref1 == ref2
+
+    def test_node_ref_inequality(self) -> None:
+        """NodeRefs with different node_ids are not equal."""
+        ref1 = NodeRef("node_a")
+        ref2 = NodeRef("node_b")
+
+        assert ref1 != ref2
+
+    def test_node_ref_hashable(self) -> None:
+        """NodeRef can be used in sets and as dict keys."""
+        ref1 = NodeRef("node_1")
+        ref2 = NodeRef("node_1")
+        ref3 = NodeRef("node_2")
+
+        # Can add to set
+        ref_set = {ref1, ref2, ref3}
+        assert len(ref_set) == 2  # ref1 and ref2 are same
+
+        # Can use as dict key
+        ref_dict = {ref1: "value1", ref3: "value2"}
+        assert ref_dict[ref2] == "value1"  # ref2 equals ref1
+
+    def test_node_ref_immutable(self) -> None:
+        """NodeRef is frozen (immutable)."""
+        ref = NodeRef("test")
+
+        # Attempting to modify should raise an error
+        try:
+            ref.node_id = "modified"  # type: ignore
+            raise AssertionError("Should have raised FrozenInstanceError")
+        except AttributeError:
+            pass  # Expected behavior for frozen dataclass
+
+    def test_node_ref_distinguishes_from_string(self) -> None:
+        """NodeRef is distinguishable from raw strings."""
+        ref = NodeRef("test_node")
+        string = "test_node"
+
+        assert ref != string
+        assert not isinstance(string, NodeRef)
+        assert isinstance(ref, NodeRef)
 
 
 class TestGraphNodeCreation:

@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tracer methods for data access: `record_getitem()`, `record_iter()`, `record_method()`
 - Operation classes: `GetItemOp`, `IterOp`, `MethodOp` for representing data access in graphs
 - Preserve user-defined output keys when forward() returns a dict, list, or nested structure
+- Add `NodeRef` type for type-safe node references in args and kwargs
 
 ### Changed
 - N/A
