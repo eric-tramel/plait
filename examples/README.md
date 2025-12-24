@@ -2,7 +2,7 @@
 
 This directory contains practical examples demonstrating the inf-engine API.
 
-## Current Examples (Phase 1-2)
+## Current Examples (Phase 1-3)
 
 These examples work with the current implementation:
 
@@ -36,9 +36,9 @@ LLM pipeline definitions (structure preview). Shows how to:
 - Compose fan-in synthesis patterns
 - Use learnable system prompts
 
-**Note:** These pipelines cannot be executed yet. Execution requires
-the scheduling infrastructure from Phase 3. This example demonstrates
-the API and inspects module structure.
+**Note:** These pipelines cannot execute with real LLMs yet (requires
+Phase 4 resources). This example demonstrates the API and inspects
+module structure.
 
 ```bash
 uv run python examples/03_llm_pipelines.py
@@ -57,6 +57,21 @@ Tracing and DAG capture. Shows how to:
 uv run python examples/04_tracing.py
 ```
 
+### [05_execution.py](05_execution.py)
+**NEW!** Execution with the `run()` function. Shows how to:
+- Execute modules with `run()`
+- Run linear pipelines with dependency ordering
+- Execute parallel (fan-out) patterns concurrently
+- Handle diamond patterns (fan-out + fan-in)
+- Control concurrency with `max_concurrent`
+- Inspect execution state (PENDING, COMPLETED, FAILED, CANCELLED)
+- Handle errors and failure cascading
+- Work with multiple inputs (positional and keyword)
+
+```bash
+uv run python examples/05_execution.py
+```
+
 ## Running Examples
 
 From the repository root:
@@ -69,13 +84,29 @@ uv run python examples/01_basic_modules.py
 for f in examples/*.py; do uv run python "$f"; echo; done
 ```
 
+## What's Working Now (Phase 1-3)
+
+| Feature | Status | Example |
+|---------|--------|---------|
+| Module creation | ✅ | 01_basic_modules.py |
+| Module composition | ✅ | 01_basic_modules.py |
+| Parameters | ✅ | 02_parameters.py |
+| LLMInference definition | ✅ | 03_llm_pipelines.py |
+| Tracing/DAG capture | ✅ | 04_tracing.py |
+| Execution with run() | ✅ | 05_execution.py |
+| Concurrent execution | ✅ | 05_execution.py |
+| Dependency ordering | ✅ | 05_execution.py |
+| Error handling | ✅ | 05_execution.py |
+
 ## Coming Soon
 
-After Phase 3 implementation:
-- Full LLM pipeline execution with `run()`
-- Async parallel execution with scheduling
+After Phase 4 (Resources):
+- Real LLM execution with OpenAI/compatible endpoints
+- Resource configuration and management
+- Rate limiting and endpoint pooling
 
-After Phase 7 implementation:
+After Phase 7 (Optimization):
 - Training loops with `train()`
-- Backward pass and optimization
-- Complete end-to-end examples
+- Backward pass and feedback propagation
+- Parameter optimization with LLM-based updates
+- Complete end-to-end learning examples
