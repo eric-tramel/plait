@@ -3,16 +3,19 @@
 from typing import Any
 
 from inf_engine.tracing.proxy import Proxy
+from inf_engine.tracing.tracer import Tracer
 
 
-class MockTracer:
-    """A mock tracer for testing Proxy behavior.
+class MockingTracer(Tracer):
+    """A tracer subclass that implements record_getitem for testing.
 
-    This mock implements the methods that Proxy delegates to,
-    allowing us to test Proxy without the real Tracer implementation.
+    Extends the real Tracer class to provide a working implementation
+    of record_getitem for Proxy tests, since the real implementation
+    is deferred to a future PR.
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self.recorded_getitems: list[tuple[Proxy, Any]] = []
         self._getitem_counter: int = 0
 
@@ -31,7 +34,7 @@ class TestProxyCreation:
 
     def test_proxy_creation_basic(self) -> None:
         """Proxy can be created with node_id and tracer."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="test_node", tracer=tracer)
 
         assert proxy.node_id == "test_node"
@@ -39,7 +42,7 @@ class TestProxyCreation:
 
     def test_proxy_creation_with_defaults(self) -> None:
         """Proxy has correct default values."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="test_node", tracer=tracer)
 
         assert proxy.output_index == 0
@@ -47,14 +50,14 @@ class TestProxyCreation:
 
     def test_proxy_creation_with_output_index(self) -> None:
         """Proxy can be created with a custom output_index."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="test_node", tracer=tracer, output_index=2)
 
         assert proxy.output_index == 2
 
     def test_proxy_creation_with_metadata(self) -> None:
         """Proxy can be created with custom metadata."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         metadata = {"key": "value", "count": 42}
         proxy = Proxy(node_id="test_node", tracer=tracer, _metadata=metadata)
 
@@ -62,7 +65,7 @@ class TestProxyCreation:
 
     def test_proxy_metadata_is_independent(self) -> None:
         """Each proxy has its own metadata dictionary."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy1 = Proxy(node_id="node1", tracer=tracer)
         proxy2 = Proxy(node_id="node2", tracer=tracer)
 
@@ -72,20 +75,28 @@ class TestProxyCreation:
         assert proxy1._metadata["key"] == "value1"
         assert proxy2._metadata["key"] == "value2"
 
+    def test_proxy_creation_with_real_tracer(self) -> None:
+        """Proxy works with the real Tracer class."""
+        tracer = Tracer()
+        proxy = Proxy(node_id="test_node", tracer=tracer)
+
+        assert proxy.node_id == "test_node"
+        assert proxy.tracer is tracer
+
 
 class TestProxyRepr:
     """Tests for Proxy string representation."""
 
     def test_proxy_repr_format(self) -> None:
         """repr returns the expected format."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="LLMInference_1", tracer=tracer)
 
         assert repr(proxy) == "Proxy(LLMInference_1)"
 
     def test_proxy_repr_with_different_ids(self) -> None:
         """repr works with various node_id formats."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
 
         test_cases = [
             "simple",
@@ -101,7 +112,7 @@ class TestProxyRepr:
 
     def test_proxy_str_same_as_repr(self) -> None:
         """str() uses the same representation as repr()."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="test_node", tracer=tracer)
 
         # Dataclass default behavior: str uses repr
@@ -113,7 +124,7 @@ class TestProxyGetitem:
 
     def test_proxy_getitem_returns_proxy(self) -> None:
         """__getitem__ returns a new Proxy."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="dict_output", tracer=tracer)
 
         result = proxy["key"]
@@ -122,7 +133,7 @@ class TestProxyGetitem:
 
     def test_proxy_getitem_delegates_to_tracer(self) -> None:
         """__getitem__ calls tracer.record_getitem()."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="dict_output", tracer=tracer)
 
         proxy["my_key"]
@@ -134,7 +145,7 @@ class TestProxyGetitem:
 
     def test_proxy_getitem_with_string_key(self) -> None:
         """__getitem__ works with string keys."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="result", tracer=tracer)
 
         result = proxy["output"]
@@ -143,7 +154,7 @@ class TestProxyGetitem:
 
     def test_proxy_getitem_with_integer_index(self) -> None:
         """__getitem__ works with integer indices."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="list_output", tracer=tracer)
 
         result = proxy[0]
@@ -154,7 +165,7 @@ class TestProxyGetitem:
 
     def test_proxy_getitem_multiple_accesses(self) -> None:
         """Multiple __getitem__ calls create separate nodes."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="data", tracer=tracer)
 
         result1 = proxy["first"]
@@ -168,7 +179,7 @@ class TestProxyGetitem:
 
     def test_proxy_getitem_chaining(self) -> None:
         """__getitem__ can be chained for nested access."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy = Proxy(node_id="nested_dict", tracer=tracer)
 
         # Simulate nested["outer"]["inner"]
@@ -184,7 +195,7 @@ class TestProxyEquality:
 
     def test_proxy_equality_same_fields(self) -> None:
         """Proxies with same fields are equal."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy1 = Proxy(node_id="test", tracer=tracer, output_index=0)
         proxy2 = Proxy(node_id="test", tracer=tracer, output_index=0)
 
@@ -192,7 +203,7 @@ class TestProxyEquality:
 
     def test_proxy_inequality_different_node_id(self) -> None:
         """Proxies with different node_ids are not equal."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy1 = Proxy(node_id="node1", tracer=tracer)
         proxy2 = Proxy(node_id="node2", tracer=tracer)
 
@@ -200,7 +211,7 @@ class TestProxyEquality:
 
     def test_proxy_inequality_different_output_index(self) -> None:
         """Proxies with different output_index are not equal."""
-        tracer = MockTracer()
+        tracer = MockingTracer()
         proxy1 = Proxy(node_id="test", tracer=tracer, output_index=0)
         proxy2 = Proxy(node_id="test", tracer=tracer, output_index=1)
 
@@ -208,8 +219,8 @@ class TestProxyEquality:
 
     def test_proxy_inequality_different_tracer(self) -> None:
         """Proxies with different tracers are not equal."""
-        tracer1 = MockTracer()
-        tracer2 = MockTracer()
+        tracer1 = MockingTracer()
+        tracer2 = MockingTracer()
         proxy1 = Proxy(node_id="test", tracer=tracer1)
         proxy2 = Proxy(node_id="test", tracer=tracer2)
 

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GraphNode and InferenceGraph data structures for representing traced execution graphs
 - Topological ordering method on InferenceGraph for valid execution order
 - Graph traversal methods (ancestors, descendants) on InferenceGraph
+- Tracer class foundation with node storage and ID generation
 
 ### Changed
 - N/A

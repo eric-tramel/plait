@@ -19,5 +19,6 @@ Note:
 
 from inf_engine.tracing.context import get_trace_context, trace_context
 from inf_engine.tracing.proxy import Proxy
+from inf_engine.tracing.tracer import Tracer
 
-__all__ = ["Proxy", "get_trace_context", "trace_context"]
+__all__ = ["Proxy", "Tracer", "get_trace_context", "trace_context"]

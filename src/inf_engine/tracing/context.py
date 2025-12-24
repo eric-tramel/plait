@@ -25,12 +25,10 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING
 
-# Type alias for Tracer - will be properly typed when Tracer is implemented (PR-013+).
-# Using Any for now since Tracer doesn't exist yet. This allows the context module
-# to be implemented and tested independently.
-Tracer = Any
+if TYPE_CHECKING:
+    from inf_engine.tracing.tracer import Tracer
 
 # Thread-local/async-safe context variable for the active tracer.
 # Default is None, indicating no active trace.

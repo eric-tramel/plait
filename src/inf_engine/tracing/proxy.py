@@ -21,11 +21,10 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-# Type alias for Tracer - will be properly typed when Tracer is implemented (PR-013+).
-# Using Any for now since Tracer doesn't exist yet.
-Tracer = Any
+if TYPE_CHECKING:
+    from inf_engine.tracing.tracer import Tracer
 
 
 @dataclass
