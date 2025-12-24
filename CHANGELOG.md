@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tracer class foundation with node storage and ID generation
 - Input node creation in Tracer for capturing graph entry points
 - `record_call()` method to Tracer for capturing module invocations
+- `trace()` method to Tracer for executing forward() and returning InferenceGraph
 
 ### Changed
 - N/A

@@ -17,7 +17,9 @@ Example:
     ...         return self.llm(text)
     >>>
     >>> tracer = Tracer()
-    >>> # graph = tracer.trace(Pipeline(), "input text")  # Coming in PR-016
+    >>> graph = tracer.trace(Pipeline(), "input text")
+    >>> graph.input_ids
+    ['input:input_0']
 """
 
 from __future__ import annotations
@@ -25,7 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from inf_engine.graph import GraphNode
+from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.tracing.context import trace_context
 from inf_engine.tracing.proxy import Proxy
 
 if TYPE_CHECKING:
@@ -298,3 +301,131 @@ class Tracer:
             This is a stub method. Full implementation coming in a future PR.
         """
         raise NotImplementedError("record_getitem will be implemented in a future PR")
+
+    def _collect_output_ids(self, output: Any) -> list[str]:
+        """Extract node IDs from the output structure.
+
+        Recursively traverses the output to find all Proxy objects and
+        collect their node IDs. Supports nested structures including
+        dictionaries, lists, and tuples.
+
+        Args:
+            output: The output from forward(), which may be a Proxy,
+                a collection containing Proxies, or a literal value.
+
+        Returns:
+            A list of node IDs representing the outputs of the traced graph.
+            Returns an empty list if the output contains no Proxy objects.
+
+        Example:
+            >>> tracer = Tracer()
+            >>> proxy1 = tracer._create_input_node("a", "val1")
+            >>> proxy2 = tracer._create_input_node("b", "val2")
+            >>>
+            >>> # Single proxy output
+            >>> tracer._collect_output_ids(proxy1)
+            ['input:a']
+            >>>
+            >>> # Dict output
+            >>> tracer._collect_output_ids({"x": proxy1, "y": proxy2})
+            ['input:a', 'input:b']
+            >>>
+            >>> # List output
+            >>> tracer._collect_output_ids([proxy1, proxy2])
+            ['input:a', 'input:b']
+            >>>
+            >>> # Literal output (no proxies)
+            >>> tracer._collect_output_ids("literal string")
+            []
+        """
+        if isinstance(output, Proxy):
+            return [output.node_id]
+        elif isinstance(output, dict):
+            ids: list[str] = []
+            for value in output.values():
+                ids.extend(self._collect_output_ids(value))
+            return ids
+        elif isinstance(output, (list, tuple)):
+            ids = []
+            for item in output:
+                ids.extend(self._collect_output_ids(item))
+            return ids
+        else:
+            return []
+
+    def trace(
+        self,
+        module: InferenceModule,
+        *args: Any,
+        **kwargs: Any,
+    ) -> InferenceGraph:
+        """Trace a module's forward() and return the captured graph.
+
+        Executes the module's forward() method with Proxy objects representing
+        the inputs, capturing all module invocations into an InferenceGraph.
+        The trace context is set so that nested module calls are recorded.
+
+        Args:
+            module: The InferenceModule to trace.
+            *args: Positional arguments to pass to forward(). Each argument
+                becomes an input node in the graph.
+            **kwargs: Keyword arguments to pass to forward(). Each kwarg
+                becomes an input node in the graph.
+
+        Returns:
+            An InferenceGraph containing all traced nodes, input IDs,
+            output IDs, and parameters from the module tree.
+
+        Note:
+            This method resets the tracer state before tracing, so each
+            call produces an independent graph. The trace context is
+            automatically cleaned up when tracing completes.
+
+        Example:
+            >>> from inf_engine.module import InferenceModule, LLMInference
+            >>>
+            >>> class SimplePipeline(InferenceModule):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.llm = LLMInference(alias="fast")
+            ...
+            ...     def forward(self, text: str) -> str:
+            ...         return self.llm(text)
+            >>>
+            >>> tracer = Tracer()
+            >>> graph = tracer.trace(SimplePipeline(), "input text")
+            >>> len(graph.nodes)  # 1 input + 1 LLM call = 2
+            2
+            >>> graph.input_ids
+            ['input:input_0']
+            >>> "LLMInference_1" in graph.output_ids
+            True
+        """
+        # Reset to ensure clean state
+        self.reset()
+
+        with trace_context(self):
+            # Create input proxies for positional arguments
+            input_proxies: list[Proxy] = []
+            for i, arg in enumerate(args):
+                proxy = self._create_input_node(f"input_{i}", arg)
+                input_proxies.append(proxy)
+
+            # Create input proxies for keyword arguments
+            kwarg_proxies: dict[str, Proxy] = {}
+            for key, value in kwargs.items():
+                proxy = self._create_input_node(f"input_{key}", value)
+                kwarg_proxies[key] = proxy
+
+            # Execute forward with proxies
+            output = module.forward(*input_proxies, **kwarg_proxies)
+
+            # Collect output node IDs
+            self.output_ids = self._collect_output_ids(output)
+
+        return InferenceGraph(
+            nodes=dict(self.nodes),
+            input_ids=list(self.input_ids),
+            output_ids=list(self.output_ids),
+            parameters=dict(module.named_parameters()),
+        )
