@@ -10,6 +10,18 @@ these examples use mock modules that simulate computation. The API is
 identical - once resources are configured, the same patterns work with
 real LLM calls.
 
+Once Phase 4 (Resources) is complete, you'll also be able to use the
+preferred "bound execution" pattern:
+
+    # Bind resources once, call directly
+    pipeline = MyPipeline().bind(resources=config)
+    result = await pipeline("input")
+
+    # Batch execution
+    results = await pipeline(["input_a", "input_b", "input_c"])
+
+This mirrors PyTorch's intuitive model(x) → y pattern.
+
 Run with: python examples/05_execution.py
 """
 
