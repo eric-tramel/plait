@@ -205,10 +205,12 @@ class InferenceGraph:
             dependencies appear first, followed by nodes whose dependencies
             have been satisfied.
 
+        Raises:
+            ValueError: If the graph contains a cycle. The error message
+                includes the cycle path for debugging.
+
         Note:
-            This method assumes the graph is acyclic (DAG). Cyclic graphs
-            will result in infinite recursion. Only nodes reachable from
-            output_ids are included in the result.
+            Only nodes reachable from output_ids are included in the result.
 
         Example:
             >>> # Linear graph: input -> llm1 -> llm2
@@ -218,20 +220,38 @@ class InferenceGraph:
             >>> # Diamond graph: input -> [a, b] -> merge
             >>> graph.topological_order()
             ['input:text', 'a', 'b', 'merge']  # a, b order may vary
+
+            >>> # Cyclic graph raises ValueError
+            >>> graph.topological_order()
+            ValueError: Cycle detected in graph: a -> b -> c -> a
         """
         visited: set[str] = set()
+        visiting: set[str] = set()  # Track nodes in current DFS path
         order: list[str] = []
 
-        def visit(node_id: str) -> None:
+        def visit(node_id: str, path: list[str]) -> None:
             if node_id in visited:
                 return
-            visited.add(node_id)
+            if node_id in visiting:
+                # Found a cycle - construct the cycle path
+                cycle_start = path.index(node_id)
+                cycle_path = path[cycle_start:] + [node_id]
+                cycle_str = " -> ".join(cycle_path)
+                raise ValueError(f"Cycle detected in graph: {cycle_str}")
+
+            visiting.add(node_id)
+            path.append(node_id)
+
             for dep_id in self.nodes[node_id].dependencies:
-                visit(dep_id)
+                visit(dep_id, path)
+
+            path.pop()
+            visiting.remove(node_id)
+            visited.add(node_id)
             order.append(node_id)
 
         for output_id in self.output_ids:
-            visit(output_id)
+            visit(output_id, [])
 
         return order
 

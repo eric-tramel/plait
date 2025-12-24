@@ -876,6 +876,137 @@ class TestInferenceGraphTopologicalOrder:
         # Verify the order is exactly what we expect
         assert order == ["node_0", "node_1", "node_2", "node_3", "node_4"]
 
+    def test_self_referencing_node_raises_error(self) -> None:
+        """A node that depends on itself raises ValueError."""
+        import pytest
+
+        node = GraphNode(
+            id="self_ref",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["self_ref"],
+        )
+        graph = InferenceGraph(
+            nodes={"self_ref": node},
+            input_ids=[],
+            output_ids=["self_ref"],
+        )
+
+        with pytest.raises(ValueError, match="Cycle detected in graph"):
+            graph.topological_order()
+
+    def test_two_node_cycle_raises_error(self) -> None:
+        """A cycle between two nodes raises ValueError."""
+        import pytest
+
+        node_a = GraphNode(
+            id="a",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["b"],
+        )
+        node_b = GraphNode(
+            id="b",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["a"],
+        )
+        graph = InferenceGraph(
+            nodes={"a": node_a, "b": node_b},
+            input_ids=[],
+            output_ids=["a"],
+        )
+
+        with pytest.raises(ValueError, match="Cycle detected in graph"):
+            graph.topological_order()
+
+    def test_three_node_cycle_raises_error(self) -> None:
+        """A cycle among three nodes raises ValueError."""
+        import pytest
+
+        node_a = GraphNode(
+            id="a",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["c"],
+        )
+        node_b = GraphNode(
+            id="b",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["a"],
+        )
+        node_c = GraphNode(
+            id="c",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["b"],
+        )
+        graph = InferenceGraph(
+            nodes={"a": node_a, "b": node_b, "c": node_c},
+            input_ids=[],
+            output_ids=["a"],
+        )
+
+        with pytest.raises(ValueError, match="Cycle detected in graph"):
+            graph.topological_order()
+
+    def test_cycle_error_includes_path(self) -> None:
+        """Cycle error message includes the cycle path."""
+        import pytest
+
+        node_a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=["b"])
+        node_b = GraphNode(id="b", module=None, args=(), kwargs={}, dependencies=["c"])
+        node_c = GraphNode(id="c", module=None, args=(), kwargs={}, dependencies=["a"])
+        graph = InferenceGraph(
+            nodes={"a": node_a, "b": node_b, "c": node_c},
+            input_ids=[],
+            output_ids=["a"],
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            graph.topological_order()
+
+        # The error should contain arrows indicating the cycle
+        assert " -> " in str(excinfo.value)
+
+    def test_graph_with_cycle_and_valid_part(self) -> None:
+        """Graph with both a valid portion and a cycle in the reachable part."""
+        import pytest
+
+        # input -> middle -> a -> b -> c -> a (cycle)
+        input_node = GraphNode(
+            id="input", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        middle_node = GraphNode(
+            id="middle", module=None, args=(), kwargs={}, dependencies=["input"]
+        )
+        node_a = GraphNode(
+            id="a", module=None, args=(), kwargs={}, dependencies=["middle", "c"]
+        )
+        node_b = GraphNode(id="b", module=None, args=(), kwargs={}, dependencies=["a"])
+        node_c = GraphNode(id="c", module=None, args=(), kwargs={}, dependencies=["b"])
+        graph = InferenceGraph(
+            nodes={
+                "input": input_node,
+                "middle": middle_node,
+                "a": node_a,
+                "b": node_b,
+                "c": node_c,
+            },
+            input_ids=["input"],
+            output_ids=["a"],
+        )
+
+        with pytest.raises(ValueError, match="Cycle detected"):
+            graph.topological_order()
+
 
 class TestInferenceGraphAncestors:
     """Tests for InferenceGraph.ancestors() method."""
