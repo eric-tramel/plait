@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Practical examples in `examples/` demonstrating modules, parameters, and LLM pipelines
 - Trace context infrastructure for DAG capture using ContextVar
 - Proxy class for symbolic tracing
+- GraphNode and InferenceGraph data structures for representing traced execution graphs
 
 ### Changed
 - N/A
