@@ -7,7 +7,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 ## Progress
 
 - [x] **Phase 1: Foundation** (7/7)
-- [ ] **Phase 2: Tracing** (9/11)
+- [ ] **Phase 2: Tracing** (10/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
 - [ ] **Phase 5: Production Features** (0/11)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 16/74 PRs completed**
+**Total: 17/74 PRs completed**
 
 ---
 
@@ -219,7 +219,7 @@ Every PR must:
   - `tests/unit/test_tracer.py` (full trace of simple module)
 - **CHANGELOG**: "Add trace() method to Tracer"
 
-### - [ ] PR-017: Connect InferenceModule.__call__ to Tracer
+### - [x] PR-017: Connect InferenceModule.__call__ to Tracer
 - **Branch**: `feat/module-trace-integration`
 - **Description**: Update `InferenceModule.__call__` to check trace context and record calls
 - **Design Docs**:
