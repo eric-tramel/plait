@@ -948,3 +948,352 @@ class TestTaskLifecycle:
         )
 
         assert state.is_complete() is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ExecutionState Failure Handling Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def create_deep_linear_graph() -> InferenceGraph:
+    """Create a deeper linear graph: input -> llm1 -> llm2 -> llm3."""
+    input_node = GraphNode(
+        id="input:input_0",
+        module=InputNode("hello"),
+        args=(),
+        kwargs={},
+        dependencies=[],
+    )
+    llm1_node = GraphNode(
+        id="LLMInference_1",
+        module=LLMInference(alias="fast"),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    llm2_node = GraphNode(
+        id="LLMInference_2",
+        module=LLMInference(alias="smart"),
+        args=("LLMInference_1",),
+        kwargs={},
+        dependencies=["LLMInference_1"],
+    )
+    llm3_node = GraphNode(
+        id="LLMInference_3",
+        module=LLMInference(alias="final"),
+        args=("LLMInference_2",),
+        kwargs={},
+        dependencies=["LLMInference_2"],
+    )
+    return InferenceGraph(
+        nodes={
+            "input:input_0": input_node,
+            "LLMInference_1": llm1_node,
+            "LLMInference_2": llm2_node,
+            "LLMInference_3": llm3_node,
+        },
+        input_ids=["input:input_0"],
+        output_ids=["LLMInference_3"],
+    )
+
+
+class TestMarkFailed:
+    """Tests for ExecutionState.mark_failed()."""
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_updates_status(self) -> None:
+        """mark_failed sets task status to FAILED."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        await state.get_next_task()
+        state.mark_failed("input:input_0", ValueError("Test error"))
+
+        assert state.status["input:input_0"] == TaskStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_stores_error(self) -> None:
+        """mark_failed stores the exception in errors dict."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        await state.get_next_task()
+        error = ValueError("API failed")
+        state.mark_failed("input:input_0", error)
+
+        assert "input:input_0" in state.errors
+        assert state.errors["input:input_0"] is error
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_removes_from_in_progress(self) -> None:
+        """mark_failed removes task from in_progress dict."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        await state.get_next_task()
+        assert "input:input_0" in state.in_progress
+
+        state.mark_failed("input:input_0", ValueError("Error"))
+
+        assert "input:input_0" not in state.in_progress
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_returns_cancelled_list(self) -> None:
+        """mark_failed returns list of cancelled descendant node IDs."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input, then fail LLMInference_1
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+        await state.get_next_task()
+
+        cancelled = state.mark_failed("LLMInference_1", ValueError("Error"))
+
+        # LLMInference_2 should be cancelled
+        assert cancelled == ["LLMInference_2"]
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_cancels_descendants(self) -> None:
+        """mark_failed sets all descendant statuses to CANCELLED."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input, then fail LLMInference_1
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+        await state.get_next_task()
+
+        state.mark_failed("LLMInference_1", ValueError("Error"))
+
+        assert state.status["LLMInference_2"] == TaskStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_cascades_through_chain(self) -> None:
+        """mark_failed cancels all descendants in a chain."""
+        graph = create_deep_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input, then fail LLMInference_1
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+        await state.get_next_task()
+
+        cancelled = state.mark_failed("LLMInference_1", ValueError("Error"))
+
+        # Both LLMInference_2 and LLMInference_3 should be cancelled
+        assert set(cancelled) == {"LLMInference_2", "LLMInference_3"}
+        assert state.status["LLMInference_2"] == TaskStatus.CANCELLED
+        assert state.status["LLMInference_3"] == TaskStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_no_descendants(self) -> None:
+        """mark_failed returns empty list when no descendants."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        await state.get_next_task()
+        cancelled = state.mark_failed("input:input_0", ValueError("Error"))
+
+        assert cancelled == []
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_diamond_partial_cascade(self) -> None:
+        """mark_failed in diamond graph cancels merge but not sibling branch."""
+        graph = create_diamond_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Start branch A and fail it
+        task_a = await state.get_next_task()
+        assert task_a is not None
+        state.mark_failed(task_a.node_id, ValueError("Branch A failed"))
+
+        # Merge node should be cancelled
+        assert state.status["LLMInference_3"] == TaskStatus.CANCELLED
+
+        # Branch B should still be able to execute (PENDING)
+        # Get the remaining pending task - it should be branch B
+        task_b = await state.get_next_task()
+        assert task_b is not None
+        # The sibling branch is still pending/in_progress, not cancelled
+        assert state.status[task_b.node_id] == TaskStatus.IN_PROGRESS
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_allows_is_complete(self) -> None:
+        """is_complete returns True when all nodes are in terminal states."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Fail LLMInference_1 (which cancels LLMInference_2)
+        await state.get_next_task()
+        state.mark_failed("LLMInference_1", ValueError("Error"))
+
+        # All nodes are now in terminal states: COMPLETED, FAILED, CANCELLED
+        assert state.status["input:input_0"] == TaskStatus.COMPLETED
+        assert state.status["LLMInference_1"] == TaskStatus.FAILED
+        assert state.status["LLMInference_2"] == TaskStatus.CANCELLED
+        assert state.is_complete() is True
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_preserves_completed_results(self) -> None:
+        """mark_failed doesn't affect already completed nodes."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Fail LLMInference_1
+        await state.get_next_task()
+        state.mark_failed("LLMInference_1", ValueError("Error"))
+
+        # Input should still have its result
+        assert "input:input_0" in state.results
+        assert state.results["input:input_0"].value == "hello"
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_handles_not_in_progress(self) -> None:
+        """mark_failed handles gracefully when node not in in_progress."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Mark failed without getting the task first (edge case)
+        # This simulates a race condition or external failure detection
+        state.mark_failed("input:input_0", ValueError("Error"))
+
+        assert state.status["input:input_0"] == TaskStatus.FAILED
+        assert "input:input_0" in state.errors
+
+    @pytest.mark.asyncio
+    async def test_mark_failed_error_message_preserved(self) -> None:
+        """mark_failed preserves the full error information."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        await state.get_next_task()
+        error = RuntimeError("Detailed error: connection timeout after 30s")
+        state.mark_failed("input:input_0", error)
+
+        assert str(state.errors["input:input_0"]) == str(error)
+        assert isinstance(state.errors["input:input_0"], RuntimeError)
+
+
+class TestFailureLifecycle:
+    """Integration tests for failure handling in graph execution."""
+
+    @pytest.mark.asyncio
+    async def test_early_failure_cancels_entire_chain(self) -> None:
+        """Early failure in linear graph cancels all subsequent nodes."""
+        graph = create_deep_linear_graph()
+        state = ExecutionState(graph)
+
+        # Fail at input level
+        await state.get_next_task()
+        state.mark_failed("input:input_0", ValueError("Input error"))
+
+        # All other nodes should be cancelled
+        assert state.status["LLMInference_1"] == TaskStatus.CANCELLED
+        assert state.status["LLMInference_2"] == TaskStatus.CANCELLED
+        assert state.status["LLMInference_3"] == TaskStatus.CANCELLED
+        assert state.is_complete() is True
+
+    @pytest.mark.asyncio
+    async def test_mid_chain_failure(self) -> None:
+        """Mid-chain failure cancels downstream but preserves upstream results."""
+        graph = create_deep_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input and LLMInference_1
+        task0 = await state.get_next_task()
+        assert task0 is not None
+        state.mark_complete(
+            task0.node_id,
+            TaskResult(node_id=task0.node_id, value="input_val", duration_ms=5.0),
+        )
+
+        task1 = await state.get_next_task()
+        assert task1 is not None
+        state.mark_complete(
+            task1.node_id,
+            TaskResult(node_id=task1.node_id, value="llm1_val", duration_ms=10.0),
+        )
+
+        # Fail LLMInference_2
+        task2 = await state.get_next_task()
+        assert task2 is not None
+        state.mark_failed(task2.node_id, ValueError("LLM2 failed"))
+
+        # Upstream results preserved
+        assert state.results["input:input_0"].value == "input_val"
+        assert state.results["LLMInference_1"].value == "llm1_val"
+
+        # Current node failed, downstream cancelled
+        assert state.status["LLMInference_2"] == TaskStatus.FAILED
+        assert state.status["LLMInference_3"] == TaskStatus.CANCELLED
+        assert state.is_complete() is True
+
+    @pytest.mark.asyncio
+    async def test_parallel_branch_failure_isolation(self) -> None:
+        """Failure in one parallel branch doesn't cancel sibling branch."""
+        graph = create_parallel_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Start both branches
+        task_a = await state.get_next_task()
+        task_b = await state.get_next_task()
+        assert task_a is not None
+        assert task_b is not None
+
+        # Fail one branch
+        state.mark_failed(task_a.node_id, ValueError("Branch A failed"))
+
+        # Other branch should still be in progress
+        assert state.status[task_b.node_id] == TaskStatus.IN_PROGRESS
+
+        # Complete the other branch
+        state.mark_complete(
+            task_b.node_id,
+            TaskResult(node_id=task_b.node_id, value="branch_b", duration_ms=10.0),
+        )
+
+        # Now complete
+        assert state.is_complete() is True
+
+        # Check final states
+        assert state.status["input:input_0"] == TaskStatus.COMPLETED
+        assert state.status[task_a.node_id] == TaskStatus.FAILED
+        assert state.status[task_b.node_id] == TaskStatus.COMPLETED

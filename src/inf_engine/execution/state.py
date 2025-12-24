@@ -537,6 +537,51 @@ class ExecutionState:
 
         return newly_ready
 
+    def mark_failed(self, node_id: str, error: Exception) -> list[str]:
+        """Mark a task as failed and cancel all its descendants.
+
+        Updates the task status to FAILED, stores the error, and removes
+        the task from in_progress. Then cancels all descendant nodes since
+        they can no longer execute (their dependency has failed).
+
+        Args:
+            node_id: The ID of the node that failed.
+            error: The exception that caused the failure.
+
+        Returns:
+            List of node IDs that were cancelled as a result of this failure.
+            These are all descendants of the failed node.
+
+        Note:
+            Cancelled nodes are transitioned to CANCELLED status regardless
+            of their current status (BLOCKED, PENDING, etc.). This cascading
+            cancellation ensures that no work is wasted on tasks that cannot
+            produce useful results.
+
+        Example:
+            >>> # If node "LLMInference_1" fails in a linear graph:
+            >>> # input -> LLMInference_1 -> LLMInference_2 -> LLMInference_3
+            >>> cancelled = state.mark_failed("LLMInference_1", ValueError("API error"))
+            >>> cancelled
+            ['LLMInference_2', 'LLMInference_3']
+            >>> state.status["LLMInference_1"]
+            <TaskStatus.FAILED: 5>
+            >>> state.errors["LLMInference_1"]
+            ValueError('API error')
+        """
+        self.status[node_id] = TaskStatus.FAILED
+        self.errors[node_id] = error
+        self.in_progress.pop(node_id, None)
+
+        # Cancel all descendants
+        cancelled: list[str] = []
+        descendants = self.graph.descendants(node_id)
+        for desc_id in descendants:
+            self.status[desc_id] = TaskStatus.CANCELLED
+            cancelled.append(desc_id)
+
+        return cancelled
+
     def is_complete(self) -> bool:
         """Check if all tasks are done (completed, failed, or cancelled).
 
