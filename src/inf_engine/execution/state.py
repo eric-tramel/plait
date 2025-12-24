@@ -459,3 +459,107 @@ class ExecutionState:
             3
         """
         return sum(1 for s in self.status.values() if s == TaskStatus.BLOCKED)
+
+    async def get_next_task(self) -> Task | None:
+        """Get the next task to execute from the pending queue.
+
+        Retrieves the highest-priority task from the pending queue and
+        transitions it to IN_PROGRESS status. Returns None if no tasks
+        are currently pending.
+
+        Returns:
+            The next Task to execute, or None if the pending queue is empty.
+
+        Note:
+            This method is async because asyncio.PriorityQueue.get() is
+            a coroutine. The task is automatically moved to the in_progress
+            dict when retrieved.
+
+        Example:
+            >>> task = await state.get_next_task()
+            >>> if task:
+            ...     print(f"Executing {task.node_id}")
+            ...     # ... execute task ...
+            ...     state.mark_complete(task.node_id, result)
+        """
+        if self.pending.empty():
+            return None
+
+        task = await self.pending.get()
+        self.status[task.node_id] = TaskStatus.IN_PROGRESS
+        self.in_progress[task.node_id] = task
+        return task
+
+    def mark_complete(self, node_id: str, result: TaskResult) -> list[str]:
+        """Mark a task as complete and return newly-ready node IDs.
+
+        Updates the task status to COMPLETED, stores the result, and removes
+        the task from in_progress. Then checks all dependent nodes to see if
+        any have become ready (all their dependencies are now complete).
+
+        Args:
+            node_id: The ID of the node that completed.
+            result: The TaskResult containing the output value and metadata.
+
+        Returns:
+            List of node IDs that became ready as a result of this completion.
+            These nodes have been added to the pending queue and their status
+            changed from BLOCKED to PENDING.
+
+        Note:
+            This method automatically triggers _make_ready() for any dependent
+            nodes whose dependencies are now all satisfied.
+
+        Example:
+            >>> result = TaskResult(
+            ...     node_id="input:input_0",
+            ...     value="hello",
+            ...     duration_ms=10.5,
+            ... )
+            >>> newly_ready = state.mark_complete("input:input_0", result)
+            >>> print(newly_ready)
+            ['LLMInference_1']
+        """
+        self.status[node_id] = TaskStatus.COMPLETED
+        self.results[node_id] = result
+        self.in_progress.pop(node_id, None)
+
+        # Find newly-ready dependents
+        newly_ready: list[str] = []
+        for dependent_id in self.dependents[node_id]:
+            self.waiting_on[dependent_id].discard(node_id)
+
+            # Check if all dependencies are now satisfied
+            if not self.waiting_on[dependent_id]:
+                if self.status[dependent_id] == TaskStatus.BLOCKED:
+                    self._make_ready(dependent_id)
+                    newly_ready.append(dependent_id)
+
+        return newly_ready
+
+    def is_complete(self) -> bool:
+        """Check if all tasks are done (completed, failed, or cancelled).
+
+        A graph execution is complete when no tasks are PENDING, BLOCKED,
+        or IN_PROGRESS. This means all tasks have reached a terminal state
+        (COMPLETED, FAILED, or CANCELLED).
+
+        Returns:
+            True if all tasks have finished, False if any are still active.
+
+        Example:
+            >>> while not state.is_complete():
+            ...     task = await state.get_next_task()
+            ...     if task:
+            ...         # execute task
+            ...         state.mark_complete(task.node_id, result)
+            >>> print("Execution finished!")
+        """
+        for status in self.status.values():
+            if status in (
+                TaskStatus.PENDING,
+                TaskStatus.BLOCKED,
+                TaskStatus.IN_PROGRESS,
+            ):
+                return False
+        return True
