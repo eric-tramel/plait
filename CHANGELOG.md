@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `trace()` method to Tracer for executing forward() and returning InferenceGraph
 - InferenceModule integration with tracing system via `__call__` method
 - Tracing integration tests for nested modules, shared inputs, and dict outputs
+- Task and TaskResult types for execution state management
 
 ### Changed
 - N/A
