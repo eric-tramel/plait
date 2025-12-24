@@ -427,3 +427,306 @@ class TestGraphNodeBranching:
         )
 
         assert node.branch_value is False
+
+
+class TestInferenceGraphTopologicalOrder:
+    """Tests for InferenceGraph.topological_order() method."""
+
+    def test_single_node_graph(self) -> None:
+        """Topological order of a single node graph."""
+        node = GraphNode(
+            id="only_node",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        graph = InferenceGraph(
+            nodes={"only_node": node},
+            input_ids=["only_node"],
+            output_ids=["only_node"],
+        )
+
+        order = graph.topological_order()
+
+        assert order == ["only_node"]
+
+    def test_linear_graph(self) -> None:
+        """Topological order of a linear graph (A -> B -> C)."""
+        node_a = GraphNode(
+            id="input:a",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        node_b = GraphNode(
+            id="b",
+            module=None,
+            args=("input:a",),
+            kwargs={},
+            dependencies=["input:a"],
+        )
+        node_c = GraphNode(
+            id="c",
+            module=None,
+            args=("b",),
+            kwargs={},
+            dependencies=["b"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:a": node_a, "b": node_b, "c": node_c},
+            input_ids=["input:a"],
+            output_ids=["c"],
+        )
+
+        order = graph.topological_order()
+
+        # A must come before B, B must come before C
+        assert order == ["input:a", "b", "c"]
+
+    def test_diamond_graph(self) -> None:
+        """Topological order of a diamond graph (A -> [B, C] -> D)."""
+        node_a = GraphNode(
+            id="input:a",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        node_b = GraphNode(
+            id="b",
+            module=None,
+            args=("input:a",),
+            kwargs={},
+            dependencies=["input:a"],
+        )
+        node_c = GraphNode(
+            id="c",
+            module=None,
+            args=("input:a",),
+            kwargs={},
+            dependencies=["input:a"],
+        )
+        node_d = GraphNode(
+            id="d",
+            module=None,
+            args=("b", "c"),
+            kwargs={},
+            dependencies=["b", "c"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:a": node_a, "b": node_b, "c": node_c, "d": node_d},
+            input_ids=["input:a"],
+            output_ids=["d"],
+        )
+
+        order = graph.topological_order()
+
+        # A must come before B and C; B and C must come before D
+        assert order.index("input:a") < order.index("b")
+        assert order.index("input:a") < order.index("c")
+        assert order.index("b") < order.index("d")
+        assert order.index("c") < order.index("d")
+        assert len(order) == 4
+
+    def test_complex_graph(self) -> None:
+        """Topological order of a complex graph with multiple paths.
+
+        Graph structure:
+            input1 ─┬─> llm1 ──┬─> llm3 ─┬─> output
+            input2 ─┴─> llm2 ──┘         │
+                                  llm4 ──┘
+        """
+        input1 = GraphNode(
+            id="input:1", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        input2 = GraphNode(
+            id="input:2", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        llm1 = GraphNode(
+            id="llm1",
+            module=None,
+            args=("input:1", "input:2"),
+            kwargs={},
+            dependencies=["input:1", "input:2"],
+        )
+        llm2 = GraphNode(
+            id="llm2",
+            module=None,
+            args=("input:1", "input:2"),
+            kwargs={},
+            dependencies=["input:1", "input:2"],
+        )
+        llm3 = GraphNode(
+            id="llm3",
+            module=None,
+            args=("llm1", "llm2"),
+            kwargs={},
+            dependencies=["llm1", "llm2"],
+        )
+        llm4 = GraphNode(
+            id="llm4",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        output = GraphNode(
+            id="output",
+            module=None,
+            args=("llm3", "llm4"),
+            kwargs={},
+            dependencies=["llm3", "llm4"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:1": input1,
+                "input:2": input2,
+                "llm1": llm1,
+                "llm2": llm2,
+                "llm3": llm3,
+                "llm4": llm4,
+                "output": output,
+            },
+            input_ids=["input:1", "input:2"],
+            output_ids=["output"],
+        )
+
+        order = graph.topological_order()
+
+        # Verify all dependencies are satisfied
+        assert order.index("input:1") < order.index("llm1")
+        assert order.index("input:2") < order.index("llm1")
+        assert order.index("input:1") < order.index("llm2")
+        assert order.index("input:2") < order.index("llm2")
+        assert order.index("llm1") < order.index("llm3")
+        assert order.index("llm2") < order.index("llm3")
+        assert order.index("llm3") < order.index("output")
+        assert order.index("llm4") < order.index("output")
+        assert len(order) == 7
+
+    def test_multiple_outputs(self) -> None:
+        """Topological order includes all nodes reachable from outputs."""
+        input_node = GraphNode(
+            id="input", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        branch1 = GraphNode(
+            id="branch1",
+            module=None,
+            args=("input",),
+            kwargs={},
+            dependencies=["input"],
+        )
+        branch2 = GraphNode(
+            id="branch2",
+            module=None,
+            args=("input",),
+            kwargs={},
+            dependencies=["input"],
+        )
+        graph = InferenceGraph(
+            nodes={"input": input_node, "branch1": branch1, "branch2": branch2},
+            input_ids=["input"],
+            output_ids=["branch1", "branch2"],
+        )
+
+        order = graph.topological_order()
+
+        # Input comes before both branches
+        assert order.index("input") < order.index("branch1")
+        assert order.index("input") < order.index("branch2")
+        assert len(order) == 3
+
+    def test_empty_graph(self) -> None:
+        """Topological order of an empty graph is empty."""
+        graph = InferenceGraph(
+            nodes={},
+            input_ids=[],
+            output_ids=[],
+        )
+
+        order = graph.topological_order()
+
+        assert order == []
+
+    def test_parallel_independent_chains(self) -> None:
+        """Topological order handles independent parallel chains.
+
+        Graph structure:
+            input1 -> a -> b ─┐
+                              ├─> merge
+            input2 -> c -> d ─┘
+        """
+        input1 = GraphNode(
+            id="input:1", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        input2 = GraphNode(
+            id="input:2", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        a = GraphNode(
+            id="a", module=None, args=("input:1",), kwargs={}, dependencies=["input:1"]
+        )
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        c = GraphNode(
+            id="c", module=None, args=("input:2",), kwargs={}, dependencies=["input:2"]
+        )
+        d = GraphNode(id="d", module=None, args=("c",), kwargs={}, dependencies=["c"])
+        merge = GraphNode(
+            id="merge",
+            module=None,
+            args=("b", "d"),
+            kwargs={},
+            dependencies=["b", "d"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:1": input1,
+                "input:2": input2,
+                "a": a,
+                "b": b,
+                "c": c,
+                "d": d,
+                "merge": merge,
+            },
+            input_ids=["input:1", "input:2"],
+            output_ids=["merge"],
+        )
+
+        order = graph.topological_order()
+
+        # Each chain must be in order
+        assert order.index("input:1") < order.index("a")
+        assert order.index("a") < order.index("b")
+        assert order.index("input:2") < order.index("c")
+        assert order.index("c") < order.index("d")
+        assert order.index("b") < order.index("merge")
+        assert order.index("d") < order.index("merge")
+        assert len(order) == 7
+
+    def test_dependencies_appear_before_dependents(self) -> None:
+        """Every node appears after all its dependencies in the order."""
+        # Create a graph where each node depends on all previous nodes
+        nodes = {}
+        prev_ids: list[str] = []
+        for i in range(5):
+            node_id = f"node_{i}"
+            nodes[node_id] = GraphNode(
+                id=node_id,
+                module=None,
+                args=tuple(prev_ids),
+                kwargs={},
+                dependencies=list(prev_ids),
+            )
+            prev_ids.append(node_id)
+
+        graph = InferenceGraph(
+            nodes=nodes,
+            input_ids=["node_0"],
+            output_ids=["node_4"],
+        )
+
+        order = graph.topological_order()
+
+        # Verify the order is exactly what we expect
+        assert order == ["node_0", "node_1", "node_2", "node_3", "node_4"]

@@ -138,11 +138,53 @@ class InferenceGraph:
         3
 
     Note:
-        Graph traversal methods (topological_order, ancestors, descendants)
-        will be added in subsequent PRs.
+        Graph traversal methods (ancestors, descendants) will be added
+        in subsequent PRs.
     """
 
     nodes: dict[str, GraphNode]
     input_ids: list[str]
     output_ids: list[str]
     parameters: dict[str, Parameter] = field(default_factory=dict)
+
+    def topological_order(self) -> list[str]:
+        """Return node IDs in valid execution order.
+
+        Performs a depth-first traversal starting from output nodes,
+        visiting dependencies before each node. This ensures nodes are
+        ordered such that all dependencies of a node appear before it.
+
+        Returns:
+            A list of node IDs in topological order. Nodes with no
+            dependencies appear first, followed by nodes whose dependencies
+            have been satisfied.
+
+        Note:
+            This method assumes the graph is acyclic (DAG). Cyclic graphs
+            will result in infinite recursion. Only nodes reachable from
+            output_ids are included in the result.
+
+        Example:
+            >>> # Linear graph: input -> llm1 -> llm2
+            >>> graph.topological_order()
+            ['input:text', 'LLM_1', 'LLM_2']
+
+            >>> # Diamond graph: input -> [a, b] -> merge
+            >>> graph.topological_order()
+            ['input:text', 'a', 'b', 'merge']  # a, b order may vary
+        """
+        visited: set[str] = set()
+        order: list[str] = []
+
+        def visit(node_id: str) -> None:
+            if node_id in visited:
+                return
+            visited.add(node_id)
+            for dep_id in self.nodes[node_id].dependencies:
+                visit(dep_id)
+            order.append(node_id)
+
+        for output_id in self.output_ids:
+            visit(output_id)
+
+        return order
