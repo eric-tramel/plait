@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ExecutionState failure handling with `mark_failed()` and descendant cancellation
 - ExecutionState `requeue()` method for retrying tasks with descendant dropping
 - ExecutionState `get_outputs()` method for retrieving final output values
+- Scheduler class with concurrency control via semaphore
 
 ### Changed
 - N/A
