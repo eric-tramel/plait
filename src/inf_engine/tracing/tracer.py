@@ -22,13 +22,41 @@ Example:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from inf_engine.graph import GraphNode
+from inf_engine.tracing.proxy import Proxy
 
 if TYPE_CHECKING:
     from inf_engine.module import InferenceModule
-    from inf_engine.tracing.proxy import Proxy
+
+
+@dataclass
+class InputNode:
+    """Placeholder node representing an input to the traced graph.
+
+    InputNode wraps the actual input value provided during tracing.
+    During execution, the scheduler retrieves the value from the InputNode
+    to feed into downstream operations.
+
+    Attributes:
+        value: The actual input value captured during tracing.
+
+    Example:
+        >>> node = InputNode(value="Hello, world!")
+        >>> node.value
+        'Hello, world!'
+
+        >>> # During tracing, input nodes are created automatically
+        >>> tracer = Tracer()
+        >>> proxy = tracer._create_input_node("text", "input text")
+        >>> input_node = tracer.nodes[proxy.node_id].module
+        >>> input_node.value
+        'input text'
+    """
+
+    value: Any
 
 
 class Tracer:
@@ -133,6 +161,46 @@ class Tracer:
         self._node_counter = 0
         self._module_stack.clear()
         self._branch_stack.clear()
+
+    def _create_input_node(self, name: str, value: Any) -> Proxy:
+        """Create a node representing an input to the traced graph.
+
+        Creates an InputNode that wraps the given value and registers it
+        in the tracer's node storage. The node ID is added to input_ids
+        to mark it as a graph entry point.
+
+        Args:
+            name: A descriptive name for this input (e.g., "input_0", "text").
+            value: The actual input value to capture.
+
+        Returns:
+            A Proxy representing this input node. The proxy can be passed
+            to other modules to create dependency edges.
+
+        Example:
+            >>> tracer = Tracer()
+            >>> proxy = tracer._create_input_node("text", "Hello, world!")
+            >>> proxy.node_id
+            'input:text'
+            >>> tracer.input_ids
+            ['input:text']
+            >>> tracer.nodes['input:text'].module.value
+            'Hello, world!'
+        """
+        node_id = f"input:{name}"
+        self.input_ids.append(node_id)
+
+        node = GraphNode(
+            id=node_id,
+            module=InputNode(value),
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name=f"Input({name})",
+        )
+        self.nodes[node_id] = node
+
+        return Proxy(node_id=node_id, tracer=self)
 
     def record_getitem(self, proxy: Proxy, key: Any) -> Proxy:
         """Record a getitem operation on a proxy.

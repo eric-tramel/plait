@@ -7,11 +7,12 @@ dependency tracking, and optimization of inference pipelines.
 Example:
     >>> from inf_engine.graph import GraphNode, InferenceGraph
     >>> from inf_engine.module import LLMInference
+    >>> from inf_engine.tracing.tracer import InputNode
     >>>
     >>> # Create nodes representing operations
     >>> input_node = GraphNode(
     ...     id="input:text",
-    ...     module=None,  # Input nodes have no module
+    ...     module=InputNode(value="sample text"),
     ...     args=(),
     ...     kwargs={},
     ...     dependencies=[],
@@ -41,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from inf_engine.module import InferenceModule
     from inf_engine.parameter import Parameter
+    from inf_engine.tracing.tracer import InputNode
 
 
 @dataclass
@@ -53,8 +55,9 @@ class GraphNode:
 
     Attributes:
         id: Unique identifier for this node within the graph.
-        module: The InferenceModule instance to execute. May be None for
-            special nodes like inputs.
+        module: The operation to execute. For inference nodes, an
+            InferenceModule instance. For input nodes, an InputNode
+            containing the input value. May be None for special cases.
         args: Positional arguments as a tuple of node IDs (for Proxy args)
             or literal values.
         kwargs: Keyword arguments as a dict of node IDs (for Proxy kwargs)
@@ -88,7 +91,7 @@ class GraphNode:
     """
 
     id: str
-    module: InferenceModule | None
+    module: InferenceModule | InputNode | None
     args: tuple[str | Any, ...]
     kwargs: dict[str, str | Any]
     dependencies: list[str]

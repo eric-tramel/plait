@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Topological ordering method on InferenceGraph for valid execution order
 - Graph traversal methods (ancestors, descendants) on InferenceGraph
 - Tracer class foundation with node storage and ID generation
+- Input node creation in Tracer for capturing graph entry points
 
 ### Changed
 - N/A

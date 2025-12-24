@@ -1,7 +1,9 @@
 """Unit tests for the Tracer class."""
 
+from inf_engine.graph import GraphNode
 from inf_engine.module import LLMInference
-from inf_engine.tracing.tracer import Tracer
+from inf_engine.tracing.proxy import Proxy
+from inf_engine.tracing.tracer import InputNode, Tracer
 
 
 class TestTracerInstantiation:
@@ -251,3 +253,171 @@ class TestTracerMultipleInstances:
 
         assert tracer2._module_stack == []
         assert tracer2._branch_stack == []
+
+
+class TestInputNode:
+    """Tests for the InputNode class."""
+
+    def test_input_node_creation(self) -> None:
+        """InputNode can be created with a value."""
+        node = InputNode(value="test input")
+
+        assert node.value == "test input"
+
+    def test_input_node_stores_any_type(self) -> None:
+        """InputNode can store values of any type."""
+        string_node = InputNode(value="text")
+        int_node = InputNode(value=42)
+        dict_node = InputNode(value={"key": "value"})
+        list_node = InputNode(value=[1, 2, 3])
+        none_node = InputNode(value=None)
+
+        assert string_node.value == "text"
+        assert int_node.value == 42
+        assert dict_node.value == {"key": "value"}
+        assert list_node.value == [1, 2, 3]
+        assert none_node.value is None
+
+    def test_input_node_is_dataclass(self) -> None:
+        """InputNode is a dataclass with expected behavior."""
+        node1 = InputNode(value="test")
+        node2 = InputNode(value="test")
+
+        # Dataclasses support equality
+        assert node1 == node2
+
+        # Different values are not equal
+        node3 = InputNode(value="other")
+        assert node1 != node3
+
+
+class TestCreateInputNode:
+    """Tests for Tracer._create_input_node()."""
+
+    def test_create_input_node_returns_proxy(self) -> None:
+        """_create_input_node returns a Proxy object."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("text", "input value")
+
+        assert isinstance(proxy, Proxy)
+
+    def test_create_input_node_id_format(self) -> None:
+        """Input node IDs have the format 'input:{name}'."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("text", "value")
+
+        assert proxy.node_id == "input:text"
+
+    def test_create_input_node_adds_to_input_ids(self) -> None:
+        """Created input nodes are added to input_ids list."""
+        tracer = Tracer()
+
+        tracer._create_input_node("first", "value1")
+        tracer._create_input_node("second", "value2")
+
+        assert tracer.input_ids == ["input:first", "input:second"]
+
+    def test_create_input_node_creates_graph_node(self) -> None:
+        """_create_input_node creates a GraphNode in nodes dict."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("text", "hello")
+
+        assert proxy.node_id in tracer.nodes
+        node = tracer.nodes[proxy.node_id]
+        assert isinstance(node, GraphNode)
+
+    def test_create_input_node_graph_node_has_correct_fields(self) -> None:
+        """Created GraphNode has correct field values."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("prompt", "user input")
+        node = tracer.nodes[proxy.node_id]
+
+        assert node.id == "input:prompt"
+        assert isinstance(node.module, InputNode)
+        assert node.args == ()
+        assert node.kwargs == {}
+        assert node.dependencies == []
+        assert node.module_name == "Input(prompt)"
+
+    def test_create_input_node_stores_value_in_input_node(self) -> None:
+        """The input value is stored in the InputNode module."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("data", {"key": "value"})
+        node = tracer.nodes[proxy.node_id]
+
+        assert isinstance(node.module, InputNode)
+        assert node.module.value == {"key": "value"}
+
+    def test_create_input_node_proxy_references_tracer(self) -> None:
+        """Returned proxy references the correct tracer."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("text", "value")
+
+        assert proxy.tracer is tracer
+
+    def test_create_input_node_with_positional_args_convention(self) -> None:
+        """Input nodes for positional args follow 'input_N' naming convention."""
+        tracer = Tracer()
+
+        proxy0 = tracer._create_input_node("input_0", "first arg")
+        proxy1 = tracer._create_input_node("input_1", "second arg")
+
+        assert proxy0.node_id == "input:input_0"
+        assert proxy1.node_id == "input:input_1"
+        assert tracer.input_ids == ["input:input_0", "input:input_1"]
+
+    def test_create_input_node_with_kwarg_convention(self) -> None:
+        """Input nodes for kwargs use the kwarg name."""
+        tracer = Tracer()
+
+        proxy = tracer._create_input_node("input_temperature", 0.7)
+
+        assert proxy.node_id == "input:input_temperature"
+        module = tracer.nodes[proxy.node_id].module
+        assert isinstance(module, InputNode)
+        assert module.value == 0.7
+
+    def test_create_multiple_input_nodes(self) -> None:
+        """Multiple input nodes can be created and tracked."""
+        tracer = Tracer()
+
+        tracer._create_input_node("text", "Hello")
+        tracer._create_input_node("context", {"user": "alice"})
+
+        assert len(tracer.nodes) == 2
+        assert len(tracer.input_ids) == 2
+        text_module = tracer.nodes["input:text"].module
+        context_module = tracer.nodes["input:context"].module
+        assert isinstance(text_module, InputNode)
+        assert isinstance(context_module, InputNode)
+        assert text_module.value == "Hello"
+        assert context_module.value == {"user": "alice"}
+
+    def test_create_input_node_does_not_affect_node_counter(self) -> None:
+        """Input nodes do not increment the _node_counter."""
+        tracer = Tracer()
+
+        tracer._create_input_node("text", "value")
+        tracer._create_input_node("other", "value2")
+
+        # Counter should still be 0 - only _generate_id increments it
+        assert tracer._node_counter == 0
+
+    def test_reset_clears_input_nodes(self) -> None:
+        """Tracer.reset() clears created input nodes."""
+        tracer = Tracer()
+
+        tracer._create_input_node("text", "value")
+        assert len(tracer.nodes) == 1
+        assert len(tracer.input_ids) == 1
+
+        tracer.reset()
+
+        assert len(tracer.nodes) == 0
+        assert len(tracer.input_ids) == 0

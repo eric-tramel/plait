@@ -7,7 +7,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 ## Progress
 
 - [x] **Phase 1: Foundation** (7/7)
-- [ ] **Phase 2: Tracing** (6/11)
+- [ ] **Phase 2: Tracing** (7/11)
 - [ ] **Phase 3: Execution** (0/10)
 - [ ] **Phase 4: Resources** (0/10)
 - [ ] **Phase 5: Production Features** (0/11)
@@ -15,7 +15,7 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 7: Optimization** (0/14)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 13/74 PRs completed**
+**Total: 14/74 PRs completed**
 
 ---
 
@@ -187,7 +187,7 @@ Every PR must:
   - `tests/unit/test_tracer.py` (instantiation, ID generation)
 - **CHANGELOG**: "Add Tracer class foundation"
 
-### - [ ] PR-014: Tracer - input node creation
+### - [x] PR-014: Tracer - input node creation
 - **Branch**: `feat/tracer-inputs`
 - **Description**: Implement input proxy creation in Tracer
 - **Design Docs**:
