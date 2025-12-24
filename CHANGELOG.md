@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `record_call()` method to Tracer for capturing module invocations
 - `trace()` method to Tracer for executing forward() and returning InferenceGraph
 - InferenceModule integration with tracing system via `__call__` method
+- Tracing integration tests for nested modules, shared inputs, and dict outputs
 
 ### Changed
 - N/A

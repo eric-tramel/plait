@@ -2,9 +2,9 @@
 
 This directory contains practical examples demonstrating the inf-engine API.
 
-## Current Examples (Phase 1)
+## Current Examples (Phase 1-2)
 
-These examples work with the current Phase 1 implementation:
+These examples work with the current implementation:
 
 ### [01_basic_modules.py](01_basic_modules.py)
 Basic module creation and composition. Shows how to:
@@ -37,11 +37,24 @@ LLM pipeline definitions (structure preview). Shows how to:
 - Use learnable system prompts
 
 **Note:** These pipelines cannot be executed yet. Execution requires
-the tracing and scheduling infrastructure from Phase 2-3. This example
-demonstrates the API and inspects module structure.
+the scheduling infrastructure from Phase 3. This example demonstrates
+the API and inspects module structure.
 
 ```bash
 uv run python examples/03_llm_pipelines.py
+```
+
+### [04_tracing.py](04_tracing.py)
+Tracing and DAG capture. Shows how to:
+- Use `Tracer` to capture execution graphs
+- Inspect graph nodes and dependencies
+- Trace parallel (fan-out) patterns
+- Trace diamond (fan-out + fan-in) patterns
+- Use graph traversal methods (topological order, ancestors, descendants)
+- Inspect captured parameters and module details
+
+```bash
+uv run python examples/04_tracing.py
 ```
 
 ## Running Examples
@@ -58,10 +71,9 @@ for f in examples/*.py; do uv run python "$f"; echo; done
 
 ## Coming Soon
 
-After Phase 2-3 implementation:
+After Phase 3 implementation:
 - Full LLM pipeline execution with `run()`
-- Tracing and DAG visualization
-- Async parallel execution
+- Async parallel execution with scheduling
 
 After Phase 7 implementation:
 - Training loops with `train()`
