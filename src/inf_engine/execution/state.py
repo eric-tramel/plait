@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from inf_engine.graph import InferenceGraph
     from inf_engine.module import InferenceModule
-    from inf_engine.tracing.tracer import InputNode
+    from inf_engine.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp
 
 
 class TaskStatus(Enum):
@@ -94,7 +94,9 @@ class Task:
 
     Attributes:
         node_id: Unique identifier matching the GraphNode ID.
-        module: The module to execute (InferenceModule, InputNode, or None).
+        module: The operation to execute. Can be an InferenceModule,
+            InputNode, or a data access operation (GetItemOp, IterOp,
+            MethodOp). May be None for special cases.
         args: Positional arguments for module.forward().
         kwargs: Keyword arguments for module.forward().
         dependencies: List of node IDs this task depends on.
@@ -125,7 +127,7 @@ class Task:
     """
 
     node_id: str
-    module: InferenceModule | InputNode | None
+    module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
     dependencies: list[str]

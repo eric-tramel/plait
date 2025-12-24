@@ -799,6 +799,292 @@ class TestRecordCallModulePath:
         assert node.module_path == "encoder.layer1.attention"
 
 
+class TestRecordGetitem:
+    """Tests for Tracer.record_getitem()."""
+
+    def test_record_getitem_returns_proxy(self) -> None:
+        """record_getitem returns a Proxy."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        result = tracer.record_getitem(input_proxy, "key")
+
+        assert isinstance(result, Proxy)
+
+    def test_record_getitem_creates_node(self) -> None:
+        """record_getitem creates a new node in the graph."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        tracer.record_getitem(input_proxy, "key")
+
+        assert "getitem_1" in tracer.nodes
+
+    def test_record_getitem_node_has_correct_dependencies(self) -> None:
+        """Getitem node depends on the source node."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        tracer.record_getitem(input_proxy, "key")
+
+        node = tracer.nodes["getitem_1"]
+        assert node.dependencies == ["input:data"]
+
+    def test_record_getitem_stores_key(self) -> None:
+        """Getitem node stores the key used."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        tracer.record_getitem(input_proxy, "my_key")
+
+        from inf_engine.tracing.tracer import GetItemOp
+
+        node = tracer.nodes["getitem_1"]
+        assert isinstance(node.module, GetItemOp)
+        assert node.module.key == "my_key"
+
+    def test_record_getitem_with_integer_key(self) -> None:
+        """record_getitem works with integer keys."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        tracer.record_getitem(input_proxy, 0)
+
+        from inf_engine.tracing.tracer import GetItemOp
+
+        node = tracer.nodes["getitem_1"]
+        assert isinstance(node.module, GetItemOp)
+        assert node.module.key == 0
+
+    def test_record_getitem_chaining(self) -> None:
+        """Multiple getitem calls can be chained."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": {"b": "c"}})
+
+        first = tracer.record_getitem(input_proxy, "a")
+        second = tracer.record_getitem(first, "b")
+
+        assert "getitem_1" in tracer.nodes
+        assert "getitem_2" in tracer.nodes
+        assert tracer.nodes["getitem_1"].dependencies == ["input:data"]
+        assert tracer.nodes["getitem_2"].dependencies == ["getitem_1"]
+        assert second.node_id == "getitem_2"
+
+    def test_record_getitem_has_module_name(self) -> None:
+        """Getitem node has descriptive module_name."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        tracer.record_getitem(input_proxy, "my_key")
+
+        node = tracer.nodes["getitem_1"]
+        assert node.module_name == "getitem['my_key']"
+
+    def test_record_getitem_stores_source_in_args(self) -> None:
+        """Getitem node stores source node_id in args."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        tracer.record_getitem(input_proxy, "key")
+
+        node = tracer.nodes["getitem_1"]
+        assert node.args == ("input:data",)
+
+
+class TestRecordIter:
+    """Tests for Tracer.record_iter()."""
+
+    def test_record_iter_returns_proxy(self) -> None:
+        """record_iter returns a Proxy."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        result = tracer.record_iter(input_proxy)
+
+        assert isinstance(result, Proxy)
+
+    def test_record_iter_creates_node(self) -> None:
+        """record_iter creates a new node in the graph."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        tracer.record_iter(input_proxy)
+
+        assert "iter_1" in tracer.nodes
+
+    def test_record_iter_node_has_correct_dependencies(self) -> None:
+        """Iter node depends on the source node."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        tracer.record_iter(input_proxy)
+
+        node = tracer.nodes["iter_1"]
+        assert node.dependencies == ["input:data"]
+
+    def test_record_iter_uses_iter_op(self) -> None:
+        """Iter node uses IterOp module."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        tracer.record_iter(input_proxy)
+
+        from inf_engine.tracing.tracer import IterOp
+
+        node = tracer.nodes["iter_1"]
+        assert isinstance(node.module, IterOp)
+
+    def test_record_iter_has_module_name(self) -> None:
+        """Iter node has descriptive module_name."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        tracer.record_iter(input_proxy)
+
+        node = tracer.nodes["iter_1"]
+        assert node.module_name == "iter"
+
+
+class TestRecordMethod:
+    """Tests for Tracer.record_method()."""
+
+    def test_record_method_returns_proxy(self) -> None:
+        """record_method returns a Proxy."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        result = tracer.record_method(input_proxy, "keys")
+
+        assert isinstance(result, Proxy)
+
+    def test_record_method_creates_node(self) -> None:
+        """record_method creates a new node in the graph."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "keys")
+
+        assert "method_1" in tracer.nodes
+
+    def test_record_method_node_has_correct_dependencies(self) -> None:
+        """Method node depends on the source node."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "values")
+
+        node = tracer.nodes["method_1"]
+        assert node.dependencies == ["input:data"]
+
+    def test_record_method_stores_method_name(self) -> None:
+        """Method node stores the method name."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "items")
+
+        from inf_engine.tracing.tracer import MethodOp
+
+        node = tracer.nodes["method_1"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "items"
+
+    def test_record_method_keys(self) -> None:
+        """record_method works with 'keys'."""
+        from inf_engine.tracing.tracer import MethodOp
+
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "keys")
+
+        node = tracer.nodes["method_1"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "keys"
+        assert node.module_name == ".keys()"
+
+    def test_record_method_values(self) -> None:
+        """record_method works with 'values'."""
+        from inf_engine.tracing.tracer import MethodOp
+
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "values")
+
+        node = tracer.nodes["method_1"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "values"
+        assert node.module_name == ".values()"
+
+    def test_record_method_items(self) -> None:
+        """record_method works with 'items'."""
+        from inf_engine.tracing.tracer import MethodOp
+
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "items")
+
+        node = tracer.nodes["method_1"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "items"
+        assert node.module_name == ".items()"
+
+    def test_record_method_multiple_calls(self) -> None:
+        """Multiple method calls create separate nodes."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "keys")
+        tracer.record_method(input_proxy, "values")
+        tracer.record_method(input_proxy, "items")
+
+        assert "method_1" in tracer.nodes
+        assert "method_2" in tracer.nodes
+        assert "method_3" in tracer.nodes
+
+
+class TestRecordOperationBranchContext:
+    """Tests for data access operations with branch context."""
+
+    def test_record_getitem_with_branch_context(self) -> None:
+        """Getitem node captures branch info when in a branch context."""
+        tracer = Tracer()
+        tracer._branch_stack.append(("condition_1", True))
+        input_proxy = tracer._create_input_node("data", {"key": "value"})
+
+        tracer.record_getitem(input_proxy, "key")
+
+        node = tracer.nodes["getitem_1"]
+        assert node.branch_condition == "condition_1"
+        assert node.branch_value is True
+
+    def test_record_iter_with_branch_context(self) -> None:
+        """Iter node captures branch info when in a branch context."""
+        tracer = Tracer()
+        tracer._branch_stack.append(("condition_2", False))
+        input_proxy = tracer._create_input_node("data", [1, 2])
+
+        tracer.record_iter(input_proxy)
+
+        node = tracer.nodes["iter_1"]
+        assert node.branch_condition == "condition_2"
+        assert node.branch_value is False
+
+    def test_record_method_with_branch_context(self) -> None:
+        """Method node captures branch info when in a branch context."""
+        tracer = Tracer()
+        tracer._branch_stack.append(("condition_3", True))
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        tracer.record_method(input_proxy, "keys")
+
+        node = tracer.nodes["method_1"]
+        assert node.branch_condition == "condition_3"
+        assert node.branch_value is True
+
+
 class TestCollectOutputIds:
     """Tests for Tracer._collect_output_ids()."""
 

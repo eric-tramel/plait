@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scheduler `execute()` method for running tasks with TaskGroup and dependency management
 - `run()` function for tracing and executing modules end-to-end
 - Execution integration tests for linear, parallel, and diamond graph patterns
+- Proxy data access operations: `__getitem__`, `__iter__`, `keys()`, `values()`, `items()`
+- Tracer methods for data access: `record_getitem()`, `record_iter()`, `record_method()`
+- Operation classes: `GetItemOp`, `IterOp`, `MethodOp` for representing data access in graphs
 
 ### Changed
 - N/A

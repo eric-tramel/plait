@@ -62,6 +62,60 @@ class InputNode:
     value: Any
 
 
+@dataclass
+class GetItemOp:
+    """Operation node representing dictionary/list indexing.
+
+    Created when a Proxy is indexed with proxy[key]. During execution,
+    this operation retrieves the value at the specified key from the
+    source node's output.
+
+    Attributes:
+        key: The key or index used for the access.
+
+    Example:
+        >>> op = GetItemOp(key="result")
+        >>> op.key
+        'result'
+    """
+
+    key: Any
+
+
+@dataclass
+class IterOp:
+    """Operation node representing iteration over a proxy.
+
+    Created when a Proxy is iterated. During execution, this operation
+    yields elements from the source node's output.
+
+    Example:
+        >>> op = IterOp()
+    """
+
+    pass
+
+
+@dataclass
+class MethodOp:
+    """Operation node representing a method call on a proxy.
+
+    Created when methods like keys(), values(), or items() are called
+    on a Proxy. During execution, this operation calls the specified
+    method on the source node's output.
+
+    Attributes:
+        method: The name of the method being called.
+
+    Example:
+        >>> op = MethodOp(method="keys")
+        >>> op.method
+        'keys'
+    """
+
+    method: str
+
+
 class Tracer:
     """Records an InferenceGraph by tracing forward() execution.
 
@@ -294,13 +348,124 @@ class Tracer:
         Returns:
             A new Proxy representing the result of the indexing operation.
 
-        Raises:
-            NotImplementedError: This stub will be implemented in a future PR.
-
-        Note:
-            This is a stub method. Full implementation coming in a future PR.
+        Example:
+            >>> tracer = Tracer()
+            >>> input_proxy = tracer._create_input_node("data", {"key": "value"})
+            >>> result = tracer.record_getitem(input_proxy, "key")
+            >>> result.node_id
+            'getitem_1'
+            >>> tracer.nodes['getitem_1'].dependencies
+            ['input:data']
         """
-        raise NotImplementedError("record_getitem will be implemented in a future PR")
+        self._node_counter += 1
+        node_id = f"getitem_{self._node_counter}"
+
+        # Get branch context if we're inside a conditional
+        branch_condition: str | None = None
+        branch_value: bool | None = None
+        if self._branch_stack:
+            branch_condition, branch_value = self._branch_stack[-1]
+
+        node = GraphNode(
+            id=node_id,
+            module=GetItemOp(key=key),
+            args=(proxy.node_id,),
+            kwargs={},
+            dependencies=[proxy.node_id],
+            branch_condition=branch_condition,
+            branch_value=branch_value,
+            module_name=f"getitem[{key!r}]",
+        )
+        self.nodes[node_id] = node
+
+        return Proxy(node_id=node_id, tracer=self)
+
+    def record_iter(self, proxy: Proxy) -> Proxy:
+        """Record an iteration operation on a proxy.
+
+        Creates a new graph node representing iteration over the proxy's
+        value. This enables tracing of iteration patterns like for loops.
+
+        Args:
+            proxy: The proxy being iterated.
+
+        Returns:
+            A new Proxy representing the iterator.
+
+        Example:
+            >>> tracer = Tracer()
+            >>> input_proxy = tracer._create_input_node("data", [1, 2, 3])
+            >>> result = tracer.record_iter(input_proxy)
+            >>> result.node_id
+            'iter_1'
+        """
+        self._node_counter += 1
+        node_id = f"iter_{self._node_counter}"
+
+        # Get branch context if we're inside a conditional
+        branch_condition: str | None = None
+        branch_value: bool | None = None
+        if self._branch_stack:
+            branch_condition, branch_value = self._branch_stack[-1]
+
+        node = GraphNode(
+            id=node_id,
+            module=IterOp(),
+            args=(proxy.node_id,),
+            kwargs={},
+            dependencies=[proxy.node_id],
+            branch_condition=branch_condition,
+            branch_value=branch_value,
+            module_name="iter",
+        )
+        self.nodes[node_id] = node
+
+        return Proxy(node_id=node_id, tracer=self)
+
+    def record_method(self, proxy: Proxy, method: str) -> Proxy:
+        """Record a method call on a proxy.
+
+        Creates a new graph node representing a method call like
+        keys(), values(), or items() on the proxy's value.
+
+        Args:
+            proxy: The proxy on which the method is called.
+            method: The name of the method being called.
+
+        Returns:
+            A new Proxy representing the result of the method call.
+
+        Example:
+            >>> tracer = Tracer()
+            >>> input_proxy = tracer._create_input_node("data", {"a": 1})
+            >>> result = tracer.record_method(input_proxy, "keys")
+            >>> result.node_id
+            'method_1'
+            >>> tracer.nodes['method_1'].module.method
+            'keys'
+        """
+        self._node_counter += 1
+        node_id = f"method_{self._node_counter}"
+
+        # Get branch context if we're inside a conditional
+        branch_condition: str | None = None
+        branch_value: bool | None = None
+        if self._branch_stack:
+            branch_condition, branch_value = self._branch_stack[-1]
+
+        node = GraphNode(
+            id=node_id,
+            module=MethodOp(method=method),
+            args=(proxy.node_id,),
+            kwargs={},
+            dependencies=[proxy.node_id],
+            branch_condition=branch_condition,
+            branch_value=branch_value,
+            module_name=f".{method}()",
+        )
+        self.nodes[node_id] = node
+
+        return Proxy(node_id=node_id, tracer=self)
 
     def _collect_output_ids(self, output: Any) -> list[str]:
         """Extract node IDs from the output structure.

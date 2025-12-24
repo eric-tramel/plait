@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from inf_engine.module import InferenceModule
     from inf_engine.parameter import Parameter
-    from inf_engine.tracing.tracer import InputNode
+    from inf_engine.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp
 
 
 @dataclass
@@ -57,7 +57,8 @@ class GraphNode:
         id: Unique identifier for this node within the graph.
         module: The operation to execute. For inference nodes, an
             InferenceModule instance. For input nodes, an InputNode
-            containing the input value. May be None for special cases.
+            containing the input value. For data access operations,
+            a GetItemOp, IterOp, or MethodOp. May be None for special cases.
         args: Positional arguments as a tuple of node IDs (for Proxy args)
             or literal values.
         kwargs: Keyword arguments as a dict of node IDs (for Proxy kwargs)
@@ -91,7 +92,7 @@ class GraphNode:
     """
 
     id: str
-    module: InferenceModule | InputNode | None
+    module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
     args: tuple[str | Any, ...]
     kwargs: dict[str, str | Any]
     dependencies: list[str]

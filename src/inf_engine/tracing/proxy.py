@@ -20,6 +20,7 @@ Example:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -87,3 +88,66 @@ class Proxy:
             >>> first = proxy[0]
         """
         return self.tracer.record_getitem(self, key)
+
+    def __iter__(self) -> Iterator[Proxy]:
+        """Handle iteration over the proxy.
+
+        Creates a new graph node representing iteration over this proxy's
+        value. Returns an iterator that yields a single proxy representing
+        "an element from this iteration".
+
+        Note:
+            During tracing, we cannot know how many elements the actual
+            value will have. This method returns a single-element iterator
+            that represents the abstract concept of iteration.
+
+        Returns:
+            An iterator yielding a Proxy for the iteration result.
+
+        Example:
+            >>> for item in proxy:
+            ...     process(item)  # item is a Proxy
+        """
+        return iter([self.tracer.record_iter(self)])
+
+    def keys(self) -> Proxy:
+        """Handle dict.keys() access.
+
+        Creates a new graph node representing a keys() call on this
+        proxy's value.
+
+        Returns:
+            A Proxy representing the keys of this value.
+
+        Example:
+            >>> dict_proxy.keys()  # Returns a Proxy for the keys
+        """
+        return self.tracer.record_method(self, "keys")
+
+    def values(self) -> Proxy:
+        """Handle dict.values() access.
+
+        Creates a new graph node representing a values() call on this
+        proxy's value.
+
+        Returns:
+            A Proxy representing the values of this value.
+
+        Example:
+            >>> dict_proxy.values()  # Returns a Proxy for the values
+        """
+        return self.tracer.record_method(self, "values")
+
+    def items(self) -> Proxy:
+        """Handle dict.items() access.
+
+        Creates a new graph node representing an items() call on this
+        proxy's value.
+
+        Returns:
+            A Proxy representing the items of this value.
+
+        Example:
+            >>> dict_proxy.items()  # Returns a Proxy for the items
+        """
+        return self.tracer.record_method(self, "items")

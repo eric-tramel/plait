@@ -190,6 +190,178 @@ class TestProxyGetitem:
         assert inner.node_id == "getitem_2"
 
 
+class TestProxyIter:
+    """Tests for Proxy.__iter__()."""
+
+    def test_proxy_iter_returns_iterator(self) -> None:
+        """__iter__ returns an iterator."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        result = iter(input_proxy)
+
+        # Should be an iterator
+        assert hasattr(result, "__next__")
+
+    def test_proxy_iter_yields_proxy(self) -> None:
+        """__iter__ yields Proxy objects."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        items = list(input_proxy)
+
+        assert len(items) == 1
+        assert isinstance(items[0], Proxy)
+
+    def test_proxy_iter_creates_node(self) -> None:
+        """__iter__ creates an iter node in the graph."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", [1, 2, 3])
+
+        list(input_proxy)  # Consume the iterator
+
+        assert "iter_1" in tracer.nodes
+        assert tracer.nodes["iter_1"].dependencies == ["input:data"]
+
+    def test_proxy_iter_for_loop(self) -> None:
+        """__iter__ works with for loops."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", ["a", "b"])
+
+        collected = []
+        for item in input_proxy:
+            collected.append(item)
+
+        assert len(collected) == 1
+        assert isinstance(collected[0], Proxy)
+
+
+class TestProxyKeys:
+    """Tests for Proxy.keys()."""
+
+    def test_proxy_keys_returns_proxy(self) -> None:
+        """keys() returns a Proxy."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        result = input_proxy.keys()
+
+        assert isinstance(result, Proxy)
+
+    def test_proxy_keys_creates_node(self) -> None:
+        """keys() creates a method node in the graph."""
+        from inf_engine.tracing.tracer import MethodOp
+
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        input_proxy.keys()
+
+        assert "method_1" in tracer.nodes
+        node = tracer.nodes["method_1"]
+        assert node.dependencies == ["input:data"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "keys"
+
+
+class TestProxyValues:
+    """Tests for Proxy.values()."""
+
+    def test_proxy_values_returns_proxy(self) -> None:
+        """values() returns a Proxy."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        result = input_proxy.values()
+
+        assert isinstance(result, Proxy)
+
+    def test_proxy_values_creates_node(self) -> None:
+        """values() creates a method node in the graph."""
+        from inf_engine.tracing.tracer import MethodOp
+
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        input_proxy.values()
+
+        assert "method_1" in tracer.nodes
+        node = tracer.nodes["method_1"]
+        assert node.dependencies == ["input:data"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "values"
+
+
+class TestProxyItems:
+    """Tests for Proxy.items()."""
+
+    def test_proxy_items_returns_proxy(self) -> None:
+        """items() returns a Proxy."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        result = input_proxy.items()
+
+        assert isinstance(result, Proxy)
+
+    def test_proxy_items_creates_node(self) -> None:
+        """items() creates a method node in the graph."""
+        from inf_engine.tracing.tracer import MethodOp
+
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1})
+
+        input_proxy.items()
+
+        assert "method_1" in tracer.nodes
+        node = tracer.nodes["method_1"]
+        assert node.dependencies == ["input:data"]
+        assert isinstance(node.module, MethodOp)
+        assert node.module.method == "items"
+
+
+class TestProxyOperationsChaining:
+    """Tests for chaining Proxy operations."""
+
+    def test_keys_then_iter(self) -> None:
+        """Can chain keys() with iteration."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1, "b": 2})
+
+        keys_proxy = input_proxy.keys()
+        items = list(keys_proxy)
+
+        assert len(items) == 1
+        assert isinstance(items[0], Proxy)
+        # Should have 3 nodes: input, keys, iter
+        assert len(tracer.nodes) == 3
+
+    def test_getitem_then_keys(self) -> None:
+        """Can chain getitem with keys()."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"nested": {"a": 1}})
+
+        nested = input_proxy["nested"]
+        keys = nested.keys()
+
+        assert isinstance(keys, Proxy)
+        # Should have 3 nodes: input, getitem, keys
+        assert len(tracer.nodes) == 3
+
+    def test_items_iteration_pattern(self) -> None:
+        """Can use items() in a for loop pattern."""
+        tracer = Tracer()
+        input_proxy = tracer._create_input_node("data", {"a": 1, "b": 2})
+
+        collected = []
+        for item in input_proxy.items():
+            collected.append(item)
+
+        assert len(collected) == 1
+        # Should have 3 nodes: input, items, iter
+        assert len(tracer.nodes) == 3
+
+
 class TestProxyEquality:
     """Tests for Proxy equality comparison."""
 
