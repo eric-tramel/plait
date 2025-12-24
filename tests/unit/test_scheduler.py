@@ -5,6 +5,10 @@ import asyncio
 import pytest
 
 from inf_engine.execution.scheduler import Scheduler
+from inf_engine.execution.state import ExecutionState, TaskStatus
+from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.module import InferenceModule
+from inf_engine.tracing.tracer import InputNode
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Scheduler Initialization Tests
@@ -415,3 +419,567 @@ class TestSchedulerImports:
         from inf_engine.execution.scheduler import Scheduler as SchedulerFromModule
 
         assert SchedulerFromModule is Scheduler
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler Execute Method Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SimpleModule(InferenceModule):
+    """A simple test module that transforms input."""
+
+    def forward(self, x: str) -> str:
+        """Return input with a suffix."""
+        return f"{x}_processed"
+
+
+class AsyncModule(InferenceModule):
+    """An async test module."""
+
+    async def forward(self, x: str) -> str:
+        """Return input with suffix, using async."""
+        await asyncio.sleep(0.001)  # Simulate async work
+        return f"{x}_async"
+
+
+class FailingModule(InferenceModule):
+    """A module that always fails."""
+
+    def forward(self, x: str) -> str:
+        """Raise an error."""
+        raise ValueError("Test failure")
+
+
+class SlowModule(InferenceModule):
+    """A module that takes some time."""
+
+    async def forward(self, x: str) -> str:
+        """Simulate slow processing."""
+        await asyncio.sleep(0.01)
+        return f"{x}_slow"
+
+
+def create_simple_graph() -> InferenceGraph:
+    """Create a simple graph: input -> process."""
+    input_node = GraphNode(
+        id="input:input_0",
+        module=InputNode(value="hello"),
+        args=(),
+        kwargs={},
+        dependencies=[],
+    )
+    process_node = GraphNode(
+        id="process_1",
+        module=SimpleModule(),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    return InferenceGraph(
+        nodes={"input:input_0": input_node, "process_1": process_node},
+        input_ids=["input:input_0"],
+        output_ids=["process_1"],
+    )
+
+
+def create_linear_graph() -> InferenceGraph:
+    """Create a linear graph: input -> a -> b -> c."""
+    input_node = GraphNode(
+        id="input:input_0",
+        module=InputNode(value="start"),
+        args=(),
+        kwargs={},
+        dependencies=[],
+    )
+    a_node = GraphNode(
+        id="a_1",
+        module=SimpleModule(),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    b_node = GraphNode(
+        id="b_2",
+        module=SimpleModule(),
+        args=("a_1",),
+        kwargs={},
+        dependencies=["a_1"],
+    )
+    c_node = GraphNode(
+        id="c_3",
+        module=SimpleModule(),
+        args=("b_2",),
+        kwargs={},
+        dependencies=["b_2"],
+    )
+    return InferenceGraph(
+        nodes={
+            "input:input_0": input_node,
+            "a_1": a_node,
+            "b_2": b_node,
+            "c_3": c_node,
+        },
+        input_ids=["input:input_0"],
+        output_ids=["c_3"],
+    )
+
+
+def create_parallel_graph() -> InferenceGraph:
+    """Create a parallel graph: input -> [a, b] (independent)."""
+    input_node = GraphNode(
+        id="input:input_0",
+        module=InputNode(value="parallel"),
+        args=(),
+        kwargs={},
+        dependencies=[],
+    )
+    a_node = GraphNode(
+        id="a_1",
+        module=SimpleModule(),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    b_node = GraphNode(
+        id="b_2",
+        module=SimpleModule(),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    return InferenceGraph(
+        nodes={"input:input_0": input_node, "a_1": a_node, "b_2": b_node},
+        input_ids=["input:input_0"],
+        output_ids=["a_1", "b_2"],
+    )
+
+
+def create_diamond_graph() -> InferenceGraph:
+    """Create a diamond graph: input -> [a, b] -> merge."""
+    input_node = GraphNode(
+        id="input:input_0",
+        module=InputNode(value="diamond"),
+        args=(),
+        kwargs={},
+        dependencies=[],
+    )
+    a_node = GraphNode(
+        id="a_1",
+        module=SimpleModule(),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    b_node = GraphNode(
+        id="b_2",
+        module=SimpleModule(),
+        args=("input:input_0",),
+        kwargs={},
+        dependencies=["input:input_0"],
+    )
+    # Merge node depends on both a and b
+    merge_module = SimpleModule()
+    merge_node = GraphNode(
+        id="merge_3",
+        module=merge_module,
+        args=("a_1",),  # In real usage, this would combine both
+        kwargs={},
+        dependencies=["a_1", "b_2"],
+    )
+    return InferenceGraph(
+        nodes={
+            "input:input_0": input_node,
+            "a_1": a_node,
+            "b_2": b_node,
+            "merge_3": merge_node,
+        },
+        input_ids=["input:input_0"],
+        output_ids=["merge_3"],
+    )
+
+
+class TestSchedulerExecute:
+    """Tests for Scheduler.execute() method."""
+
+    @pytest.mark.asyncio
+    async def test_execute_simple_graph(self) -> None:
+        """execute() processes a simple graph correctly."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_simple_graph()
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert outputs == {"process_1": "hello_processed"}
+
+    @pytest.mark.asyncio
+    async def test_execute_linear_graph(self) -> None:
+        """execute() processes a linear graph in dependency order."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        # Each step adds "_processed"
+        assert outputs == {"c_3": "start_processed_processed_processed"}
+
+    @pytest.mark.asyncio
+    async def test_execute_parallel_graph(self) -> None:
+        """execute() can run parallel tasks concurrently."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_parallel_graph()
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert outputs == {
+            "a_1": "parallel_processed",
+            "b_2": "parallel_processed",
+        }
+
+    @pytest.mark.asyncio
+    async def test_execute_diamond_graph(self) -> None:
+        """execute() handles diamond dependencies correctly."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_diamond_graph()
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        # Merge node gets the result of a_1
+        assert outputs == {"merge_3": "diamond_processed_processed"}
+
+    @pytest.mark.asyncio
+    async def test_execute_respects_concurrency_limit(self) -> None:
+        """execute() never exceeds max_concurrent tasks."""
+        scheduler = Scheduler(max_concurrent=2)
+        max_concurrent_observed = 0
+
+        # Create a graph with many slow parallel tasks
+        nodes = {
+            "input:input_0": GraphNode(
+                id="input:input_0",
+                module=InputNode(value="test"),
+                args=(),
+                kwargs={},
+                dependencies=[],
+            )
+        }
+        output_ids = []
+
+        for i in range(10):
+            node_id = f"slow_{i}"
+            nodes[node_id] = GraphNode(
+                id=node_id,
+                module=SlowModule(),
+                args=("input:input_0",),
+                kwargs={},
+                dependencies=["input:input_0"],
+            )
+            output_ids.append(node_id)
+
+        graph = InferenceGraph(
+            nodes=nodes,
+            input_ids=["input:input_0"],
+            output_ids=output_ids,
+        )
+        state = ExecutionState(graph)
+
+        def track_concurrency(node_id: str, result: object) -> None:
+            nonlocal max_concurrent_observed
+            max_concurrent_observed = max(
+                max_concurrent_observed, scheduler.active_count
+            )
+
+        await scheduler.execute(state, on_complete=track_concurrency)
+
+        # Should never exceed the limit (may be at limit when callback fires)
+        assert max_concurrent_observed <= 2
+
+    @pytest.mark.asyncio
+    async def test_execute_all_tasks_complete(self) -> None:
+        """execute() marks all tasks as completed."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        assert state.is_complete()
+        for node_id in graph.nodes:
+            assert state.status[node_id] == TaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_execute_with_on_complete_callback(self) -> None:
+        """execute() invokes on_complete callback for each task."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_simple_graph()
+        state = ExecutionState(graph)
+
+        completed_nodes: list[str] = []
+
+        def on_complete(node_id: str, result: object) -> None:
+            completed_nodes.append(node_id)
+
+        await scheduler.execute(state, on_complete=on_complete)
+
+        assert len(completed_nodes) == 2
+        assert "input:input_0" in completed_nodes
+        assert "process_1" in completed_nodes
+
+    @pytest.mark.asyncio
+    async def test_execute_returns_outputs(self) -> None:
+        """execute() returns correct output values."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_simple_graph()
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert isinstance(outputs, dict)
+        assert "process_1" in outputs
+        assert outputs["process_1"] == "hello_processed"
+
+
+class TestSchedulerExecuteWithAsync:
+    """Tests for Scheduler.execute() with async modules."""
+
+    @pytest.mark.asyncio
+    async def test_execute_async_module(self) -> None:
+        """execute() handles async forward methods."""
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="async_test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        async_node = GraphNode(
+            id="async_1",
+            module=AsyncModule(),
+            args=("input:input_0",),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "async_1": async_node},
+            input_ids=["input:input_0"],
+            output_ids=["async_1"],
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=10)
+
+        outputs = await scheduler.execute(state)
+
+        assert outputs == {"async_1": "async_test_async"}
+
+
+class TestSchedulerExecuteFailure:
+    """Tests for Scheduler.execute() failure handling."""
+
+    @pytest.mark.asyncio
+    async def test_execute_handles_task_failure(self) -> None:
+        """execute() handles task failures gracefully."""
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="fail_test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=FailingModule(),
+            args=("input:input_0",),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=10)
+
+        outputs = await scheduler.execute(state)
+
+        # Task should be marked as failed
+        assert state.status["failing_1"] == TaskStatus.FAILED
+        assert "failing_1" in state.errors
+        assert isinstance(state.errors["failing_1"], ValueError)
+        # No outputs from failed task
+        assert outputs == {}
+
+    @pytest.mark.asyncio
+    async def test_execute_with_on_error_callback(self) -> None:
+        """execute() invokes on_error callback for failed tasks."""
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="error_test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=FailingModule(),
+            args=("input:input_0",),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=10)
+
+        errors: list[tuple[str, Exception]] = []
+
+        def on_error(node_id: str, error: Exception) -> None:
+            errors.append((node_id, error))
+
+        await scheduler.execute(state, on_error=on_error)
+
+        assert len(errors) == 1
+        assert errors[0][0] == "failing_1"
+        assert isinstance(errors[0][1], ValueError)
+
+    @pytest.mark.asyncio
+    async def test_execute_cascades_failure(self) -> None:
+        """execute() cancels descendants when a task fails."""
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="cascade_test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=FailingModule(),
+            args=("input:input_0",),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        dependent_node = GraphNode(
+            id="dependent_2",
+            module=SimpleModule(),
+            args=("failing_1",),
+            kwargs={},
+            dependencies=["failing_1"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "failing_1": failing_node,
+                "dependent_2": dependent_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["dependent_2"],
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=10)
+
+        await scheduler.execute(state)
+
+        assert state.status["failing_1"] == TaskStatus.FAILED
+        assert state.status["dependent_2"] == TaskStatus.CANCELLED
+        assert state.is_complete()
+
+
+class TestSchedulerExecuteDependencies:
+    """Tests for Scheduler.execute() dependency handling."""
+
+    @pytest.mark.asyncio
+    async def test_execute_respects_dependencies(self) -> None:
+        """execute() executes tasks only after dependencies complete."""
+        execution_order: list[str] = []
+
+        class TrackingModule(InferenceModule):
+            def __init__(self, name: str):
+                super().__init__()
+                self.name = name
+
+            def forward(self, x: str) -> str:
+                execution_order.append(self.name)
+                return f"{x}_{self.name}"
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="dep_test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        a_node = GraphNode(
+            id="a_1",
+            module=TrackingModule("a"),
+            args=("input:input_0",),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        b_node = GraphNode(
+            id="b_2",
+            module=TrackingModule("b"),
+            args=("a_1",),
+            kwargs={},
+            dependencies=["a_1"],
+        )
+        c_node = GraphNode(
+            id="c_3",
+            module=TrackingModule("c"),
+            args=("b_2",),
+            kwargs={},
+            dependencies=["b_2"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "a_1": a_node,
+                "b_2": b_node,
+                "c_3": c_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["c_3"],
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=10)
+
+        await scheduler.execute(state)
+
+        # a must come before b, b must come before c
+        assert execution_order.index("a") < execution_order.index("b")
+        assert execution_order.index("b") < execution_order.index("c")
+
+    @pytest.mark.asyncio
+    async def test_execute_input_node_provides_value(self) -> None:
+        """execute() correctly provides input node values to dependents."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_simple_graph()
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # The input node value "hello" should be passed to process_1
+        # which adds "_processed"
+        assert state.results["process_1"].value == "hello_processed"
+
+    @pytest.mark.asyncio
+    async def test_execute_result_propagation(self) -> None:
+        """execute() propagates results through the graph."""
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # Check intermediate results
+        assert state.results["input:input_0"].value == "start"
+        assert state.results["a_1"].value == "start_processed"
+        assert state.results["b_2"].value == "start_processed_processed"
+        assert state.results["c_3"].value == "start_processed_processed_processed"
