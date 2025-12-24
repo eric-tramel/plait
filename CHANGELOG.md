@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - InferenceModule integration with tracing system via `__call__` method
 - Tracing integration tests for nested modules, shared inputs, and dict outputs
 - Task and TaskResult types for execution state management
+- ExecutionState initialization with graph analysis and dependency tracking
 
 ### Changed
 - N/A
