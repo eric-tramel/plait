@@ -1924,3 +1924,373 @@ class TestForwardCallIntegration:
         # Negative value raises
         with pytest.raises(ValueError, match="x must be non-negative"):
             module(-1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PR-017: Trace Context Integration Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestCallWithTraceContext:
+    """Tests for __call__() behavior with trace context.
+
+    PR-017: Connect InferenceModule.__call__ to Tracer
+    """
+
+    def test_call_without_trace_context_calls_forward(self) -> None:
+        """Without trace context, __call__ delegates to forward()."""
+
+        class Counter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.call_count = 0
+
+            def forward(self, x: int) -> int:
+                self.call_count += 1
+                return x * 2
+
+        module = Counter()
+        result = module(5)
+
+        assert result == 10
+        assert module.call_count == 1
+
+    def test_call_with_trace_context_returns_proxy(self) -> None:
+        """With trace context, __call__ returns a Proxy."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.proxy import Proxy
+        from inf_engine.tracing.tracer import Tracer
+
+        class Doubler(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> int:
+                return x * 2
+
+        module = Doubler()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            result = module(5)
+
+        assert isinstance(result, Proxy)
+
+    def test_call_with_trace_context_does_not_call_forward(self) -> None:
+        """With trace context, forward() is not called."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Counter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.call_count = 0
+
+            def forward(self, x: int) -> int:
+                self.call_count += 1
+                return x * 2
+
+        module = Counter()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            module(5)
+
+        # forward() should not have been called
+        assert module.call_count == 0
+
+    def test_call_with_trace_context_records_node(self) -> None:
+        """With trace context, __call__ records a node in the tracer."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Doubler(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: int) -> int:
+                return x * 2
+
+        module = Doubler()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            module(5)
+
+        # Should have recorded one node
+        assert len(tracer.nodes) == 1
+        node = list(tracer.nodes.values())[0]
+        assert node.module is module
+        assert "Doubler" in node.id
+
+    def test_call_with_proxy_input_creates_dependency(self) -> None:
+        """When called with a Proxy input, creates a dependency edge."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Processor(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: str) -> str:
+                return x.upper()
+
+        module = Processor()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            # Create an input proxy
+            input_proxy = tracer._create_input_node("text", "hello")
+            # Call module with proxy
+            output = module(input_proxy)
+
+        # Should have 2 nodes: input and the module call
+        assert len(tracer.nodes) == 2
+
+        # The module call node should depend on the input
+        module_node = tracer.nodes[output.node_id]
+        assert input_proxy.node_id in module_node.dependencies
+
+    def test_call_with_multiple_proxy_inputs(self) -> None:
+        """Multiple Proxy inputs all create dependencies."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Combiner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, a: str, b: str) -> str:
+                return f"{a} {b}"
+
+        module = Combiner()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            proxy_a = tracer._create_input_node("a", "hello")
+            proxy_b = tracer._create_input_node("b", "world")
+            output = module(proxy_a, proxy_b)
+
+        # The module node should depend on both inputs
+        module_node = tracer.nodes[output.node_id]
+        assert proxy_a.node_id in module_node.dependencies
+        assert proxy_b.node_id in module_node.dependencies
+
+    def test_call_with_mixed_proxy_and_literal_args(self) -> None:
+        """Mix of Proxy and literal arguments is handled correctly."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Formatter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, template: str, value: str) -> str:
+                return template.format(value)
+
+        module = Formatter()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            proxy = tracer._create_input_node("value", "world")
+            # First arg is literal, second is proxy
+            output = module("Hello, {}!", proxy)
+
+        module_node = tracer.nodes[output.node_id]
+        # Should only depend on the proxy, not the literal
+        assert len(module_node.dependencies) == 1
+        assert proxy.node_id in module_node.dependencies
+        # The literal should be stored in args
+        assert "Hello, {}!" in module_node.args
+
+    def test_call_with_kwarg_proxy_creates_dependency(self) -> None:
+        """Proxy passed as keyword argument creates dependency."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Greeter(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, name: str, greeting: str = "Hello") -> str:
+                return f"{greeting}, {name}!"
+
+        module = Greeter()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            proxy = tracer._create_input_node("name", "Alice")
+            output = module(name=proxy, greeting="Hi")
+
+        module_node = tracer.nodes[output.node_id]
+        assert proxy.node_id in module_node.dependencies
+        assert module_node.kwargs["greeting"] == "Hi"
+
+    def test_sequential_calls_create_chain(self) -> None:
+        """Sequential module calls create a dependency chain."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Step1(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: str) -> str:
+                return f"Step1({x})"
+
+        class Step2(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: str) -> str:
+                return f"Step2({x})"
+
+        step1 = Step1()
+        step2 = Step2()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            input_proxy = tracer._create_input_node("input", "data")
+            intermediate = step1(input_proxy)
+            final = step2(intermediate)
+
+        # 3 nodes: input, step1, step2
+        assert len(tracer.nodes) == 3
+
+        # step1 depends on input
+        step1_node = tracer.nodes[intermediate.node_id]
+        assert input_proxy.node_id in step1_node.dependencies
+
+        # step2 depends on step1
+        step2_node = tracer.nodes[final.node_id]
+        assert intermediate.node_id in step2_node.dependencies
+
+    def test_parallel_calls_from_same_input(self) -> None:
+        """Parallel module calls from same input create fan-out."""
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class ModuleA(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: str) -> str:
+                return f"A({x})"
+
+        class ModuleB(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: str) -> str:
+                return f"B({x})"
+
+        mod_a = ModuleA()
+        mod_b = ModuleB()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            input_proxy = tracer._create_input_node("input", "data")
+            output_a = mod_a(input_proxy)
+            output_b = mod_b(input_proxy)
+
+        # 3 nodes: input, module_a, module_b
+        assert len(tracer.nodes) == 3
+
+        # Both outputs depend on the same input
+        node_a = tracer.nodes[output_a.node_id]
+        node_b = tracer.nodes[output_b.node_id]
+        assert input_proxy.node_id in node_a.dependencies
+        assert input_proxy.node_id in node_b.dependencies
+
+        # They don't depend on each other
+        assert output_b.node_id not in node_a.dependencies
+        assert output_a.node_id not in node_b.dependencies
+
+    def test_nested_module_calls_during_tracing(self) -> None:
+        """Nested module calls are all recorded during tracing."""
+        from typing import Any
+
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: Any) -> Any:
+                return f"Inner({x})"
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.inner = Inner()
+
+            def forward(self, x: Any) -> Any:
+                # During tracing, this call is also recorded
+                intermediate = self.inner(x)
+                return f"Outer({intermediate})"
+
+        outer = Outer()
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            input_proxy = tracer._create_input_node("input", "data")
+            # Calling outer.forward directly (as trace() does)
+            outer.forward(input_proxy)
+
+        # Should record: input, inner call (from within outer.forward)
+        assert len(tracer.nodes) == 2
+        # The inner module call was recorded
+        assert any("Inner" in node_id for node_id in tracer.nodes)
+
+    def test_llm_inference_with_trace_context(self) -> None:
+        """LLMInference works correctly with trace context."""
+        from inf_engine.module import LLMInference
+        from inf_engine.tracing.context import trace_context
+        from inf_engine.tracing.proxy import Proxy
+        from inf_engine.tracing.tracer import Tracer
+
+        llm = LLMInference(alias="test_llm", system_prompt="Be helpful.")
+        tracer = Tracer()
+
+        with trace_context(tracer):
+            input_proxy = tracer._create_input_node("prompt", "Hello!")
+            output = llm(input_proxy)
+
+        # Should return a proxy
+        assert isinstance(output, Proxy)
+
+        # Should record the LLM call
+        assert len(tracer.nodes) == 2  # input + llm call
+        llm_node = tracer.nodes[output.node_id]
+        assert llm_node.module is llm
+        assert input_proxy.node_id in llm_node.dependencies
+
+    def test_context_cleared_after_block(self) -> None:
+        """Trace context is cleared after exiting the block."""
+        from inf_engine.tracing.context import get_trace_context, trace_context
+        from inf_engine.tracing.tracer import Tracer
+
+        class Doubler(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.call_count = 0
+
+            def forward(self, x: int) -> int:
+                self.call_count += 1
+                return x * 2
+
+        module = Doubler()
+        tracer = Tracer()
+
+        # Inside context - returns proxy
+        with trace_context(tracer):
+            assert get_trace_context() is tracer
+
+        # Outside context - no trace context
+        assert get_trace_context() is None
+
+        # Now call should delegate to forward
+        result = module(5)
+        assert result == 10
+        assert module.call_count == 1

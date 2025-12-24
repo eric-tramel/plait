@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
+from inf_engine.tracing.context import get_trace_context
+
 if TYPE_CHECKING:
     from inf_engine.parameter import Parameter
 
@@ -289,16 +291,17 @@ class InferenceModule:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the module.
 
-        Delegates to forward() to perform the actual computation.
-        In the future, this will also handle trace context for
-        automatic DAG capture during tracing.
+        If a trace context is active, records the call and returns a Proxy
+        representing the eventual output. Otherwise, executes forward()
+        directly to perform the actual computation.
 
         Args:
             *args: Positional arguments passed to forward().
             **kwargs: Keyword arguments passed to forward().
 
         Returns:
-            The result from forward().
+            If tracing: A Proxy representing the eventual output of this call.
+            Otherwise: The result from forward().
 
         Example:
             >>> class Doubler(InferenceModule):
@@ -306,9 +309,17 @@ class InferenceModule:
             ...         return x * 2
             ...
             >>> doubler = Doubler()
-            >>> doubler(5)
+            >>> doubler(5)  # Without trace context, calls forward() directly
             10
+
+        Note:
+            During tracing, the tracer records this call as a node in the
+            execution graph. The forward() method is not called; instead,
+            dependencies are tracked based on Proxy arguments.
         """
+        tracer = get_trace_context()
+        if tracer is not None:
+            return tracer.record_call(self, args, kwargs)
         return self.forward(*args, **kwargs)
 
 
