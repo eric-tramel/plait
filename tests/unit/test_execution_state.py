@@ -1720,3 +1720,365 @@ class TestRequeueLifecycle:
         )
 
         assert state.is_complete() is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ExecutionState get_outputs() Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestGetOutputs:
+    """Tests for ExecutionState.get_outputs()."""
+
+    def test_get_outputs_empty_graph(self) -> None:
+        """get_outputs returns empty dict for empty graph."""
+        graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
+        state = ExecutionState(graph)
+
+        outputs = state.get_outputs()
+
+        assert outputs == {}
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_single_output(self) -> None:
+        """get_outputs returns single output after completion."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Complete the only node
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello world", duration_ms=5.0),
+        )
+
+        outputs = state.get_outputs()
+
+        assert outputs == {"input:input_0": "hello world"}
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_multiple_outputs(self) -> None:
+        """get_outputs returns all completed outputs for parallel graph."""
+        graph = create_parallel_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Complete both output branches
+        task_a = await state.get_next_task()
+        task_b = await state.get_next_task()
+        assert task_a is not None
+        assert task_b is not None
+
+        state.mark_complete(
+            task_a.node_id,
+            TaskResult(node_id=task_a.node_id, value="result_a", duration_ms=10.0),
+        )
+        state.mark_complete(
+            task_b.node_id,
+            TaskResult(node_id=task_b.node_id, value="result_b", duration_ms=10.0),
+        )
+
+        outputs = state.get_outputs()
+
+        # Both outputs should be present
+        assert len(outputs) == 2
+        assert "LLMInference_1" in outputs
+        assert "LLMInference_2" in outputs
+        assert set(outputs.values()) == {"result_a", "result_b"}
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_excludes_incomplete(self) -> None:
+        """get_outputs only includes completed outputs, not pending/in-progress."""
+        graph = create_parallel_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Complete only one of the two outputs
+        task_a = await state.get_next_task()
+        assert task_a is not None
+        state.mark_complete(
+            task_a.node_id,
+            TaskResult(node_id=task_a.node_id, value="result_a", duration_ms=10.0),
+        )
+
+        outputs = state.get_outputs()
+
+        # Only the completed output should be present
+        assert len(outputs) == 1
+        assert task_a.node_id in outputs
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_excludes_failed(self) -> None:
+        """get_outputs excludes failed output nodes."""
+        graph = create_parallel_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Complete one output, fail the other
+        task_a = await state.get_next_task()
+        task_b = await state.get_next_task()
+        assert task_a is not None
+        assert task_b is not None
+
+        state.mark_complete(
+            task_a.node_id,
+            TaskResult(node_id=task_a.node_id, value="result_a", duration_ms=10.0),
+        )
+        state.mark_failed(task_b.node_id, ValueError("Task failed"))
+
+        outputs = state.get_outputs()
+
+        # Only the completed output should be present
+        assert len(outputs) == 1
+        assert task_a.node_id in outputs
+        assert outputs[task_a.node_id] == "result_a"
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_excludes_cancelled(self) -> None:
+        """get_outputs excludes cancelled output nodes."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Fail the middle node, cancelling the output node
+        await state.get_next_task()
+        state.mark_failed("LLMInference_1", ValueError("Error"))
+
+        # Output node is now cancelled
+        assert state.status["LLMInference_2"] == TaskStatus.CANCELLED
+
+        outputs = state.get_outputs()
+
+        # No outputs should be present (the only output was cancelled)
+        assert outputs == {}
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_linear_graph_complete(self) -> None:
+        """get_outputs returns correct value after linear graph execution."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete entire linear graph
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="input_val", duration_ms=5.0),
+        )
+
+        await state.get_next_task()
+        state.mark_complete(
+            "LLMInference_1",
+            TaskResult(node_id="LLMInference_1", value="step1_val", duration_ms=10.0),
+        )
+
+        await state.get_next_task()
+        state.mark_complete(
+            "LLMInference_2",
+            TaskResult(
+                node_id="LLMInference_2", value="final_output", duration_ms=15.0
+            ),
+        )
+
+        outputs = state.get_outputs()
+
+        # Only the output node should be in outputs
+        assert outputs == {"LLMInference_2": "final_output"}
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_diamond_graph_complete(self) -> None:
+        """get_outputs returns correct value after diamond graph execution."""
+        graph = create_diamond_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Complete both branches
+        task_a = await state.get_next_task()
+        task_b = await state.get_next_task()
+        assert task_a is not None
+        assert task_b is not None
+
+        state.mark_complete(
+            task_a.node_id,
+            TaskResult(node_id=task_a.node_id, value="a", duration_ms=10.0),
+        )
+        state.mark_complete(
+            task_b.node_id,
+            TaskResult(node_id=task_b.node_id, value="b", duration_ms=10.0),
+        )
+
+        # Complete merge
+        task_merge = await state.get_next_task()
+        assert task_merge is not None
+        state.mark_complete(
+            task_merge.node_id,
+            TaskResult(
+                node_id=task_merge.node_id, value="merged_result", duration_ms=15.0
+            ),
+        )
+
+        outputs = state.get_outputs()
+
+        # Only the merge node is the output
+        assert outputs == {"LLMInference_3": "merged_result"}
+
+    def test_get_outputs_before_any_execution(self) -> None:
+        """get_outputs returns empty dict when no tasks have completed."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        outputs = state.get_outputs()
+
+        assert outputs == {}
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_preserves_value_types(self) -> None:
+        """get_outputs preserves the type of result values."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Complete with a complex value
+        await state.get_next_task()
+        complex_value = {"key": "value", "nested": [1, 2, 3], "count": 42}
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value=complex_value, duration_ms=5.0),
+        )
+
+        outputs = state.get_outputs()
+
+        assert outputs["input:input_0"] == complex_value
+        assert isinstance(outputs["input:input_0"], dict)
+        assert outputs["input:input_0"]["count"] == 42
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_none_value(self) -> None:
+        """get_outputs correctly handles None as a result value."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Complete with None value
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value=None, duration_ms=5.0),
+        )
+
+        outputs = state.get_outputs()
+
+        assert outputs == {"input:input_0": None}
+        assert "input:input_0" in outputs
+
+
+class TestGetOutputsLifecycle:
+    """Integration tests for get_outputs in graph execution lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_progressive_completion(self) -> None:
+        """get_outputs shows progressive results as outputs complete."""
+        graph = create_parallel_graph()
+        state = ExecutionState(graph)
+
+        # Initially empty
+        assert state.get_outputs() == {}
+
+        # Complete input (not an output node)
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+        assert state.get_outputs() == {}  # Still empty, no outputs completed
+
+        # Complete first output
+        task_a = await state.get_next_task()
+        assert task_a is not None
+        state.mark_complete(
+            task_a.node_id,
+            TaskResult(node_id=task_a.node_id, value="result_a", duration_ms=10.0),
+        )
+
+        partial_outputs = state.get_outputs()
+        assert len(partial_outputs) == 1
+        assert task_a.node_id in partial_outputs
+
+        # Complete second output
+        task_b = await state.get_next_task()
+        assert task_b is not None
+        state.mark_complete(
+            task_b.node_id,
+            TaskResult(node_id=task_b.node_id, value="result_b", duration_ms=10.0),
+        )
+
+        final_outputs = state.get_outputs()
+        assert len(final_outputs) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_outputs_after_requeue_and_complete(self) -> None:
+        """get_outputs returns correct value after requeue and completion."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Complete input
+        await state.get_next_task()
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Start and requeue LLMInference_1
+        await state.get_next_task()
+        state.requeue("LLMInference_1")
+
+        # No outputs yet
+        assert state.get_outputs() == {}
+
+        # Complete the requeued task
+        task = await state.get_next_task()
+        assert task is not None
+        state.mark_complete(
+            "LLMInference_1",
+            TaskResult(node_id="LLMInference_1", value="step1", duration_ms=10.0),
+        )
+
+        # Still no outputs (LLMInference_2 is the output)
+        assert state.get_outputs() == {}
+
+        # Complete final output
+        await state.get_next_task()
+        state.mark_complete(
+            "LLMInference_2",
+            TaskResult(node_id="LLMInference_2", value="final", duration_ms=15.0),
+        )
+
+        outputs = state.get_outputs()
+        assert outputs == {"LLMInference_2": "final"}

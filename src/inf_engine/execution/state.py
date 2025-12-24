@@ -663,3 +663,45 @@ class ExecutionState:
             ):
                 return False
         return True
+
+    def get_outputs(self) -> dict[str, Any]:
+        """Get the final output values from completed output nodes.
+
+        Retrieves the result values for all output nodes in the graph that
+        have completed successfully. Output nodes are the terminal nodes
+        of the graph as specified by graph.output_ids.
+
+        Returns:
+            A dictionary mapping output node IDs to their result values.
+            Only includes outputs that have completed successfully (have
+            a result in self.results). Nodes that failed, were cancelled,
+            or are still pending are not included.
+
+        Note:
+            This method should typically be called after is_complete()
+            returns True to ensure all possible outputs have been collected.
+            However, it can be called at any time to get partial results
+            from outputs that have completed so far.
+
+        Example:
+            >>> # After completing all tasks in a linear graph
+            >>> outputs = state.get_outputs()
+            >>> outputs
+            {'LLMInference_2': 'final result text'}
+
+            >>> # For a graph with multiple outputs
+            >>> outputs = state.get_outputs()
+            >>> outputs
+            {'output_1': 'result A', 'output_2': 'result B'}
+
+            >>> # When some outputs failed, only successful ones are included
+            >>> # If output_1 completed but output_2 failed:
+            >>> outputs = state.get_outputs()
+            >>> outputs
+            {'output_1': 'result A'}
+        """
+        return {
+            output_id: self.results[output_id].value
+            for output_id in self.graph.output_ids
+            if output_id in self.results
+        }
