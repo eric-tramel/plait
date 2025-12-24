@@ -30,6 +30,11 @@ from inf_engine.tracing.tracer import InputNode
 if TYPE_CHECKING:
     from inf_engine.execution.state import ExecutionState, Task, TaskResult
 
+# Timeout for waiting on task_ready_event to prevent indefinite blocking
+# if there's a logic error. In normal operation, the event is always
+# signaled when state changes.
+_EVENT_WAIT_TIMEOUT: float = 5.0
+
 
 class Scheduler:
     """Manages task scheduling with concurrency control.
@@ -245,9 +250,20 @@ class Scheduler:
                 task = await state.get_next_task()
                 if task is None:
                     # No task available but not complete - release slot and wait
+                    # for task_ready_event to be signaled (when a task completes
+                    # or fails, the event is set to wake up waiting schedulers)
                     self.release()
-                    # Small sleep to allow in-progress tasks to complete
-                    await asyncio.sleep(0.001)
+                    state.task_ready_event.clear()
+                    # Wait for event with timeout to prevent indefinite blocking
+                    try:
+                        await asyncio.wait_for(
+                            state.task_ready_event.wait(),
+                            timeout=_EVENT_WAIT_TIMEOUT,
+                        )
+                    except TimeoutError:
+                        # Timeout is a safety mechanism - just retry the loop
+                        # In normal operation this should not happen
+                        pass
                     continue
 
                 # Spawn task execution

@@ -256,6 +256,7 @@ class ExecutionState:
         in_progress: Dictionary of tasks currently being executed.
         waiting_on: Maps each node to the set of dependencies not yet done.
         dependents: Maps each node to the set of nodes waiting on it.
+        task_ready_event: Event signaled when new tasks become ready.
 
     Example:
         >>> from inf_engine.execution.state import ExecutionState
@@ -318,6 +319,10 @@ class ExecutionState:
         # dependents[node_id] = set of node_ids waiting for this node
         self.dependents: dict[str, set[str]] = defaultdict(set)
 
+        # Event signaling for scheduler efficiency
+        # Set when new tasks become ready for execution
+        self.task_ready_event: asyncio.Event = asyncio.Event()
+
         # Initialize state from graph
         self._initialize()
 
@@ -356,7 +361,8 @@ class ExecutionState:
         """Move a task to the pending queue.
 
         Creates a Task from the GraphNode and adds it to the priority queue.
-        Updates the node status from BLOCKED to PENDING.
+        Updates the node status from BLOCKED to PENDING. Signals the
+        task_ready_event to wake up any waiting scheduler.
 
         Args:
             node_id: The ID of the node to make ready.
@@ -386,6 +392,9 @@ class ExecutionState:
         )
 
         self.pending.put_nowait(task)
+
+        # Signal that a new task is ready for execution
+        self.task_ready_event.set()
 
     def _resolve_args(self, args: tuple[Any, ...]) -> tuple[Any, ...]:
         """Resolve NodeRef references in args to actual result values.
@@ -539,6 +548,10 @@ class ExecutionState:
                     self._make_ready(dependent_id)
                     newly_ready.append(dependent_id)
 
+        # Signal scheduler even if no new tasks are ready - it needs to
+        # re-check is_complete() and may exit the execution loop
+        self.task_ready_event.set()
+
         return newly_ready
 
     def mark_failed(self, node_id: str, error: Exception) -> list[str]:
@@ -583,6 +596,9 @@ class ExecutionState:
         for desc_id in descendants:
             self.status[desc_id] = TaskStatus.CANCELLED
             cancelled.append(desc_id)
+
+        # Signal scheduler to re-check state (may now be complete)
+        self.task_ready_event.set()
 
         return cancelled
 
@@ -638,6 +654,9 @@ class ExecutionState:
         task.retry_count += 1
         self.status[node_id] = TaskStatus.PENDING
         self.pending.put_nowait(task)
+
+        # Signal scheduler that a task is ready
+        self.task_ready_event.set()
 
         return dropped
 

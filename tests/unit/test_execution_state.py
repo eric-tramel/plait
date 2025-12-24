@@ -1,5 +1,7 @@
 """Unit tests for ExecutionState initialization and task management."""
 
+import asyncio
+
 import pytest
 
 from inf_engine.execution.state import ExecutionState, TaskResult, TaskStatus
@@ -2084,3 +2086,181 @@ class TestGetOutputsLifecycle:
 
         outputs = state.get_outputs()
         assert outputs == {"LLMInference_2": "final"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ExecutionState Event Signaling Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestTaskReadyEvent:
+    """Tests for ExecutionState.task_ready_event signaling."""
+
+    def test_event_exists_after_init(self) -> None:
+        """ExecutionState has task_ready_event attribute after initialization."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        assert hasattr(state, "task_ready_event")
+        assert isinstance(state.task_ready_event, asyncio.Event)
+
+    def test_event_set_during_initialization(self) -> None:
+        """Event is set during initialization when tasks become ready."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Event should be set because _make_ready() was called during init
+        assert state.task_ready_event.is_set()
+
+    def test_event_set_when_make_ready_called(self) -> None:
+        """Event is set when _make_ready() adds a task to pending queue."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Clear the event
+        state.task_ready_event.clear()
+        assert not state.task_ready_event.is_set()
+
+        # Manually trigger _make_ready for the blocked node
+        # First simulate completing its dependency
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0", value="hello", duration_ms=5.0
+        )
+        state.waiting_on["LLMInference_1"].clear()
+        state._make_ready("LLMInference_1")
+
+        # Event should be set
+        assert state.task_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_event_set_on_mark_complete(self) -> None:
+        """Event is set when mark_complete is called."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Get task and clear event
+        await state.get_next_task()
+        state.task_ready_event.clear()
+        assert not state.task_ready_event.is_set()
+
+        # Complete the task
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Event should be set
+        assert state.task_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_event_set_on_mark_complete_no_new_ready(self) -> None:
+        """Event is set even when no new tasks become ready."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Get task and clear event
+        await state.get_next_task()
+        state.task_ready_event.clear()
+        assert not state.task_ready_event.is_set()
+
+        # Complete the task (no dependents to make ready)
+        state.mark_complete(
+            "input:input_0",
+            TaskResult(node_id="input:input_0", value="hello", duration_ms=5.0),
+        )
+
+        # Event should still be set (to allow scheduler to re-check is_complete)
+        assert state.task_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_event_set_on_mark_failed(self) -> None:
+        """Event is set when mark_failed is called."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Get task and clear event
+        await state.get_next_task()
+        state.task_ready_event.clear()
+        assert not state.task_ready_event.is_set()
+
+        # Fail the task
+        state.mark_failed("input:input_0", ValueError("Test error"))
+
+        # Event should be set
+        assert state.task_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_event_set_on_requeue(self) -> None:
+        """Event is set when requeue is called."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+
+        # Get task and clear event
+        await state.get_next_task()
+        state.task_ready_event.clear()
+        assert not state.task_ready_event.is_set()
+
+        # Requeue the task
+        state.requeue("input:input_0")
+
+        # Event should be set
+        assert state.task_ready_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_event_can_be_waited_on(self) -> None:
+        """Event can be awaited and wakes up when set."""
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Clear event and start waiting
+        state.task_ready_event.clear()
+        wait_completed = False
+
+        async def wait_for_event() -> None:
+            nonlocal wait_completed
+            await state.task_ready_event.wait()
+            wait_completed = True
+
+        # Start the wait task
+        wait_task = asyncio.create_task(wait_for_event())
+
+        # Give it a moment - should not complete yet
+        await asyncio.sleep(0.001)
+        assert not wait_completed
+
+        # Set the event
+        state.task_ready_event.set()
+
+        # Wait for the task to complete
+        await asyncio.sleep(0.001)
+        assert wait_completed
+
+        await wait_task
+
+    @pytest.mark.asyncio
+    async def test_event_multiple_waiters(self) -> None:
+        """Multiple waiters are all woken when event is set."""
+        graph = create_single_input_graph()
+        state = ExecutionState(graph)
+        state.task_ready_event.clear()
+
+        woken_count = 0
+
+        async def waiter() -> None:
+            nonlocal woken_count
+            await state.task_ready_event.wait()
+            woken_count += 1
+
+        # Start multiple waiters
+        tasks = [asyncio.create_task(waiter()) for _ in range(5)]
+
+        # Give them a moment to start waiting
+        await asyncio.sleep(0.001)
+        assert woken_count == 0
+
+        # Set the event
+        state.task_ready_event.set()
+
+        # Wait for all to complete
+        await asyncio.gather(*tasks)
+        assert woken_count == 5

@@ -983,3 +983,170 @@ class TestSchedulerExecuteDependencies:
         assert state.results["a_1"].value == "start_processed"
         assert state.results["b_2"].value == "start_processed_processed"
         assert state.results["c_3"].value == "start_processed_processed_processed"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler Event Signaling Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSchedulerEventSignaling:
+    """Tests for Scheduler event-driven waiting behavior."""
+
+    @pytest.mark.asyncio
+    async def test_execute_uses_event_for_waiting(self) -> None:
+        """execute() uses event signaling instead of busy-wait."""
+        # This test verifies the scheduler doesn't busy-wait by checking
+        # that execution completes efficiently even with delays
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Should complete without hanging due to event signaling
+        outputs = await scheduler.execute(state)
+
+        assert outputs == {"c_3": "start_processed_processed_processed"}
+
+    @pytest.mark.asyncio
+    async def test_execute_no_busy_wait_latency(self) -> None:
+        """execute() doesn't add artificial latency from busy-waiting."""
+        import time
+
+        scheduler = Scheduler(max_concurrent=10)
+        graph = create_simple_graph()
+        state = ExecutionState(graph)
+
+        start = time.perf_counter()
+        await scheduler.execute(state)
+        elapsed = time.perf_counter() - start
+
+        # Without busy-wait, execution should be very fast
+        # Old busy-wait with 0.001s sleep would add noticeable latency
+        # Event signaling should complete in under 10ms for simple graph
+        assert elapsed < 0.1, f"Execution took {elapsed}s, may be busy-waiting"
+
+    @pytest.mark.asyncio
+    async def test_scheduler_wakes_on_task_completion(self) -> None:
+        """Scheduler wakes up when task completes and makes new tasks ready."""
+
+        class DelayedModule(InferenceModule):
+            async def forward(self, x: str) -> str:
+                await asyncio.sleep(0.01)  # Small delay
+                return f"{x}_delayed"
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        delayed_node = GraphNode(
+            id="delayed_1",
+            module=DelayedModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        final_node = GraphNode(
+            id="final_2",
+            module=SimpleModule(),
+            args=(NodeRef("delayed_1"),),
+            kwargs={},
+            dependencies=["delayed_1"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "delayed_1": delayed_node,
+                "final_2": final_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["final_2"],
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=10)
+
+        outputs = await scheduler.execute(state)
+
+        # Should complete correctly with event signaling
+        assert outputs == {"final_2": "test_delayed_processed"}
+
+    @pytest.mark.asyncio
+    async def test_scheduler_handles_concurrent_completions(self) -> None:
+        """Scheduler handles multiple concurrent task completions correctly."""
+
+        class SlowishModule(InferenceModule):
+            async def forward(self, x: str) -> str:
+                await asyncio.sleep(0.005)  # Small delay
+                return f"{x}_done"
+
+        # Create graph with many parallel nodes
+        nodes = {
+            "input:input_0": GraphNode(
+                id="input:input_0",
+                module=InputNode(value="start"),
+                args=(),
+                kwargs={},
+                dependencies=[],
+            )
+        }
+        output_ids = []
+
+        for i in range(10):
+            node_id = f"parallel_{i}"
+            nodes[node_id] = GraphNode(
+                id=node_id,
+                module=SlowishModule(),
+                args=(NodeRef("input:input_0"),),
+                kwargs={},
+                dependencies=["input:input_0"],
+            )
+            output_ids.append(node_id)
+
+        graph = InferenceGraph(
+            nodes=nodes,
+            input_ids=["input:input_0"],
+            output_ids=output_ids,
+        )
+        state = ExecutionState(graph)
+        scheduler = Scheduler(max_concurrent=5)  # Limit concurrency
+
+        outputs = await scheduler.execute(state)
+
+        # All tasks should complete
+        assert len(outputs) == 10
+        for node_id in output_ids:
+            assert outputs[node_id] == "start_done"
+
+    @pytest.mark.asyncio
+    async def test_scheduler_event_wakes_on_failure(self) -> None:
+        """Scheduler wakes up on task failure to handle completion."""
+        scheduler = Scheduler(max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=FailingModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+
+        # Should complete (with failure) without hanging
+        await scheduler.execute(state)
+
+        assert state.is_complete()
+        assert state.status["failing_1"] == TaskStatus.FAILED

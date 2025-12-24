@@ -46,9 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve user-defined output keys when forward() returns a dict, list, or nested structure
 - Add `NodeRef` type for type-safe node references in args and kwargs
 - Add cycle detection to `InferenceGraph.topological_order()` with clear error message
+- Add `task_ready_event` to ExecutionState for event-driven scheduler coordination
 
 ### Changed
-- N/A
+- Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
 
 ### Deprecated
 - N/A
