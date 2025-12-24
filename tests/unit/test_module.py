@@ -2294,3 +2294,346 @@ class TestCallWithTraceContext:
         result = module(5)
         assert result == 10
         assert module.call_count == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# State Dict Tests (PR-035)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestStateDict:
+    """Tests for InferenceModule.state_dict() serialization."""
+
+    def test_state_dict_empty_module(self) -> None:
+        """state_dict returns empty dict for module with no parameters."""
+        module = InferenceModule()
+        state = module.state_dict()
+        assert state == {}
+
+    def test_state_dict_single_parameter(self) -> None:
+        """state_dict returns single parameter value."""
+
+        class SingleParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("hello")
+
+        module = SingleParam()
+        state = module.state_dict()
+        assert state == {"prompt": "hello"}
+
+    def test_state_dict_multiple_parameters(self) -> None:
+        """state_dict returns all parameters."""
+
+        class MultiParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.system = Parameter("You are helpful.")
+                self.template = Parameter("Answer: {}")
+
+        module = MultiParam()
+        state = module.state_dict()
+        assert state == {"system": "You are helpful.", "template": "Answer: {}"}
+
+    def test_state_dict_nested_parameters(self) -> None:
+        """state_dict returns hierarchical names for nested parameters."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = Parameter("b")
+                self.inner = Inner()
+
+        module = Outer()
+        state = module.state_dict()
+        assert state == {"bias": "b", "inner.weight": "w"}
+
+    def test_state_dict_deeply_nested(self) -> None:
+        """state_dict handles deeply nested module hierarchies."""
+
+        class Level3(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.deep = Parameter("level3")
+
+        class Level2(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.level3 = Level3()
+
+        class Level1(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.level2 = Level2()
+
+        module = Level1()
+        state = module.state_dict()
+        assert state == {"level2.level3.deep": "level3"}
+
+    def test_state_dict_preserves_order(self) -> None:
+        """state_dict preserves parameter order (depth-first)."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.c = Parameter("c")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.a = Parameter("a")
+                self.inner = Inner()
+                self.b = Parameter("b")
+
+        module = Outer()
+        state = module.state_dict()
+        # Keys should be in depth-first order
+        assert list(state.keys()) == ["a", "b", "inner.c"]
+
+
+class TestLoadStateDict:
+    """Tests for InferenceModule.load_state_dict() deserialization."""
+
+    def test_load_state_dict_single_parameter(self) -> None:
+        """load_state_dict updates single parameter value."""
+
+        class SingleParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("original")
+
+        module = SingleParam()
+        module.load_state_dict({"prompt": "updated"})
+        assert module.prompt.value == "updated"
+
+    def test_load_state_dict_multiple_parameters(self) -> None:
+        """load_state_dict updates multiple parameters."""
+
+        class MultiParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.a = Parameter("a_original")
+                self.b = Parameter("b_original")
+
+        module = MultiParam()
+        module.load_state_dict({"a": "a_updated", "b": "b_updated"})
+        assert module.a.value == "a_updated"
+        assert module.b.value == "b_updated"
+
+    def test_load_state_dict_nested_parameters(self) -> None:
+        """load_state_dict updates nested parameters correctly."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("original_weight")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = Parameter("original_bias")
+                self.inner = Inner()
+
+        module = Outer()
+        module.load_state_dict({"bias": "new_bias", "inner.weight": "new_weight"})
+        assert module.bias.value == "new_bias"
+        assert module.inner.weight.value == "new_weight"
+
+    def test_load_state_dict_partial_load(self) -> None:
+        """load_state_dict allows partial loads (missing keys ignored)."""
+
+        class MultiParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.a = Parameter("a_original")
+                self.b = Parameter("b_original")
+
+        module = MultiParam()
+        module.load_state_dict({"a": "a_updated"})  # Only update 'a'
+        assert module.a.value == "a_updated"
+        assert module.b.value == "b_original"  # Unchanged
+
+    def test_load_state_dict_unknown_key_raises(self) -> None:
+        """load_state_dict raises KeyError for unknown parameter names."""
+        import pytest
+
+        class SingleParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("original")
+
+        module = SingleParam()
+        with pytest.raises(KeyError) as exc_info:
+            module.load_state_dict({"unknown": "value"})
+        assert "Unknown parameter: unknown" in str(exc_info.value)
+
+    def test_load_state_dict_unknown_nested_key_raises(self) -> None:
+        """load_state_dict raises KeyError for unknown nested parameter."""
+        import pytest
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.inner = Inner()
+
+        module = Outer()
+        with pytest.raises(KeyError) as exc_info:
+            module.load_state_dict({"inner.unknown": "value"})
+        assert "Unknown parameter: inner.unknown" in str(exc_info.value)
+
+    def test_load_state_dict_empty_dict(self) -> None:
+        """load_state_dict with empty dict does nothing."""
+
+        class SingleParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("original")
+
+        module = SingleParam()
+        module.load_state_dict({})
+        assert module.prompt.value == "original"
+
+    def test_load_state_dict_on_empty_module(self) -> None:
+        """load_state_dict on module with no parameters fails for any key."""
+        import pytest
+
+        module = InferenceModule()
+        with pytest.raises(KeyError):
+            module.load_state_dict({"anything": "value"})
+
+
+class TestStateDictRoundTrip:
+    """Tests for state_dict/load_state_dict round-trip serialization."""
+
+    def test_round_trip_single_parameter(self) -> None:
+        """state_dict -> load_state_dict preserves single parameter."""
+
+        class SingleParam(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("hello world")
+
+        module1 = SingleParam()
+        state = module1.state_dict()
+
+        module2 = SingleParam()
+        module2.load_state_dict(state)
+
+        assert module2.prompt.value == module1.prompt.value
+
+    def test_round_trip_nested_parameters(self) -> None:
+        """state_dict -> load_state_dict preserves nested parameters."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("inner_value")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = Parameter("outer_value")
+                self.inner = Inner()
+
+        module1 = Outer()
+        state = module1.state_dict()
+
+        module2 = Outer()
+        module2.load_state_dict(state)
+
+        assert module2.bias.value == module1.bias.value
+        assert module2.inner.weight.value == module1.inner.weight.value
+
+    def test_round_trip_modified_values(self) -> None:
+        """Round-trip preserves modified parameter values."""
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("default")
+
+        module1 = MyModule()
+        module1.prompt.value = "custom value after modification"
+        state = module1.state_dict()
+
+        module2 = MyModule()
+        assert module2.prompt.value == "default"  # Still default
+        module2.load_state_dict(state)
+        assert module2.prompt.value == "custom value after modification"
+
+    def test_round_trip_empty_module(self) -> None:
+        """Round-trip works for module with no parameters."""
+        module1 = InferenceModule()
+        state = module1.state_dict()
+
+        module2 = InferenceModule()
+        module2.load_state_dict(state)
+
+        assert state == {}
+
+    def test_round_trip_complex_hierarchy(self) -> None:
+        """Round-trip preserves complex nested hierarchies."""
+
+        class Encoder(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.embed = Parameter("encoder_embed")
+
+        class Decoder(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.output = Parameter("decoder_output")
+
+        class Transformer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.encoder = Encoder()
+                self.decoder = Decoder()
+                self.norm = Parameter("layer_norm")
+
+        module1 = Transformer()
+        module1.encoder.embed.value = "modified_embed"
+        module1.decoder.output.value = "modified_output"
+        module1.norm.value = "modified_norm"
+
+        state = module1.state_dict()
+
+        module2 = Transformer()
+        module2.load_state_dict(state)
+
+        assert module2.encoder.embed.value == "modified_embed"
+        assert module2.decoder.output.value == "modified_output"
+        assert module2.norm.value == "modified_norm"
+
+    def test_state_dict_json_serializable(self) -> None:
+        """state_dict result can be serialized to JSON and back."""
+        import json
+
+        class MyModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("test value")
+                self.template = Parameter("template: {}")
+
+        module1 = MyModule()
+        state = module1.state_dict()
+
+        # Serialize to JSON and back
+        json_str = json.dumps(state)
+        loaded_state = json.loads(json_str)
+
+        module2 = MyModule()
+        module2.load_state_dict(loaded_state)
+
+        assert module2.prompt.value == module1.prompt.value
+        assert module2.template.value == module1.template.value

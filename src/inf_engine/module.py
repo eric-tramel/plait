@@ -257,6 +257,94 @@ class InferenceModule:
             yield from child.named_parameters(child_prefix)
 
     # ─────────────────────────────────────────────────────────────
+    # State Serialization (PyTorch-like API)
+    # ─────────────────────────────────────────────────────────────
+
+    def state_dict(self) -> dict[str, str]:
+        """Return a dictionary of all parameter values.
+
+        Used for saving learned prompts/instructions after optimization.
+        Keys are hierarchical parameter names (e.g., "summarizer.system_prompt"),
+        matching the output of named_parameters().
+
+        Returns:
+            A dictionary mapping parameter names to their string values.
+
+        Example:
+            >>> from inf_engine.parameter import Parameter
+            >>> class Inner(InferenceModule):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.weight = Parameter("w")
+            ...
+            >>> class Outer(InferenceModule):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.bias = Parameter("b")
+            ...         self.inner = Inner()
+            ...
+            >>> outer = Outer()
+            >>> outer.state_dict()
+            {'bias': 'b', 'inner.weight': 'w'}
+
+        Note:
+            The returned dict can be serialized to JSON/pickle and later
+            restored with load_state_dict().
+        """
+        return {name: param.value for name, param in self.named_parameters()}
+
+    def load_state_dict(self, state_dict: dict[str, str]) -> None:
+        """Load parameter values from a dictionary.
+
+        Used for restoring learned prompts/instructions from a saved state.
+        The keys in state_dict must match the hierarchical parameter names
+        from this module's named_parameters().
+
+        Args:
+            state_dict: Dictionary mapping parameter names to their values.
+
+        Raises:
+            KeyError: If a key in state_dict does not match any parameter
+                in this module. Missing keys in state_dict are silently
+                ignored (partial loads are allowed).
+
+        Example:
+            >>> from inf_engine.parameter import Parameter
+            >>> class MyModule(InferenceModule):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.prompt = Parameter("original")
+            ...
+            >>> module = MyModule()
+            >>> module.load_state_dict({"prompt": "updated"})
+            >>> module.prompt.value
+            'updated'
+
+        Example with unknown key:
+            >>> from inf_engine.parameter import Parameter
+            >>> class MyModule(InferenceModule):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.prompt = Parameter("test")
+            ...
+            >>> module = MyModule()
+            >>> module.load_state_dict({"unknown": "value"})
+            Traceback (most recent call last):
+                ...
+            KeyError: 'Unknown parameter: unknown'
+
+        Note:
+            This method modifies the parameter values in-place. If you need
+            to preserve the original values, use state_dict() first to save
+            them.
+        """
+        params = dict(self.named_parameters())
+        for name, value in state_dict.items():
+            if name not in params:
+                raise KeyError(f"Unknown parameter: {name}")
+            params[name].value = value
+
+    # ─────────────────────────────────────────────────────────────
     # Forward and Call (Core Execution Interface)
     # ─────────────────────────────────────────────────────────────
 

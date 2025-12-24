@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `NodeRef` type for type-safe node references in args and kwargs
 - Add cycle detection to `InferenceGraph.topological_order()` with clear error message
 - Add `task_ready_event` to ExecutionState for event-driven scheduler coordination
+- Add `state_dict()` and `load_state_dict()` to InferenceModule for parameter serialization
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
