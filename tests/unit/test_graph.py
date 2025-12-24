@@ -730,3 +730,307 @@ class TestInferenceGraphTopologicalOrder:
 
         # Verify the order is exactly what we expect
         assert order == ["node_0", "node_1", "node_2", "node_3", "node_4"]
+
+
+class TestInferenceGraphAncestors:
+    """Tests for InferenceGraph.ancestors() method."""
+
+    def test_ancestors_of_input_node(self) -> None:
+        """Input nodes have no ancestors."""
+        node = GraphNode(id="input", module=None, args=(), kwargs={}, dependencies=[])
+        graph = InferenceGraph(
+            nodes={"input": node},
+            input_ids=["input"],
+            output_ids=["input"],
+        )
+
+        ancestors = graph.ancestors("input")
+
+        assert ancestors == set()
+
+    def test_ancestors_linear_graph(self) -> None:
+        """Ancestors in a linear graph (a -> b -> c)."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        c = GraphNode(id="c", module=None, args=("b",), kwargs={}, dependencies=["b"])
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b, "c": c},
+            input_ids=["a"],
+            output_ids=["c"],
+        )
+
+        # c depends on b and a
+        assert graph.ancestors("c") == {"a", "b"}
+        # b depends only on a
+        assert graph.ancestors("b") == {"a"}
+        # a has no ancestors
+        assert graph.ancestors("a") == set()
+
+    def test_ancestors_diamond_graph(self) -> None:
+        """Ancestors in a diamond graph (a -> [b, c] -> d)."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        c = GraphNode(id="c", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        d = GraphNode(
+            id="d", module=None, args=("b", "c"), kwargs={}, dependencies=["b", "c"]
+        )
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b, "c": c, "d": d},
+            input_ids=["a"],
+            output_ids=["d"],
+        )
+
+        # d depends on b, c, and transitively a
+        assert graph.ancestors("d") == {"a", "b", "c"}
+        # b and c only depend on a
+        assert graph.ancestors("b") == {"a"}
+        assert graph.ancestors("c") == {"a"}
+
+    def test_ancestors_complex_graph(self) -> None:
+        """Ancestors in a complex graph with multiple paths.
+
+        Graph structure:
+            input1 ─┬─> llm1 ──┬─> llm3 ─┬─> output
+            input2 ─┴─> llm2 ──┘         │
+                                  llm4 ──┘
+        """
+        input1 = GraphNode(
+            id="input:1", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        input2 = GraphNode(
+            id="input:2", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        llm1 = GraphNode(
+            id="llm1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:1", "input:2"],
+        )
+        llm2 = GraphNode(
+            id="llm2",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:1", "input:2"],
+        )
+        llm3 = GraphNode(
+            id="llm3", module=None, args=(), kwargs={}, dependencies=["llm1", "llm2"]
+        )
+        llm4 = GraphNode(id="llm4", module=None, args=(), kwargs={}, dependencies=[])
+        output = GraphNode(
+            id="output", module=None, args=(), kwargs={}, dependencies=["llm3", "llm4"]
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:1": input1,
+                "input:2": input2,
+                "llm1": llm1,
+                "llm2": llm2,
+                "llm3": llm3,
+                "llm4": llm4,
+                "output": output,
+            },
+            input_ids=["input:1", "input:2"],
+            output_ids=["output"],
+        )
+
+        # output depends on everything except itself
+        assert graph.ancestors("output") == {
+            "input:1",
+            "input:2",
+            "llm1",
+            "llm2",
+            "llm3",
+            "llm4",
+        }
+        # llm3 depends on llm1, llm2, and both inputs
+        assert graph.ancestors("llm3") == {"input:1", "input:2", "llm1", "llm2"}
+        # llm4 has no ancestors
+        assert graph.ancestors("llm4") == set()
+
+    def test_ancestors_does_not_include_self(self) -> None:
+        """The node itself is not included in its ancestors."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b},
+            input_ids=["a"],
+            output_ids=["b"],
+        )
+
+        assert "b" not in graph.ancestors("b")
+        assert "a" not in graph.ancestors("a")
+
+
+class TestInferenceGraphDescendants:
+    """Tests for InferenceGraph.descendants() method."""
+
+    def test_descendants_of_output_node(self) -> None:
+        """Output nodes have no descendants."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b},
+            input_ids=["a"],
+            output_ids=["b"],
+        )
+
+        descendants = graph.descendants("b")
+
+        assert descendants == set()
+
+    def test_descendants_linear_graph(self) -> None:
+        """Descendants in a linear graph (a -> b -> c)."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        c = GraphNode(id="c", module=None, args=("b",), kwargs={}, dependencies=["b"])
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b, "c": c},
+            input_ids=["a"],
+            output_ids=["c"],
+        )
+
+        # a has b and c as descendants
+        assert graph.descendants("a") == {"b", "c"}
+        # b has only c as descendant
+        assert graph.descendants("b") == {"c"}
+        # c has no descendants
+        assert graph.descendants("c") == set()
+
+    def test_descendants_diamond_graph(self) -> None:
+        """Descendants in a diamond graph (a -> [b, c] -> d)."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        c = GraphNode(id="c", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        d = GraphNode(
+            id="d", module=None, args=("b", "c"), kwargs={}, dependencies=["b", "c"]
+        )
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b, "c": c, "d": d},
+            input_ids=["a"],
+            output_ids=["d"],
+        )
+
+        # a has b, c, d as descendants
+        assert graph.descendants("a") == {"b", "c", "d"}
+        # b and c only have d as descendant
+        assert graph.descendants("b") == {"d"}
+        assert graph.descendants("c") == {"d"}
+        # d has no descendants
+        assert graph.descendants("d") == set()
+
+    def test_descendants_complex_graph(self) -> None:
+        """Descendants in a complex graph with multiple paths.
+
+        Graph structure:
+            input1 ─┬─> llm1 ──┬─> llm3 ─┬─> output
+            input2 ─┴─> llm2 ──┘         │
+                                  llm4 ──┘
+        """
+        input1 = GraphNode(
+            id="input:1", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        input2 = GraphNode(
+            id="input:2", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        llm1 = GraphNode(
+            id="llm1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:1", "input:2"],
+        )
+        llm2 = GraphNode(
+            id="llm2",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:1", "input:2"],
+        )
+        llm3 = GraphNode(
+            id="llm3", module=None, args=(), kwargs={}, dependencies=["llm1", "llm2"]
+        )
+        llm4 = GraphNode(id="llm4", module=None, args=(), kwargs={}, dependencies=[])
+        output = GraphNode(
+            id="output", module=None, args=(), kwargs={}, dependencies=["llm3", "llm4"]
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:1": input1,
+                "input:2": input2,
+                "llm1": llm1,
+                "llm2": llm2,
+                "llm3": llm3,
+                "llm4": llm4,
+                "output": output,
+            },
+            input_ids=["input:1", "input:2"],
+            output_ids=["output"],
+        )
+
+        # input1 has llm1, llm2, llm3, output as descendants
+        assert graph.descendants("input:1") == {"llm1", "llm2", "llm3", "output"}
+        # llm3 only has output as descendant
+        assert graph.descendants("llm3") == {"output"}
+        # llm4 only has output as descendant
+        assert graph.descendants("llm4") == {"output"}
+        # output has no descendants
+        assert graph.descendants("output") == set()
+
+    def test_descendants_does_not_include_self(self) -> None:
+        """The node itself is not included in its descendants."""
+        a = GraphNode(id="a", module=None, args=(), kwargs={}, dependencies=[])
+        b = GraphNode(id="b", module=None, args=("a",), kwargs={}, dependencies=["a"])
+        graph = InferenceGraph(
+            nodes={"a": a, "b": b},
+            input_ids=["a"],
+            output_ids=["b"],
+        )
+
+        assert "a" not in graph.descendants("a")
+        assert "b" not in graph.descendants("b")
+
+    def test_descendants_for_failure_cascading(self) -> None:
+        """Descendants are used for failure cascading - when a node fails,
+        all its descendants should be cancelled."""
+        # Simulate a graph where if 'processor' fails, 'formatter' and 'output'
+        # should be cancelled
+        input_node = GraphNode(
+            id="input", module=None, args=(), kwargs={}, dependencies=[]
+        )
+        processor = GraphNode(
+            id="processor",
+            module=None,
+            args=("input",),
+            kwargs={},
+            dependencies=["input"],
+        )
+        formatter = GraphNode(
+            id="formatter",
+            module=None,
+            args=("processor",),
+            kwargs={},
+            dependencies=["processor"],
+        )
+        output = GraphNode(
+            id="output",
+            module=None,
+            args=("formatter",),
+            kwargs={},
+            dependencies=["formatter"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input": input_node,
+                "processor": processor,
+                "formatter": formatter,
+                "output": output,
+            },
+            input_ids=["input"],
+            output_ids=["output"],
+        )
+
+        # If processor fails, formatter and output should be cancelled
+        nodes_to_cancel = graph.descendants("processor")
+        assert nodes_to_cancel == {"formatter", "output"}

@@ -137,9 +137,6 @@ class InferenceGraph:
         >>> len(graph.nodes)
         3
 
-    Note:
-        Graph traversal methods (ancestors, descendants) will be added
-        in subsequent PRs.
     """
 
     nodes: dict[str, GraphNode]
@@ -188,3 +185,80 @@ class InferenceGraph:
             visit(output_id)
 
         return order
+
+    def ancestors(self, node_id: str) -> set[str]:
+        """Get all nodes this node depends on, directly or indirectly.
+
+        Traverses the dependency graph backwards from the given node,
+        collecting all nodes that must complete before this node can execute.
+
+        Args:
+            node_id: The ID of the node to find ancestors for.
+
+        Returns:
+            A set of node IDs representing all ancestors. Does not include
+            the node itself. Returns an empty set if the node has no
+            dependencies.
+
+        Raises:
+            KeyError: If node_id is not in the graph.
+
+        Example:
+            >>> # Graph: input -> a -> b -> c
+            >>> graph.ancestors("c")
+            {'input', 'a', 'b'}
+
+            >>> # Input nodes have no ancestors
+            >>> graph.ancestors("input")
+            set()
+        """
+        result: set[str] = set()
+        queue = list(self.nodes[node_id].dependencies)
+
+        while queue:
+            current = queue.pop()
+            if current not in result:
+                result.add(current)
+                queue.extend(self.nodes[current].dependencies)
+
+        return result
+
+    def descendants(self, node_id: str) -> set[str]:
+        """Get all nodes that depend on this node, directly or indirectly.
+
+        Traverses the dependency graph forwards from the given node,
+        collecting all nodes that require this node's output. Used for
+        failure cascading when a node fails and its descendants must
+        be cancelled.
+
+        Args:
+            node_id: The ID of the node to find descendants for.
+
+        Returns:
+            A set of node IDs representing all descendants. Does not include
+            the node itself. Returns an empty set if no other nodes depend
+            on this node.
+
+        Raises:
+            KeyError: If node_id is not in the graph.
+
+        Example:
+            >>> # Graph: input -> a -> b -> c
+            >>> graph.descendants("input")
+            {'a', 'b', 'c'}
+
+            >>> # Output nodes have no descendants
+            >>> graph.descendants("c")
+            set()
+        """
+        result: set[str] = set()
+        queue = [node_id]
+
+        while queue:
+            current = queue.pop()
+            for nid, node in self.nodes.items():
+                if current in node.dependencies and nid not in result:
+                    result.add(nid)
+                    queue.append(nid)
+
+        return result
