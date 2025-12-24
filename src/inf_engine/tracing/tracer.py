@@ -202,6 +202,81 @@ class Tracer:
 
         return Proxy(node_id=node_id, tracer=self)
 
+    def record_call(
+        self,
+        module: InferenceModule,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> Proxy:
+        """Record a module invocation during tracing.
+
+        Called by InferenceModule.__call__ when tracing is active. Creates
+        a graph node representing the module call and tracks dependencies
+        based on any Proxy objects in the arguments.
+
+        Args:
+            module: The module being called.
+            args: Positional arguments passed to the module.
+            kwargs: Keyword arguments passed to the module.
+
+        Returns:
+            A Proxy representing the eventual output of this call.
+
+        Example:
+            >>> tracer = Tracer()
+            >>> module = LLMInference(alias="test")
+            >>> input_proxy = tracer._create_input_node("text", "hello")
+            >>> output_proxy = tracer.record_call(module, (input_proxy,), {})
+            >>> output_proxy.node_id
+            'LLMInference_1'
+            >>> tracer.nodes['LLMInference_1'].dependencies
+            ['input:text']
+
+        Note:
+            This method mutates the tracer's internal node registry by adding
+            a new GraphNode for the module invocation.
+        """
+        node_id = self._generate_id(module)
+
+        # Extract dependencies from proxy arguments
+        dependencies: list[str] = []
+        processed_args: list[str | Any] = []
+        for arg in args:
+            if isinstance(arg, Proxy):
+                dependencies.append(arg.node_id)
+                processed_args.append(arg.node_id)
+            else:
+                processed_args.append(arg)
+
+        processed_kwargs: dict[str, str | Any] = {}
+        for key, value in kwargs.items():
+            if isinstance(value, Proxy):
+                dependencies.append(value.node_id)
+                processed_kwargs[key] = value.node_id
+            else:
+                processed_kwargs[key] = value
+
+        # Get branch context if we're inside a conditional
+        branch_condition: str | None = None
+        branch_value: bool | None = None
+        if self._branch_stack:
+            branch_condition, branch_value = self._branch_stack[-1]
+
+        # Create the graph node
+        node = GraphNode(
+            id=node_id,
+            module=module,
+            args=tuple(processed_args),
+            kwargs=processed_kwargs,
+            dependencies=dependencies,
+            branch_condition=branch_condition,
+            branch_value=branch_value,
+            module_path=".".join(self._module_stack) if self._module_stack else "",
+        )
+        self.nodes[node_id] = node
+
+        return Proxy(node_id=node_id, tracer=self)
+
     def record_getitem(self, proxy: Proxy, key: Any) -> Proxy:
         """Record a getitem operation on a proxy.
 
@@ -220,6 +295,6 @@ class Tracer:
             NotImplementedError: This stub will be implemented in a future PR.
 
         Note:
-            This is a stub method. Full implementation coming in PR-015.
+            This is a stub method. Full implementation coming in a future PR.
         """
-        raise NotImplementedError("record_getitem will be implemented in PR-015")
+        raise NotImplementedError("record_getitem will be implemented in a future PR")
