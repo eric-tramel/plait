@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `visualize_graph()` function for DOT format graph output
 - Add `EndpointConfig` dataclass for LLM endpoint configuration
 - Add `ResourceConfig` dataclass for managing multiple LLM endpoints
+- Add `LLMRequest` and `LLMResponse` types for LLM API communication
+  - `LLMRequest`: prompt, system_prompt, temperature, max_tokens, tools, tool_choice, extra_body
+  - `LLMResponse`: content, tokens, finish_reason, reasoning, tool_calls, timing metrics
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

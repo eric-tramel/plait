@@ -11,10 +11,13 @@ from inf_engine.resources.config import (
     OpenAIEndpointConfig,
     ResourceConfig,
 )
+from inf_engine.resources.types import LLMRequest, LLMResponse
 
 __all__ = [
     "AnthropicEndpointConfig",
     "EndpointConfig",
+    "LLMRequest",
+    "LLMResponse",
     "NvidiaBuildEndpointConfig",
     "OpenAIEndpointConfig",
     "ResourceConfig",
