@@ -10,13 +10,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (2/13)
+- [ ] **Phase 4: Resources** (3/13)
 - [ ] **Phase 5: Production Features** (0/17)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 38/93 PRs completed**
+**Total: 39/93 PRs completed**
 
 ---
 
@@ -490,7 +490,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_resource_config.py` (multiple endpoints, access)
 - **CHANGELOG**: "Add ResourceConfig dataclass"
 
-### - [ ] PR-039: LLMRequest and LLMResponse types
+### - [x] PR-039: LLMRequest and LLMResponse types
 - **Branch**: `feat/llm-types`
 - **Description**: Implement request/response dataclasses for LLM calls
 - **Design Docs**:
