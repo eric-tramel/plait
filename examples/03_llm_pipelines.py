@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""LLM pipeline definitions (preview).
+"""LLM pipeline definitions.
 
 This example shows how to define LLM-based inference pipelines using
-LLMInference modules. These pipelines can't be executed yet (that requires
-the tracing and execution infrastructure from Phase 2-3), but this
-demonstrates the API for defining them.
+LLMInference modules. These pipelines define the structure of LLM calls
+and can be traced to capture their execution graph.
+
+Note: Actual execution of these pipelines requires resource configuration
+(Phase 4) to bind LLM aliases to real endpoints. See 05_execution.py for
+examples using mock modules that demonstrate execution patterns.
 
 Run with: python examples/03_llm_pipelines.py
 """
@@ -192,11 +195,11 @@ class DocumentProcessor(InferenceModule):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("inf-engine: LLM Pipelines Example (Structure Preview)")
+    print("inf-engine: LLM Pipelines Example")
     print("=" * 60)
-    print("\nNote: These pipelines cannot be executed yet.")
-    print("Execution requires the tracing infrastructure (Phase 2-3).")
-    print("This demo shows the module structure and parameters.\n")
+    print("\nNote: This demo shows pipeline structure and parameters.")
+    print("Actual LLM execution requires resource configuration (Phase 4).")
+    print("See 05_execution.py for execution patterns with mock modules.\n")
 
     # Example 1: Simple module
     print("1. Simple LLM Module (Summarizer)")
@@ -269,5 +272,5 @@ if __name__ == "__main__":
             print(f"{indent}{name.split('.')[-1]}: {type(module).__name__}")
 
     print("\n" + "=" * 60)
-    print("These pipelines will be executable after Phase 2-3!")
+    print("These pipelines can be traced and executed with resource config!")
     print("=" * 60)

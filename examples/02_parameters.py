@@ -104,6 +104,23 @@ class LearnableGreeter(InferenceModule):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Example 5: Saving and Loading Parameters (state_dict)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class OptimizableAssistant(InferenceModule):
+    """An assistant with multiple learnable prompts that can be saved/loaded."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.system = Parameter("You are a helpful assistant.", requires_grad=True)
+        self.greeting = Parameter("Hello!", requires_grad=True)
+
+    def forward(self, user_input: str) -> str:
+        return f"[System: {self.system.value}]\n{self.greeting.value} {user_input}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Demo
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -171,6 +188,44 @@ if __name__ == "__main__":
 
     # Show that feedback buffer is cleared after apply_update
     print(f"   Feedback buffer cleared: {greeter.greeting._feedback_buffer}")
+
+    # Example 5: Saving and loading parameters
+    print("\n5. Saving and Loading Parameters (state_dict)")
+    print("-" * 40)
+
+    # Create and customize a module
+    assistant = OptimizableAssistant()
+    print("   Original parameters:")
+    print(f"      system: '{assistant.system.value}'")
+    print(f"      greeting: '{assistant.greeting.value}'")
+
+    # Simulate optimization - update the parameters
+    assistant.system.value = "You are an expert Python programmer."
+    assistant.greeting.value = "Greetings, developer!"
+    print("\n   After 'optimization':")
+    print(f"      system: '{assistant.system.value}'")
+    print(f"      greeting: '{assistant.greeting.value}'")
+
+    # Save the state
+    state = assistant.state_dict()
+    print(f"\n   Saved state_dict: {state}")
+
+    # Create a fresh instance and load the state
+    new_assistant = OptimizableAssistant()
+    print("\n   Fresh instance parameters:")
+    print(f"      system: '{new_assistant.system.value}'")
+    print(f"      greeting: '{new_assistant.greeting.value}'")
+
+    new_assistant.load_state_dict(state)
+    print("\n   After load_state_dict:")
+    print(f"      system: '{new_assistant.system.value}'")
+    print(f"      greeting: '{new_assistant.greeting.value}'")
+
+    # JSON serialization example
+    import json
+
+    json_str = json.dumps(state, indent=2)
+    print(f"\n   JSON serialized:\n{json_str}")
 
     print("\n" + "=" * 60)
     print("Done!")

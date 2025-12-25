@@ -352,6 +352,41 @@ def demo_complex_pipeline() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Example 8: Graph Visualization
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def demo_graph_visualization() -> None:
+    """Demonstrate graph visualization with DOT format output."""
+    print("\n8. Graph Visualization (DOT Format)")
+    print("-" * 40)
+
+    from inf_engine.graph import visualize_graph
+
+    # Create a diamond pattern pipeline for visualization
+    module = DiamondPipeline()
+    tracer = Tracer()
+    graph = tracer.trace(module, "Input document...")
+
+    # Generate DOT format output
+    dot = visualize_graph(graph)
+
+    print("   DOT format output (can be rendered with Graphviz):\n")
+    for line in dot.split("\n"):
+        print(f"      {line}")
+
+    print("\n   To render this graph:")
+    print("      1. Save the DOT output to a file: graph.dot")
+    print("      2. Run: dot -Tpng graph.dot -o graph.png")
+    print("      3. Or use an online viewer like viz-js.com")
+
+    print("\n   Node shapes in the visualization:")
+    print("      • box = input nodes")
+    print("      • doubleoctagon = output nodes")
+    print("      • ellipse = intermediate nodes")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Run all demos
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -367,6 +402,7 @@ if __name__ == "__main__":
     demo_node_inspection()
     demo_multiple_traces()
     demo_complex_pipeline()
+    demo_graph_visualization()
 
     print("\n" + "=" * 60)
     print("Tracing captures the execution graph for async execution!")
