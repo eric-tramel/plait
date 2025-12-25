@@ -1,0 +1,506 @@
+"""Unit tests for resource configuration."""
+
+import pytest
+
+from inf_engine.resources.config import (
+    AnthropicEndpointConfig,
+    EndpointConfig,
+    NvidiaBuildEndpointConfig,
+    OpenAIEndpointConfig,
+)
+
+
+class TestEndpointConfigCreation:
+    """Tests for EndpointConfig instantiation."""
+
+    def test_endpoint_config_minimal(self) -> None:
+        """EndpointConfig can be created with only required fields."""
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o-mini",
+        )
+
+        assert config.provider_api == "openai"
+        assert config.model == "gpt-4o-mini"
+
+    def test_endpoint_config_all_fields(self) -> None:
+        """EndpointConfig can be created with all fields specified."""
+        config = EndpointConfig(
+            provider_api="vllm",
+            model="mistral-7b",
+            base_url="http://localhost:8000",
+            api_key="test-key",
+            max_concurrent=50,
+            rate_limit=100.0,
+            max_retries=5,
+            retry_delay=2.0,
+            timeout=600.0,
+            input_cost_per_1m=1.0,
+            output_cost_per_1m=2.0,
+        )
+
+        assert config.provider_api == "vllm"
+        assert config.model == "mistral-7b"
+        assert config.base_url == "http://localhost:8000"
+        assert config.api_key == "test-key"
+        assert config.max_concurrent == 50
+        assert config.rate_limit == 100.0
+        assert config.max_retries == 5
+        assert config.retry_delay == 2.0
+        assert config.timeout == 600.0
+        assert config.input_cost_per_1m == 1.0
+        assert config.output_cost_per_1m == 2.0
+
+    @pytest.mark.parametrize(
+        "provider_api",
+        ["openai", "anthropic", "vllm"],
+    )
+    def test_endpoint_config_all_providers(self, provider_api: str) -> None:
+        """EndpointConfig accepts all supported provider API types."""
+        config = EndpointConfig(
+            provider_api=provider_api,  # type: ignore[arg-type]
+            model="test-model",
+        )
+
+        assert config.provider_api == provider_api
+
+
+class TestEndpointConfigDefaults:
+    """Tests for EndpointConfig default values."""
+
+    def test_base_url_defaults_none(self) -> None:
+        """base_url defaults to None."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.base_url is None
+
+    def test_api_key_defaults_none(self) -> None:
+        """api_key defaults to None."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.api_key is None
+
+    def test_max_concurrent_defaults_10(self) -> None:
+        """max_concurrent defaults to 10."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.max_concurrent == 10
+
+    def test_rate_limit_defaults_none(self) -> None:
+        """rate_limit defaults to None (no rate limiting)."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.rate_limit is None
+
+    def test_max_retries_defaults_3(self) -> None:
+        """max_retries defaults to 3."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.max_retries == 3
+
+    def test_retry_delay_defaults_1(self) -> None:
+        """retry_delay defaults to 1.0 second."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.retry_delay == 1.0
+
+    def test_timeout_defaults_300(self) -> None:
+        """timeout defaults to 300 seconds (5 minutes)."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.timeout == 300.0
+
+    def test_input_cost_defaults_zero(self) -> None:
+        """input_cost_per_1m defaults to 0.0."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.input_cost_per_1m == 0.0
+
+    def test_output_cost_defaults_zero(self) -> None:
+        """output_cost_per_1m defaults to 0.0."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.output_cost_per_1m == 0.0
+
+
+class TestEndpointConfigUsagePatterns:
+    """Tests for typical EndpointConfig usage patterns."""
+
+    def test_openai_config(self) -> None:
+        """Typical OpenAI configuration."""
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            max_concurrent=10,
+            input_cost_per_1m=2.50,
+            output_cost_per_1m=10.0,
+        )
+
+        assert config.provider_api == "openai"
+        assert config.base_url is None  # Uses default OpenAI URL
+
+    def test_self_hosted_vllm_config(self) -> None:
+        """Self-hosted vLLM configuration."""
+        config = EndpointConfig(
+            provider_api="vllm",
+            model="mistral-7b",
+            base_url="http://vllm.internal:8000",
+            max_concurrent=100,
+            rate_limit=50.0,
+        )
+
+        assert config.provider_api == "vllm"
+        assert config.base_url == "http://vllm.internal:8000"
+        assert config.api_key is None  # Self-hosted typically doesn't need auth
+
+    def test_anthropic_config(self) -> None:
+        """Anthropic Claude configuration."""
+        config = EndpointConfig(
+            provider_api="anthropic",
+            model="claude-3-opus",
+            max_concurrent=5,
+            input_cost_per_1m=15.0,
+            output_cost_per_1m=75.0,
+        )
+
+        assert config.provider_api == "anthropic"
+        assert config.input_cost_per_1m == 15.0
+        assert config.output_cost_per_1m == 75.0
+
+
+class TestEndpointConfigEquality:
+    """Tests for EndpointConfig equality comparison."""
+
+    def test_equal_configs(self) -> None:
+        """Two configs with same values are equal."""
+        config1 = EndpointConfig(provider_api="openai", model="gpt-4o")
+        config2 = EndpointConfig(provider_api="openai", model="gpt-4o")
+
+        assert config1 == config2
+
+    def test_unequal_configs(self) -> None:
+        """Two configs with different values are not equal."""
+        config1 = EndpointConfig(provider_api="openai", model="gpt-4o")
+        config2 = EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+
+        assert config1 != config2
+
+
+class TestEndpointConfigGetApiKey:
+    """Tests for EndpointConfig.get_api_key() method."""
+
+    def test_get_api_key_none(self) -> None:
+        """get_api_key returns None when api_key is not set."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert config.get_api_key() is None
+
+    def test_get_api_key_literal_value(self) -> None:
+        """get_api_key returns literal value when not an env var."""
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="sk-my-literal-key",
+        )
+        assert config.get_api_key() == "sk-my-literal-key"
+
+    def test_get_api_key_from_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get_api_key reads from environment when api_key matches env var name."""
+        monkeypatch.setenv("MY_CUSTOM_API_KEY", "secret-from-env")
+
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="MY_CUSTOM_API_KEY",
+        )
+
+        assert config.get_api_key() == "secret-from-env"
+
+    def test_get_api_key_env_var_takes_precedence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If api_key matches an env var name, env var value is used."""
+        # Set an env var that happens to match a potential literal key
+        monkeypatch.setenv("OPENAI_API_KEY", "env-value")
+
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="OPENAI_API_KEY",
+        )
+
+        assert config.get_api_key() == "env-value"
+
+    def test_get_api_key_literal_when_env_not_found(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """api_key is returned as literal when no matching env var exists."""
+        # Ensure the env var doesn't exist
+        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
+
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="NONEXISTENT_VAR",
+        )
+
+        # Since NONEXISTENT_VAR is not in environment, treat as literal
+        assert config.get_api_key() == "NONEXISTENT_VAR"
+
+    def test_get_api_key_empty_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Empty string env var is still returned (not treated as missing)."""
+        monkeypatch.setenv("EMPTY_KEY", "")
+
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="EMPTY_KEY",
+        )
+
+        assert config.get_api_key() == ""
+
+
+class TestEndpointConfigHashKey:
+    """Tests for EndpointConfig.hash_key property."""
+
+    def test_hash_key_is_string(self) -> None:
+        """hash_key returns a string."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        assert isinstance(config.hash_key, str)
+
+    def test_hash_key_is_hex(self) -> None:
+        """hash_key returns a valid hex string."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+        # SHA256 produces 64 hex characters
+        assert len(config.hash_key) == 64
+        assert all(c in "0123456789abcdef" for c in config.hash_key)
+
+    def test_hash_key_same_endpoint_same_hash(self) -> None:
+        """Configs with same base_url and api_key have same hash_key."""
+        config1 = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            base_url="https://api.openai.com",
+            api_key="sk-test-key",
+        )
+        config2 = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o-mini",  # Different model
+            base_url="https://api.openai.com",  # Same base_url
+            api_key="sk-test-key",  # Same api_key
+        )
+
+        assert config1.hash_key == config2.hash_key
+
+    def test_hash_key_different_base_url(self) -> None:
+        """Configs with different base_url have different hash_key."""
+        config1 = EndpointConfig(
+            provider_api="vllm",
+            model="mistral-7b",
+            base_url="http://vllm-1.internal:8000",
+        )
+        config2 = EndpointConfig(
+            provider_api="vllm",
+            model="mistral-7b",
+            base_url="http://vllm-2.internal:8000",
+        )
+
+        assert config1.hash_key != config2.hash_key
+
+    def test_hash_key_different_api_key(self) -> None:
+        """Configs with different api_key have different hash_key."""
+        config1 = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="sk-key-1",
+        )
+        config2 = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="sk-key-2",
+        )
+
+        assert config1.hash_key != config2.hash_key
+
+    def test_hash_key_none_values(self) -> None:
+        """hash_key works when base_url and api_key are None."""
+        config = EndpointConfig(provider_api="openai", model="gpt-4o")
+
+        # Should not raise, should return consistent hash
+        hash1 = config.hash_key
+        hash2 = config.hash_key
+        assert hash1 == hash2
+
+    def test_hash_key_resolves_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """hash_key uses resolved api_key from environment."""
+        monkeypatch.setenv("MY_API_KEY", "resolved-secret")
+
+        config1 = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="MY_API_KEY",  # Env var name
+        )
+        config2 = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            api_key="resolved-secret",  # Literal value (same as env var value)
+        )
+
+        # Both should have same hash since they resolve to same api_key
+        assert config1.hash_key == config2.hash_key
+
+    def test_hash_key_deterministic(self) -> None:
+        """hash_key is deterministic across multiple calls."""
+        config = EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            base_url="https://api.example.com",
+            api_key="test-key",
+        )
+
+        hashes = [config.hash_key for _ in range(10)]
+        assert all(h == hashes[0] for h in hashes)
+
+
+class TestOpenAIEndpointConfig:
+    """Tests for OpenAIEndpointConfig preset."""
+
+    def test_minimal_creation(self) -> None:
+        """OpenAIEndpointConfig can be created with just model."""
+        config = OpenAIEndpointConfig(model="gpt-4o-mini")
+
+        assert config.model == "gpt-4o-mini"
+        assert config.provider_api == "openai"
+        assert config.api_key == "OPENAI_API_KEY"
+        assert config.base_url is None
+
+    def test_inherits_from_endpoint_config(self) -> None:
+        """OpenAIEndpointConfig is an EndpointConfig instance."""
+        config = OpenAIEndpointConfig(model="gpt-4o")
+        assert isinstance(config, EndpointConfig)
+
+    def test_custom_api_key(self) -> None:
+        """OpenAIEndpointConfig accepts custom api_key."""
+        config = OpenAIEndpointConfig(model="gpt-4o", api_key="MY_CUSTOM_KEY")
+        assert config.api_key == "MY_CUSTOM_KEY"
+
+    def test_additional_kwargs(self) -> None:
+        """OpenAIEndpointConfig passes through additional kwargs."""
+        config = OpenAIEndpointConfig(
+            model="gpt-4o",
+            max_concurrent=50,
+            timeout=600.0,
+        )
+
+        assert config.max_concurrent == 50
+        assert config.timeout == 600.0
+
+    def test_get_api_key_resolves_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenAIEndpointConfig resolves OPENAI_API_KEY from environment."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key-from-env")
+
+        config = OpenAIEndpointConfig(model="gpt-4o")
+        assert config.get_api_key() == "sk-test-key-from-env"
+
+    def test_hash_key_works(self) -> None:
+        """OpenAIEndpointConfig has working hash_key property."""
+        config = OpenAIEndpointConfig(model="gpt-4o")
+        assert isinstance(config.hash_key, str)
+        assert len(config.hash_key) == 64
+
+
+class TestAnthropicEndpointConfig:
+    """Tests for AnthropicEndpointConfig preset."""
+
+    def test_minimal_creation(self) -> None:
+        """AnthropicEndpointConfig can be created with just model."""
+        config = AnthropicEndpointConfig(model="claude-sonnet-4-20250514")
+
+        assert config.model == "claude-sonnet-4-20250514"
+        assert config.provider_api == "anthropic"
+        assert config.api_key == "ANTHROPIC_API_KEY"
+        assert config.base_url is None
+
+    def test_inherits_from_endpoint_config(self) -> None:
+        """AnthropicEndpointConfig is an EndpointConfig instance."""
+        config = AnthropicEndpointConfig(model="claude-sonnet-4-20250514")
+        assert isinstance(config, EndpointConfig)
+
+    def test_custom_api_key(self) -> None:
+        """AnthropicEndpointConfig accepts custom api_key."""
+        config = AnthropicEndpointConfig(
+            model="claude-sonnet-4-20250514",
+            api_key="MY_ANTHROPIC_KEY",
+        )
+        assert config.api_key == "MY_ANTHROPIC_KEY"
+
+    def test_additional_kwargs(self) -> None:
+        """AnthropicEndpointConfig passes through additional kwargs."""
+        config = AnthropicEndpointConfig(
+            model="claude-sonnet-4-20250514",
+            max_concurrent=20,
+            input_cost_per_1m=3.0,
+        )
+
+        assert config.max_concurrent == 20
+        assert config.input_cost_per_1m == 3.0
+
+    def test_get_api_key_resolves_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AnthropicEndpointConfig resolves ANTHROPIC_API_KEY from environment."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+
+        config = AnthropicEndpointConfig(model="claude-sonnet-4-20250514")
+        assert config.get_api_key() == "sk-ant-test-key"
+
+
+class TestNvidiaBuildEndpointConfig:
+    """Tests for NvidiaBuildEndpointConfig preset."""
+
+    def test_minimal_creation(self) -> None:
+        """NvidiaBuildEndpointConfig can be created with just model."""
+        config = NvidiaBuildEndpointConfig(model="meta/llama-3.1-405b-instruct")
+
+        assert config.model == "meta/llama-3.1-405b-instruct"
+        assert config.provider_api == "openai"  # Uses OpenAI-compatible API
+        assert config.api_key == "NVIDIA_API_KEY"
+        assert config.base_url == "https://integrate.api.nvidia.com/v1"
+
+    def test_inherits_from_endpoint_config(self) -> None:
+        """NvidiaBuildEndpointConfig is an EndpointConfig instance."""
+        config = NvidiaBuildEndpointConfig(model="meta/llama-3.1-405b-instruct")
+        assert isinstance(config, EndpointConfig)
+
+    def test_custom_api_key(self) -> None:
+        """NvidiaBuildEndpointConfig accepts custom api_key."""
+        config = NvidiaBuildEndpointConfig(
+            model="meta/llama-3.1-405b-instruct",
+            api_key="MY_NVIDIA_KEY",
+        )
+        assert config.api_key == "MY_NVIDIA_KEY"
+
+    def test_base_url_is_set(self) -> None:
+        """NvidiaBuildEndpointConfig has correct base_url."""
+        config = NvidiaBuildEndpointConfig(model="nvidia/nemotron-4-340b-instruct")
+        assert config.base_url == "https://integrate.api.nvidia.com/v1"
+
+    def test_additional_kwargs(self) -> None:
+        """NvidiaBuildEndpointConfig passes through additional kwargs."""
+        config = NvidiaBuildEndpointConfig(
+            model="meta/llama-3.1-405b-instruct",
+            max_concurrent=100,
+            rate_limit=50.0,
+        )
+
+        assert config.max_concurrent == 100
+        assert config.rate_limit == 50.0
+
+    def test_get_api_key_resolves_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """NvidiaBuildEndpointConfig resolves NVIDIA_API_KEY from environment."""
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+        config = NvidiaBuildEndpointConfig(model="meta/llama-3.1-405b-instruct")
+        assert config.get_api_key() == "nvapi-test-key"
+
+    def test_hash_key_includes_base_url(self) -> None:
+        """NvidiaBuildEndpointConfig hash_key includes the NVIDIA base_url."""
+        config1 = NvidiaBuildEndpointConfig(
+            model="meta/llama-3.1-405b-instruct",
+            api_key="test-key",
+        )
+        config2 = OpenAIEndpointConfig(
+            model="gpt-4o",
+            api_key="test-key",  # Same api_key but different base_url
+        )
+
+        # Different hash because different base_url
+        assert config1.hash_key != config2.hash_key
