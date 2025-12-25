@@ -9,6 +9,7 @@ from inf_engine.resources.config import (
     EndpointConfig,
     NvidiaBuildEndpointConfig,
     OpenAIEndpointConfig,
+    ResourceConfig,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "EndpointConfig",
     "NvidiaBuildEndpointConfig",
     "OpenAIEndpointConfig",
+    "ResourceConfig",
 ]

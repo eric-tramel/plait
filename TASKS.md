@@ -9,14 +9,14 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 1: Foundation** (7/7)
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
-- [ ] **Phase 3.5: Hardening** (0/8)
-- [ ] **Phase 4: Resources** (0/13)
+- [x] **Phase 3.5: Hardening** (8/8)
+- [ ] **Phase 4: Resources** (2/13)
 - [ ] **Phase 5: Production Features** (0/17)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 28/93 PRs completed**
+**Total: 38/93 PRs completed**
 
 ---
 
@@ -362,7 +362,7 @@ Every PR must:
 
 Fixes, improvements, and consistency updates identified during implementation review.
 
-### - [ ] PR-029: Fix priority ordering convention
+### - [x] PR-029: Fix priority ordering convention
 - **Branch**: `fix/priority-ordering`
 - **Description**: Standardize priority to "lower value = higher priority" convention across GraphNode and Task
 - **Design Docs**:
@@ -376,7 +376,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_execution_state.py` (task ordering)
 - **CHANGELOG**: "Standardize priority ordering convention"
 
-### - [ ] PR-030: Implement Proxy data access operations
+### - [x] PR-030: Implement Proxy data access operations
 - **Branch**: `feat/proxy-operations`
 - **Description**: Implement `__getitem__`, `__iter__`, `keys()`, `values()`, `items()` on Proxy with corresponding Tracer methods
 - **Design Docs**:
@@ -389,7 +389,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_tracer.py` (record_getitem, record_iter, record_method)
 - **CHANGELOG**: "Add Proxy data access operations"
 
-### - [ ] PR-031: Preserve user dict keys in outputs
+### - [x] PR-031: Preserve user dict keys in outputs
 - **Branch**: `feat/preserve-output-keys`
 - **Description**: Track original dict structure during tracing so results use user-defined keys instead of node IDs
 - **Design Docs**:
@@ -404,7 +404,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/integration/test_execution.py` (output keys match forward return)
 - **CHANGELOG**: "Preserve user-defined output keys"
 
-### - [ ] PR-032: Introduce NodeRef type for node ID references
+### - [x] PR-032: Introduce NodeRef type for node ID references
 - **Branch**: `feat/node-ref-type`
 - **Description**: Replace raw string node IDs in args/kwargs with typed `NodeRef` to prevent collision with literal strings
 - **Design Docs**:
@@ -419,7 +419,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_execution_state.py` (resolution with NodeRef)
 - **CHANGELOG**: "Add NodeRef type for type-safe node references"
 
-### - [ ] PR-033: Add cycle detection to topological ordering
+### - [x] PR-033: Add cycle detection to topological ordering
 - **Branch**: `feat/cycle-detection`
 - **Description**: Add cycle detection to `InferenceGraph.topological_order()` with clear error message
 - **Design Docs**:
@@ -430,7 +430,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_graph.py` (cycle detection, error message)
 - **CHANGELOG**: "Add cycle detection to topological ordering"
 
-### - [ ] PR-034: Replace scheduler busy-wait with Event signaling
+### - [x] PR-034: Replace scheduler busy-wait with Event signaling
 - **Branch**: `feat/scheduler-event-signaling`
 - **Description**: Replace `sleep(0.001)` polling with `asyncio.Event` for efficient task-ready signaling
 - **Design Docs**:
@@ -442,7 +442,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_scheduler.py` (event signaling behavior)
 - **CHANGELOG**: "Use event signaling for scheduler efficiency"
 
-### - [ ] PR-035: Add state_dict and load_state_dict for parameter serialization
+### - [x] PR-035: Add state_dict and load_state_dict for parameter serialization
 - **Branch**: `feat/state-dict`
 - **Description**: Add `state_dict()` and `load_state_dict()` to InferenceModule for saving/loading learned parameters
 - **Design Docs**:
@@ -453,7 +453,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_module.py` (state_dict, load_state_dict, round-trip)
 - **CHANGELOG**: "Add parameter serialization methods"
 
-### - [ ] PR-036: Add graph visualization utility
+### - [x] PR-036: Add graph visualization utility
 - **Branch**: `feat/graph-visualization`
 - **Description**: Implement `visualize_graph()` function for DOT format output
 - **Design Docs**:
@@ -468,7 +468,7 @@ Fixes, improvements, and consistency updates identified during implementation re
 
 ## Phase 4: Resources
 
-### - [ ] PR-037: EndpointConfig dataclass
+### - [x] PR-037: EndpointConfig dataclass
 - **Branch**: `feat/endpoint-config`
 - **Description**: Implement `EndpointConfig` with all endpoint settings
 - **Design Docs**:
@@ -479,7 +479,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_resource_config.py` (creation, defaults)
 - **CHANGELOG**: "Add EndpointConfig dataclass"
 
-### - [ ] PR-038: ResourceConfig dataclass
+### - [x] PR-038: ResourceConfig dataclass
 - **Branch**: `feat/resource-config`
 - **Description**: Implement `ResourceConfig` container for multiple endpoints
 - **Design Docs**:

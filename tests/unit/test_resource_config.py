@@ -7,6 +7,7 @@ from inf_engine.resources.config import (
     EndpointConfig,
     NvidiaBuildEndpointConfig,
     OpenAIEndpointConfig,
+    ResourceConfig,
 )
 
 
@@ -78,10 +79,10 @@ class TestEndpointConfigDefaults:
         config = EndpointConfig(provider_api="openai", model="gpt-4o")
         assert config.api_key is None
 
-    def test_max_concurrent_defaults_10(self) -> None:
-        """max_concurrent defaults to 10."""
+    def test_max_concurrent_defaults_none(self) -> None:
+        """max_concurrent defaults to None for adaptive backpressure."""
         config = EndpointConfig(provider_api="openai", model="gpt-4o")
-        assert config.max_concurrent == 10
+        assert config.max_concurrent is None
 
     def test_rate_limit_defaults_none(self) -> None:
         """rate_limit defaults to None (no rate limiting)."""
@@ -504,3 +505,445 @@ class TestNvidiaBuildEndpointConfig:
 
         # Different hash because different base_url
         assert config1.hash_key != config2.hash_key
+
+
+class TestResourceConfigCreation:
+    """Tests for ResourceConfig instantiation."""
+
+    def test_minimal_creation(self) -> None:
+        """ResourceConfig can be created with only endpoints."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+            }
+        )
+
+        assert "fast" in config.endpoints
+        assert config.endpoints["fast"].model == "gpt-4o-mini"
+
+    def test_empty_endpoints(self) -> None:
+        """ResourceConfig can be created with empty endpoints dict."""
+        config = ResourceConfig(endpoints={})
+
+        assert len(config.endpoints) == 0
+
+    def test_multiple_endpoints(self) -> None:
+        """ResourceConfig can hold multiple endpoints."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+                "local": EndpointConfig(
+                    provider_api="vllm",
+                    model="mistral-7b",
+                    base_url="http://localhost:8000",
+                ),
+            }
+        )
+
+        assert len(config.endpoints) == 3
+        assert "fast" in config.endpoints
+        assert "smart" in config.endpoints
+        assert "local" in config.endpoints
+
+
+class TestResourceConfigGetItem:
+    """Tests for ResourceConfig.__getitem__()."""
+
+    def test_getitem_returns_endpoint(self) -> None:
+        """__getitem__ returns the endpoint for a valid alias."""
+        endpoint = EndpointConfig(provider_api="openai", model="gpt-4o")
+        config = ResourceConfig(endpoints={"smart": endpoint})
+
+        assert config["smart"] is endpoint
+
+    def test_getitem_raises_keyerror(self) -> None:
+        """__getitem__ raises KeyError for unknown alias."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+
+        with pytest.raises(KeyError):
+            _ = config["nonexistent"]
+
+    def test_getitem_multiple_aliases(self) -> None:
+        """__getitem__ works with multiple aliases."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            }
+        )
+
+        assert config["fast"].model == "gpt-4o-mini"
+        assert config["smart"].model == "gpt-4o"
+
+
+class TestResourceConfigContains:
+    """Tests for ResourceConfig.__contains__()."""
+
+    def test_contains_existing_alias(self) -> None:
+        """__contains__ returns True for existing alias."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+
+        assert "fast" in config
+
+    def test_contains_nonexistent_alias(self) -> None:
+        """__contains__ returns False for nonexistent alias."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+
+        assert "slow" not in config
+
+    def test_contains_empty_config(self) -> None:
+        """__contains__ works with empty endpoints."""
+        config = ResourceConfig(endpoints={})
+
+        assert "any" not in config
+
+    def test_contains_non_string_types(self) -> None:
+        """__contains__ handles non-string types gracefully."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+
+        # Non-string types should return False, not raise
+        assert 123 not in config
+        assert None not in config
+        assert 3.14 not in config
+        assert [] not in config
+
+
+class TestResourceConfigIter:
+    """Tests for ResourceConfig.__iter__()."""
+
+    def test_iter_returns_aliases(self) -> None:
+        """__iter__ yields alias names."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            }
+        )
+
+        aliases = list(config)
+        assert set(aliases) == {"fast", "smart"}
+
+    def test_iter_empty_config(self) -> None:
+        """__iter__ works with empty endpoints."""
+        config = ResourceConfig(endpoints={})
+
+        assert list(config) == []
+
+    def test_iter_for_loop(self) -> None:
+        """ResourceConfig can be used in a for loop."""
+        config = ResourceConfig(
+            endpoints={
+                "a": EndpointConfig(provider_api="openai", model="m1"),
+                "b": EndpointConfig(provider_api="openai", model="m2"),
+            }
+        )
+
+        aliases = []
+        for alias in config:
+            aliases.append(alias)
+
+        assert set(aliases) == {"a", "b"}
+
+
+class TestResourceConfigLen:
+    """Tests for ResourceConfig.__len__()."""
+
+    def test_len_single_endpoint(self) -> None:
+        """__len__ returns 1 for single endpoint."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+
+        assert len(config) == 1
+
+    def test_len_multiple_endpoints(self) -> None:
+        """__len__ returns correct count for multiple endpoints."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+                "local": EndpointConfig(provider_api="vllm", model="mistral-7b"),
+            }
+        )
+
+        assert len(config) == 3
+
+    def test_len_empty_config(self) -> None:
+        """__len__ returns 0 for empty endpoints."""
+        config = ResourceConfig(endpoints={})
+
+        assert len(config) == 0
+
+
+class TestResourceConfigKeys:
+    """Tests for ResourceConfig.keys()."""
+
+    def test_keys_returns_alias_names(self) -> None:
+        """keys() returns all alias names."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            }
+        )
+
+        assert set(config.keys()) == {"fast", "smart"}
+
+    def test_keys_empty_config(self) -> None:
+        """keys() returns empty for empty endpoints."""
+        config = ResourceConfig(endpoints={})
+
+        assert list(config.keys()) == []
+
+
+class TestResourceConfigValues:
+    """Tests for ResourceConfig.values()."""
+
+    def test_values_returns_endpoints(self) -> None:
+        """values() returns all EndpointConfig instances."""
+        endpoint1 = EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+        endpoint2 = EndpointConfig(provider_api="openai", model="gpt-4o")
+        config = ResourceConfig(endpoints={"fast": endpoint1, "smart": endpoint2})
+
+        values = list(config.values())
+        assert len(values) == 2
+        assert endpoint1 in values
+        assert endpoint2 in values
+
+    def test_values_empty_config(self) -> None:
+        """values() returns empty for empty endpoints."""
+        config = ResourceConfig(endpoints={})
+
+        assert list(config.values()) == []
+
+
+class TestResourceConfigItems:
+    """Tests for ResourceConfig.items()."""
+
+    def test_items_returns_pairs(self) -> None:
+        """items() returns (alias, endpoint) pairs."""
+        endpoint1 = EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+        endpoint2 = EndpointConfig(provider_api="openai", model="gpt-4o")
+        config = ResourceConfig(endpoints={"fast": endpoint1, "smart": endpoint2})
+
+        items = dict(config.items())
+        assert items["fast"] is endpoint1
+        assert items["smart"] is endpoint2
+
+    def test_items_empty_config(self) -> None:
+        """items() returns empty for empty endpoints."""
+        config = ResourceConfig(endpoints={})
+
+        assert list(config.items()) == []
+
+
+class TestResourceConfigGet:
+    """Tests for ResourceConfig.get()."""
+
+    def test_get_existing_alias(self) -> None:
+        """get() returns endpoint for existing alias."""
+        endpoint = EndpointConfig(provider_api="openai", model="gpt-4o")
+        config = ResourceConfig(endpoints={"smart": endpoint})
+
+        assert config.get("smart") is endpoint
+
+    def test_get_nonexistent_returns_none(self) -> None:
+        """get() returns None for nonexistent alias by default."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+
+        assert config.get("nonexistent") is None
+
+    def test_get_with_default(self) -> None:
+        """get() returns specified default for nonexistent alias."""
+        config = ResourceConfig(endpoints={})
+        default = EndpointConfig(provider_api="vllm", model="fallback")
+
+        result = config.get("missing", default)
+        assert result is default
+
+    def test_get_existing_ignores_default(self) -> None:
+        """get() returns endpoint even when default is provided."""
+        endpoint = EndpointConfig(provider_api="openai", model="gpt-4o")
+        default = EndpointConfig(provider_api="vllm", model="fallback")
+        config = ResourceConfig(endpoints={"smart": endpoint})
+
+        result = config.get("smart", default)
+        assert result is endpoint
+
+
+class TestResourceConfigEquality:
+    """Tests for ResourceConfig equality comparison."""
+
+    def test_equal_configs(self) -> None:
+        """Two configs with same values are equal."""
+        config1 = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            },
+        )
+        config2 = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            },
+        )
+
+        assert config1 == config2
+
+    def test_unequal_endpoints(self) -> None:
+        """Configs with different endpoints are not equal."""
+        config1 = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            }
+        )
+        config2 = ResourceConfig(
+            endpoints={"fast": EndpointConfig(provider_api="openai", model="gpt-4o")}
+        )
+
+        assert config1 != config2
+
+
+class TestResourceConfigUsagePatterns:
+    """Tests for typical ResourceConfig usage patterns from design doc."""
+
+    def test_dev_config_pattern(self) -> None:
+        """Development configuration pattern works as documented."""
+        dev_resources = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=5,
+                ),
+                "smart": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o",
+                    max_concurrent=2,
+                ),
+            },
+        )
+
+        assert dev_resources["fast"].model == "gpt-4o-mini"
+        assert dev_resources["smart"].model == "gpt-4o"
+        assert dev_resources["fast"].max_concurrent == 5
+        assert len(dev_resources) == 2
+
+    def test_prod_config_pattern(self) -> None:
+        """Production configuration pattern works as documented."""
+        prod_resources = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="vllm",
+                    model="mistral-7b",
+                    base_url="http://vllm-fast.internal:8000",
+                    max_concurrent=50,
+                    rate_limit=100.0,
+                ),
+                "smart": EndpointConfig(
+                    provider_api="vllm",
+                    model="llama-70b",
+                    base_url="http://vllm-smart.internal:8000",
+                    max_concurrent=20,
+                    rate_limit=30.0,
+                ),
+            },
+        )
+
+        assert prod_resources["fast"].base_url == "http://vllm-fast.internal:8000"
+        assert prod_resources["smart"].rate_limit == 30.0
+        assert prod_resources["fast"].max_concurrent == 50
+        assert prod_resources["smart"].max_concurrent == 20
+
+    def test_hybrid_config_pattern(self) -> None:
+        """Hybrid cloud/local configuration pattern works."""
+        hybrid_resources = ResourceConfig(
+            endpoints={
+                "expensive": AnthropicEndpointConfig(
+                    model="claude-sonnet-4-20250514",
+                    max_concurrent=5,
+                    input_cost_per_1m=3.0,
+                    output_cost_per_1m=15.0,
+                ),
+                "fast": EndpointConfig(
+                    provider_api="vllm",
+                    model="llama3.2",
+                    base_url="http://localhost:11434",
+                    max_concurrent=4,
+                ),
+            },
+        )
+
+        assert hybrid_resources["expensive"].provider_api == "anthropic"
+        assert hybrid_resources["fast"].base_url == "http://localhost:11434"
+
+    def test_iteration_pattern(self) -> None:
+        """Common iteration pattern for accessing all endpoints."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            }
+        )
+
+        # Pattern: iterate and access endpoints
+        models = []
+        for alias in config:
+            models.append(config[alias].model)
+
+        assert set(models) == {"gpt-4o-mini", "gpt-4o"}
+
+    def test_items_iteration_pattern(self) -> None:
+        """Common items() iteration pattern."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+                "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            }
+        )
+
+        # Pattern: iterate with items()
+        alias_model_pairs = {alias: ep.model for alias, ep in config.items()}
+
+        assert alias_model_pairs == {"fast": "gpt-4o-mini", "smart": "gpt-4o"}
+
+    def test_with_preset_configs(self) -> None:
+        """ResourceConfig works with preset endpoint configs."""
+        config = ResourceConfig(
+            endpoints={
+                "openai": OpenAIEndpointConfig(model="gpt-4o"),
+                "anthropic": AnthropicEndpointConfig(model="claude-sonnet-4-20250514"),
+                "nvidia": NvidiaBuildEndpointConfig(
+                    model="meta/llama-3.1-405b-instruct"
+                ),
+            }
+        )
+
+        assert config["openai"].provider_api == "openai"
+        assert config["anthropic"].provider_api == "anthropic"
+        assert (
+            config["nvidia"].provider_api == "openai"
+        )  # NVIDIA uses OpenAI-compatible
+        assert config["nvidia"].base_url == "https://integrate.api.nvidia.com/v1"

@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `state_dict()` and `load_state_dict()` to InferenceModule for parameter serialization
 - Add `visualize_graph()` function for DOT format graph output
 - Add `EndpointConfig` dataclass for LLM endpoint configuration
+- Add `ResourceConfig` dataclass for managing multiple LLM endpoints
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

@@ -30,6 +30,8 @@ class EndpointConfig:
             If None, the client will attempt to read from provider-specific
             environment variables (e.g., OPENAI_API_KEY).
         max_concurrent: Maximum number of parallel requests to this endpoint.
+            If None, adaptive rate limiting via backpressure is used instead
+            of a hard concurrency limit.
         rate_limit: Maximum requests per second. If None, no rate limiting
             is applied beyond concurrency limits.
         max_retries: Number of retry attempts for failed requests.
@@ -70,7 +72,7 @@ class EndpointConfig:
     api_key: str | None = None
 
     # Concurrency limits
-    max_concurrent: int = 10
+    max_concurrent: int | None = None
     rate_limit: float | None = None
 
     # Retry configuration
@@ -259,3 +261,208 @@ class NvidiaBuildEndpointConfig(EndpointConfig):
             api_key=api_key,
             **kwargs,
         )
+
+
+@dataclass
+class ResourceConfig:
+    """Container for multiple LLM endpoint configurations.
+
+    ResourceConfig holds endpoint configurations keyed by alias names and
+    provides dict-like access to endpoints. It is the primary configuration
+    object passed to ResourceManager.
+
+    Args:
+        endpoints: Mapping of alias names to EndpointConfig instances.
+            Aliases are user-defined identifiers (e.g., "fast", "smart")
+            that modules reference to select which endpoint to use.
+
+    Example:
+        >>> # Development configuration
+        >>> dev_resources = ResourceConfig(
+        ...     endpoints={
+        ...         "fast": EndpointConfig(
+        ...             provider_api="openai",
+        ...             model="gpt-4o-mini",
+        ...             max_concurrent=5,
+        ...         ),
+        ...         "smart": EndpointConfig(
+        ...             provider_api="openai",
+        ...             model="gpt-4o",
+        ...             max_concurrent=2,
+        ...         ),
+        ...     },
+        ... )
+        >>> dev_resources["fast"].model
+        'gpt-4o-mini'
+        >>> "smart" in dev_resources
+        True
+
+        >>> # Production with self-hosted models
+        >>> prod_resources = ResourceConfig(
+        ...     endpoints={
+        ...         "fast": EndpointConfig(
+        ...             provider_api="vllm",
+        ...             model="mistral-7b",
+        ...             base_url="http://vllm-fast.internal:8000",
+        ...             max_concurrent=50,
+        ...         ),
+        ...     },
+        ... )
+    """
+
+    endpoints: dict[str, EndpointConfig]
+
+    def __getitem__(self, alias: str) -> EndpointConfig:
+        """Get an endpoint configuration by alias.
+
+        Args:
+            alias: The endpoint alias to look up.
+
+        Returns:
+            The EndpointConfig for the given alias.
+
+        Raises:
+            KeyError: If the alias is not found in endpoints.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={"fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")}
+            ... )
+            >>> config["fast"].model
+            'gpt-4o-mini'
+        """
+        return self.endpoints[alias]
+
+    def __contains__(self, alias: object) -> bool:
+        """Check if an alias exists in the configuration.
+
+        Args:
+            alias: The alias to check for.
+
+        Returns:
+            True if the alias exists, False otherwise.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={"fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")}
+            ... )
+            >>> "fast" in config
+            True
+            >>> "slow" in config
+            False
+        """
+        try:
+            return alias in self.endpoints
+        except TypeError:
+            # Unhashable types (e.g., list) can't be dict keys
+            return False
+
+    def __iter__(self):
+        """Iterate over endpoint aliases.
+
+        Returns:
+            Iterator over alias names.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={
+            ...         "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+            ...         "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            ...     }
+            ... )
+            >>> list(config)
+            ['fast', 'smart']
+        """
+        return iter(self.endpoints)
+
+    def __len__(self) -> int:
+        """Return the number of configured endpoints.
+
+        Returns:
+            Number of endpoints in the configuration.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={
+            ...         "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+            ...         "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            ...     }
+            ... )
+            >>> len(config)
+            2
+        """
+        return len(self.endpoints)
+
+    def keys(self):
+        """Return a view of endpoint aliases.
+
+        Returns:
+            A dict_keys view of all alias names.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={
+            ...         "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+            ...         "smart": EndpointConfig(provider_api="openai", model="gpt-4o"),
+            ...     }
+            ... )
+            >>> list(config.keys())
+            ['fast', 'smart']
+        """
+        return self.endpoints.keys()
+
+    def values(self):
+        """Return a view of endpoint configurations.
+
+        Returns:
+            A dict_values view of all EndpointConfig instances.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={"fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")}
+            ... )
+            >>> list(config.values())[0].model
+            'gpt-4o-mini'
+        """
+        return self.endpoints.values()
+
+    def items(self):
+        """Return a view of (alias, endpoint) pairs.
+
+        Returns:
+            A dict_items view of (alias, EndpointConfig) tuples.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={"fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")}
+            ... )
+            >>> alias, endpoint = list(config.items())[0]
+            >>> alias
+            'fast'
+            >>> endpoint.model
+            'gpt-4o-mini'
+        """
+        return self.endpoints.items()
+
+    def get(
+        self, alias: str, default: EndpointConfig | None = None
+    ) -> EndpointConfig | None:
+        """Get an endpoint configuration by alias, with optional default.
+
+        Args:
+            alias: The endpoint alias to look up.
+            default: Value to return if alias is not found. Defaults to None.
+
+        Returns:
+            The EndpointConfig for the given alias, or default if not found.
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={"fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")}
+            ... )
+            >>> config.get("fast").model
+            'gpt-4o-mini'
+            >>> config.get("missing") is None
+            True
+        """
+        return self.endpoints.get(alias, default)
