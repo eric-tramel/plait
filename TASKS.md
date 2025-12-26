@@ -545,16 +545,18 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_resource_manager.py` (init, clients created)
 - **CHANGELOG**: "Add ResourceManager initialization"
 
-### - [ ] PR-044: ResourceManager - execute method
+### - [ ] PR-044: Scheduler ResourceManager integration
 - **Branch**: `feat/resource-manager-execute`
-- **Description**: Implement `ResourceManager.execute()` with semaphore handling
+- **Description**: Update Scheduler to use ResourceManager for LLM module execution. ResourceManager stays a pure registry; Scheduler handles execution logic.
 - **Design Docs**:
-  - `resources.md` → "Resource Manager" (execute method)
+  - `resources.md` → "Resource Manager"
   - `resources.md` → "Module-Resource Binding"
-- **Files**: `src/inf_engine/resources/manager.py`
+  - `execution.md` → "Scheduler"
+- **Files**:
+  - `src/inf_engine/execution/scheduler.py`
 - **Tests**:
-  - `tests/unit/test_resource_manager.py` (execute with mocked client)
-- **CHANGELOG**: "Add ResourceManager.execute() method"
+  - `tests/unit/test_scheduler.py` (execute with mocked ResourceManager/client)
+- **CHANGELOG**: "Add ResourceManager integration to Scheduler for LLM execution"
 
 ### - [ ] PR-045: Update run() with resources parameter
 - **Branch**: `feat/run-with-resources`

@@ -16,6 +16,15 @@ Example:
     >>> scheduler = Scheduler(max_concurrent=10)
     >>> scheduler.max_concurrent
     10
+    >>>
+    >>> # Create scheduler with ResourceManager for LLM execution
+    >>> from inf_engine.resources.manager import ResourceManager
+    >>> from inf_engine.resources.config import ResourceConfig, EndpointConfig
+    >>> config = ResourceConfig(endpoints={
+    ...     "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+    ... })
+    >>> manager = ResourceManager(config)
+    >>> scheduler = Scheduler(resource_manager=manager)
 """
 
 from __future__ import annotations
@@ -23,12 +32,32 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from inf_engine.tracing.tracer import InputNode
+from inf_engine.types import LLMRequest
 
 if TYPE_CHECKING:
+    from inf_engine.clients.base import LLMClient
     from inf_engine.execution.state import ExecutionState, Task, TaskResult
+    from inf_engine.module import LLMInference
+
+
+class ResourceManagerProtocol(Protocol):
+    """Protocol defining the interface required for resource management.
+
+    Any object implementing get_client() and get_semaphore() can be used
+    as a resource manager, enabling easier testing with mock objects.
+    """
+
+    def get_client(self, alias: str) -> LLMClient:
+        """Get the LLM client for an endpoint alias."""
+        ...
+
+    def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
+        """Get the concurrency semaphore for an endpoint alias."""
+        ...
+
 
 # Timeout for waiting on task_ready_event to prevent indefinite blocking
 # if there's a logic error. In normal operation, the event is always
@@ -37,13 +66,18 @@ _EVENT_WAIT_TIMEOUT: float = 5.0
 
 
 class Scheduler:
-    """Manages task scheduling with concurrency control.
+    """Manages task scheduling with concurrency control and LLM execution.
 
     The Scheduler coordinates the execution of tasks from an ExecutionState,
     enforcing concurrency limits via a semaphore to prevent resource exhaustion.
     It dispatches tasks as they become ready and tracks active task count.
 
+    When a ResourceManager is provided, LLMInference modules are executed through
+    the manager's clients with proper per-endpoint concurrency control. Non-LLM
+    modules are executed directly via their forward() methods.
+
     Attributes:
+        resource_manager: Optional resource manager for LLM execution.
         max_concurrent: Maximum number of tasks that can execute concurrently.
 
     Example:
@@ -63,13 +97,26 @@ class Scheduler:
         release it when complete.
     """
 
-    def __init__(self, max_concurrent: int = 100) -> None:
-        """Initialize the scheduler with a concurrency limit.
+    resource_manager: ResourceManagerProtocol | None
+    max_concurrent: int
+
+    def __init__(
+        self,
+        resource_manager: ResourceManagerProtocol | None = None,
+        max_concurrent: int = 100,
+    ) -> None:
+        """Initialize the scheduler with optional resource manager and concurrency limit.
 
         Creates an asyncio.Semaphore to enforce the maximum number of
-        concurrent task executions.
+        concurrent task executions. If a ResourceManager is provided, LLM
+        modules will be executed through it with proper endpoint management.
 
         Args:
+            resource_manager: Optional resource manager for executing LLM modules.
+                Must implement ResourceManagerProtocol (get_client, get_semaphore).
+                When provided, LLMInference modules are executed through the
+                manager's clients with per-endpoint concurrency control.
+                When None, LLM modules will raise an error during execution.
             max_concurrent: Maximum number of tasks that can execute
                 simultaneously. Must be positive. Defaults to 100.
 
@@ -88,6 +135,7 @@ class Scheduler:
         if max_concurrent < 1:
             raise ValueError("max_concurrent must be at least 1")
 
+        self.resource_manager = resource_manager
         self.max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._active_count = 0
@@ -298,14 +346,19 @@ class Scheduler:
             stored value) and regular module tasks (which call forward()).
             The semaphore slot is always released, even if the task fails.
         """
+        from inf_engine.module import LLMInference
+
         start_time = time.time()
 
         try:
             # Handle input nodes specially - just return their stored value
             if isinstance(task.module, InputNode):
                 result = task.module.value
+            elif isinstance(task.module, LLMInference):
+                # Execute LLM modules through ResourceManager
+                result = await self._execute_llm(task.module, task.args, task.kwargs)
             else:
-                # Execute the module's forward method
+                # Execute non-LLM modules directly
                 result = await self._direct_execute(task)
 
             # Calculate duration and create result
@@ -335,7 +388,7 @@ class Scheduler:
             self.release()
 
     async def _direct_execute(self, task: Task) -> Any:
-        """Execute a module directly without resource management.
+        """Execute a non-LLM module directly.
 
         Calls the module's forward() method with the task's arguments.
         Handles both sync and async forward methods.
@@ -347,9 +400,7 @@ class Scheduler:
             The result of calling module.forward(*args, **kwargs).
 
         Note:
-            This method will be enhanced in later PRs to integrate with
-            ResourceManager for LLM calls with proper rate limiting and
-            endpoint management.
+            LLMInference modules are handled by _execute_llm(), not this method.
         """
         from inf_engine.module import InferenceModule
 
@@ -364,3 +415,116 @@ class Scheduler:
             return await task.module.forward(*task.args, **task.kwargs)
         else:
             return task.module.forward(*task.args, **task.kwargs)
+
+    async def _execute_llm(
+        self,
+        module: LLMInference,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> str:
+        """Execute an LLM module through the ResourceManager.
+
+        Retrieves the appropriate client and semaphore from the ResourceManager,
+        builds an LLMRequest from the module's configuration and arguments,
+        and executes the completion request with per-endpoint concurrency control.
+
+        Args:
+            module: The LLMInference module to execute.
+            args: Positional arguments passed to the module (prompt is first).
+            kwargs: Keyword arguments passed to the module.
+
+        Returns:
+            The content string from the LLM response.
+
+        Raises:
+            RuntimeError: If no ResourceManager was provided to the Scheduler.
+            KeyError: If the module's alias is not found in the ResourceManager.
+
+        Example:
+            >>> # Assuming scheduler has a resource_manager with "fast" endpoint
+            >>> module = LLMInference(alias="fast", temperature=0.7)
+            >>> result = await scheduler._execute_llm(module, ("Hello",), {})
+        """
+        if self.resource_manager is None:
+            raise RuntimeError(
+                f"Cannot execute LLMInference module '{module.alias}': "
+                "no ResourceManager provided to Scheduler. "
+                "Pass a ResourceManager to Scheduler() to enable LLM execution."
+            )
+
+        alias = module.alias
+
+        # Get client and optional semaphore from ResourceManager
+        client = self.resource_manager.get_client(alias)
+        semaphore = self.resource_manager.get_semaphore(alias)
+
+        # Build the request from module config and args
+        request = self._build_llm_request(module, args, kwargs)
+
+        # Execute with per-endpoint concurrency control if semaphore exists
+        if semaphore is not None:
+            async with semaphore:
+                response = await client.complete(request)
+        else:
+            response = await client.complete(request)
+
+        return response.content
+
+    def _build_llm_request(
+        self,
+        module: LLMInference,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> LLMRequest:
+        """Build an LLMRequest from a module and its arguments.
+
+        Extracts the prompt from args/kwargs and combines it with the module's
+        configuration (system_prompt, temperature, max_tokens, etc.) to create
+        a complete LLMRequest.
+
+        Args:
+            module: The LLMInference module containing configuration.
+            args: Positional arguments (prompt expected as first arg).
+            kwargs: Keyword arguments (prompt may be passed as kwarg).
+
+        Returns:
+            An LLMRequest ready to be sent to an LLM client.
+
+        Raises:
+            ValueError: If no prompt is provided in args or kwargs.
+
+        Example:
+            >>> module = LLMInference(
+            ...     alias="fast",
+            ...     system_prompt="You are helpful.",
+            ...     temperature=0.5,
+            ... )
+            >>> request = scheduler._build_llm_request(module, ("Hello",), {})
+            >>> request.prompt
+            'Hello'
+            >>> request.system_prompt
+            'You are helpful.'
+        """
+        # Get prompt from args or kwargs
+        if args:
+            prompt = args[0]
+        elif "prompt" in kwargs:
+            prompt = kwargs["prompt"]
+        else:
+            raise ValueError(
+                "LLMInference requires a prompt argument. "
+                "Pass it as the first positional argument or as prompt=..."
+            )
+
+        # Get system prompt from module's Parameter if present
+        system_prompt: str | None = None
+        if module.system_prompt is not None:
+            system_prompt = str(module.system_prompt)
+
+        return LLMRequest(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=module.temperature,
+            max_tokens=module.max_tokens,
+            response_format=module.response_format,
+        )

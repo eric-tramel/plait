@@ -4,11 +4,13 @@ import asyncio
 
 import pytest
 
+from inf_engine.clients.base import LLMClient
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState, TaskStatus
 from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import InferenceModule
 from inf_engine.tracing.tracer import InputNode
+from inf_engine.types import LLMRequest, LLMResponse
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Scheduler Initialization Tests
@@ -1150,3 +1152,394 @@ class TestSchedulerEventSignaling:
 
         assert state.is_complete()
         assert state.status["failing_1"] == TaskStatus.FAILED
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler ResourceManager Integration Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class MockLLMClient(LLMClient):
+    """A mock LLM client for testing that implements the real interface."""
+
+    def __init__(self, response_content: str = "mock response"):
+        self.response_content = response_content
+        self.requests: list[LLMRequest] = []
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        """Return a mock response."""
+        self.requests.append(request)
+        return LLMResponse(
+            content=self.response_content,
+            input_tokens=10,
+            output_tokens=5,
+            finish_reason="stop",
+            model="mock-model",
+        )
+
+
+class MockResourceManager:
+    """A mock ResourceManager for testing.
+
+    Implements the ResourceManagerProtocol interface so it can be used
+    with Scheduler for testing without real LLM endpoints.
+    """
+
+    def __init__(
+        self,
+        clients: dict[str, LLMClient] | None = None,
+        semaphores: dict[str, asyncio.Semaphore] | None = None,
+    ):
+        self.clients: dict[str, LLMClient] = clients or {}
+        self.semaphores: dict[str, asyncio.Semaphore] = semaphores or {}
+
+    def get_client(self, alias: str) -> LLMClient:
+        """Get a client by alias."""
+        return self.clients[alias]
+
+    def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
+        """Get a semaphore by alias."""
+        return self.semaphores.get(alias)
+
+
+class TestSchedulerResourceManagerInit:
+    """Tests for Scheduler initialization with ResourceManager."""
+
+    def test_init_without_resource_manager(self) -> None:
+        """Scheduler can be initialized without a ResourceManager."""
+        scheduler = Scheduler()
+
+        assert scheduler.resource_manager is None
+
+    def test_init_with_resource_manager(self) -> None:
+        """Scheduler accepts a ResourceManager at initialization."""
+        mock_manager = MockResourceManager()
+        scheduler = Scheduler(resource_manager=mock_manager)
+
+        assert scheduler.resource_manager is mock_manager
+
+    def test_init_with_resource_manager_and_max_concurrent(self) -> None:
+        """Scheduler accepts both ResourceManager and max_concurrent."""
+        mock_manager = MockResourceManager()
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=50)
+
+        assert scheduler.resource_manager is mock_manager
+        assert scheduler.max_concurrent == 50
+
+
+class TestSchedulerBuildLLMRequest:
+    """Tests for Scheduler._build_llm_request()."""
+
+    def test_build_request_from_positional_args(self) -> None:
+        """_build_llm_request extracts prompt from positional args."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler()
+        module = LLMInference(alias="test", temperature=0.7)
+
+        request = scheduler._build_llm_request(module, ("Hello, world!",), {})
+
+        assert request.prompt == "Hello, world!"
+        assert request.temperature == 0.7
+
+    def test_build_request_from_kwargs(self) -> None:
+        """_build_llm_request extracts prompt from kwargs."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler()
+        module = LLMInference(alias="test")
+
+        request = scheduler._build_llm_request(module, (), {"prompt": "Hi there"})
+
+        assert request.prompt == "Hi there"
+
+    def test_build_request_with_system_prompt(self) -> None:
+        """_build_llm_request includes system prompt from module."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler()
+        module = LLMInference(
+            alias="test", system_prompt="You are helpful.", temperature=0.5
+        )
+
+        request = scheduler._build_llm_request(module, ("Hello",), {})
+
+        assert request.prompt == "Hello"
+        assert request.system_prompt == "You are helpful."
+        assert request.temperature == 0.5
+
+    def test_build_request_with_max_tokens(self) -> None:
+        """_build_llm_request includes max_tokens from module."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler()
+        module = LLMInference(alias="test", max_tokens=100)
+
+        request = scheduler._build_llm_request(module, ("Hello",), {})
+
+        assert request.max_tokens == 100
+
+    def test_build_request_no_prompt_raises(self) -> None:
+        """_build_llm_request raises ValueError when no prompt provided."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler()
+        module = LLMInference(alias="test")
+
+        with pytest.raises(ValueError, match="LLMInference requires a prompt"):
+            scheduler._build_llm_request(module, (), {})
+
+    def test_build_request_with_response_format(self) -> None:
+        """_build_llm_request includes response_format from module."""
+        from inf_engine.module import LLMInference
+
+        class MyFormat:
+            pass
+
+        scheduler = Scheduler()
+        module = LLMInference(alias="test", response_format=MyFormat)
+
+        request = scheduler._build_llm_request(module, ("Hello",), {})
+
+        assert request.response_format is MyFormat
+
+
+class TestSchedulerExecuteLLM:
+    """Tests for Scheduler._execute_llm()."""
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_calls_client(self) -> None:
+        """_execute_llm calls the client's complete method."""
+        from inf_engine.module import LLMInference
+
+        mock_client = MockLLMClient(response_content="Hello back!")
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager)
+        module = LLMInference(alias="fast", temperature=0.5)
+
+        result = await scheduler._execute_llm(module, ("Hello",), {})
+
+        assert result == "Hello back!"
+        assert len(mock_client.requests) == 1
+        assert mock_client.requests[0].prompt == "Hello"
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_uses_semaphore(self) -> None:
+        """_execute_llm respects per-endpoint semaphore."""
+        from inf_engine.module import LLMInference
+
+        mock_client = MockLLMClient()
+        semaphore = asyncio.Semaphore(2)
+        mock_manager = MockResourceManager(
+            clients={"fast": mock_client},
+            semaphores={"fast": semaphore},
+        )
+        scheduler = Scheduler(resource_manager=mock_manager)
+        module = LLMInference(alias="fast")
+
+        # Should complete successfully with semaphore
+        result = await scheduler._execute_llm(module, ("Hello",), {})
+
+        assert result == "mock response"
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_without_semaphore(self) -> None:
+        """_execute_llm works when no semaphore is configured."""
+        from inf_engine.module import LLMInference
+
+        mock_client = MockLLMClient()
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager)
+        module = LLMInference(alias="fast")
+
+        # Should work without semaphore
+        result = await scheduler._execute_llm(module, ("Hello",), {})
+
+        assert result == "mock response"
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_no_resource_manager_raises(self) -> None:
+        """_execute_llm raises RuntimeError when no ResourceManager."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler()  # No resource manager
+        module = LLMInference(alias="fast")
+
+        with pytest.raises(RuntimeError, match="no ResourceManager provided"):
+            await scheduler._execute_llm(module, ("Hello",), {})
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_unknown_alias_raises(self) -> None:
+        """_execute_llm raises KeyError for unknown alias."""
+        from inf_engine.module import LLMInference
+
+        mock_manager = MockResourceManager(clients={})
+        scheduler = Scheduler(resource_manager=mock_manager)
+        module = LLMInference(alias="unknown")
+
+        with pytest.raises(KeyError):
+            await scheduler._execute_llm(module, ("Hello",), {})
+
+
+class TestSchedulerExecuteWithLLM:
+    """Tests for Scheduler.execute() with LLMInference modules."""
+
+    @pytest.mark.asyncio
+    async def test_execute_graph_with_llm_module(self) -> None:
+        """execute() handles graphs containing LLMInference modules."""
+        from inf_engine.module import LLMInference
+
+        mock_client = MockLLMClient(response_content="LLM output")
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        # Create graph with LLMInference
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert outputs == {"llm_1": "LLM output"}
+        assert len(mock_client.requests) == 1
+
+    @pytest.mark.asyncio
+    async def test_execute_mixed_graph(self) -> None:
+        """execute() handles graphs with both LLM and non-LLM modules."""
+        from inf_engine.module import LLMInference
+
+        mock_client = MockLLMClient(response_content="LLM says hello")
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        # Create graph: input -> LLM -> SimpleModule
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Query"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        process_node = GraphNode(
+            id="process_2",
+            module=SimpleModule(),
+            args=(NodeRef("llm_1"),),
+            kwargs={},
+            dependencies=["llm_1"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "llm_1": llm_node,
+                "process_2": process_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["process_2"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        # LLM output goes through SimpleModule which adds "_processed"
+        assert outputs == {"process_2": "LLM says hello_processed"}
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_without_resource_manager_fails(self) -> None:
+        """execute() fails gracefully when LLM module has no ResourceManager."""
+        from inf_engine.module import LLMInference
+
+        scheduler = Scheduler(max_concurrent=10)  # No resource manager
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # LLM task should fail
+        assert state.status["llm_1"] == TaskStatus.FAILED
+        assert isinstance(state.errors["llm_1"], RuntimeError)
+
+    @pytest.mark.asyncio
+    async def test_execute_parallel_llm_modules(self) -> None:
+        """execute() runs parallel LLM modules concurrently."""
+        from inf_engine.module import LLMInference
+
+        mock_client = MockLLMClient(response_content="parallel result")
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Question"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_a = GraphNode(
+            id="llm_a",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        llm_b = GraphNode(
+            id="llm_b",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_a": llm_a, "llm_b": llm_b},
+            input_ids=["input:input_0"],
+            output_ids=["llm_a", "llm_b"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert outputs == {"llm_a": "parallel result", "llm_b": "parallel result"}
+        # Both LLM modules should have been called
+        assert len(mock_client.requests) == 2

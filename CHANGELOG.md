@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Creates LLM clients based on provider_api configuration
   - Creates per-endpoint semaphores for concurrency control
   - Supports openai and vllm providers
+- Add ResourceManager integration to Scheduler for LLM execution
+  - Scheduler accepts optional `resource_manager` parameter
+  - LLMInference modules are executed through ResourceManager's clients
+  - Per-endpoint semaphores provide concurrency control for LLM calls
+  - `_build_llm_request()` helper builds LLMRequest from module config and args
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
