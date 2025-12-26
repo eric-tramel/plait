@@ -1,7 +1,8 @@
-"""Tests for RateLimiter token bucket implementation.
+"""Tests for RateLimiter with adaptive backpressure.
 
 Tests the token bucket rate limiting algorithm including creation,
-token consumption, refill behavior, and waiting mechanics.
+token consumption, refill behavior, waiting mechanics, and adaptive
+backoff/recovery mechanisms.
 """
 
 import asyncio
@@ -244,3 +245,181 @@ class TestRateLimiterEdgeCases:
         elapsed = time.monotonic() - start
 
         assert elapsed >= 0.0005  # At least 0.5ms wait
+
+
+class TestRateLimiterAdaptiveParameters:
+    """Tests for adaptive rate limiting parameters."""
+
+    def test_creation_with_adaptive_defaults(self) -> None:
+        """RateLimiter has correct adaptive defaults."""
+        limiter = RateLimiter(rate=10.0)
+        assert limiter.max_rate == 10.0
+        assert limiter.min_rate == 0.1
+        assert limiter.recovery_factor == 1.1
+        assert limiter.backoff_factor == 0.5
+
+    def test_creation_with_custom_min_rate(self) -> None:
+        """RateLimiter accepts custom min_rate."""
+        limiter = RateLimiter(rate=10.0, min_rate=1.0)
+        assert limiter.min_rate == 1.0
+
+    def test_creation_with_custom_recovery_factor(self) -> None:
+        """RateLimiter accepts custom recovery_factor."""
+        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
+        assert limiter.recovery_factor == 1.5
+
+    def test_creation_with_custom_backoff_factor(self) -> None:
+        """RateLimiter accepts custom backoff_factor."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.25)
+        assert limiter.backoff_factor == 0.25
+
+    def test_invalid_min_rate_zero(self) -> None:
+        """RateLimiter raises ValueError for zero min_rate."""
+        with pytest.raises(ValueError, match="min_rate must be positive"):
+            RateLimiter(rate=10.0, min_rate=0.0)
+
+    def test_invalid_min_rate_negative(self) -> None:
+        """RateLimiter raises ValueError for negative min_rate."""
+        with pytest.raises(ValueError, match="min_rate must be positive"):
+            RateLimiter(rate=10.0, min_rate=-1.0)
+
+
+class TestRateLimiterBackoff:
+    """Tests for rate backoff behavior."""
+
+    def test_backoff_reduces_rate(self) -> None:
+        """backoff() reduces rate by backoff_factor."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter.backoff()
+        assert limiter.rate == 5.0
+
+    def test_backoff_multiple_times(self) -> None:
+        """Multiple backoffs compound."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter.backoff()
+        assert limiter.rate == 5.0
+        limiter.backoff()
+        assert limiter.rate == 2.5
+        limiter.backoff()
+        assert limiter.rate == 1.25
+
+    def test_backoff_respects_min_rate(self) -> None:
+        """Backoff doesn't go below min_rate."""
+        limiter = RateLimiter(rate=1.0, min_rate=0.5, backoff_factor=0.1)
+        limiter.backoff()
+        assert limiter.rate == 0.5  # Capped at min_rate
+        limiter.backoff()
+        assert limiter.rate == 0.5  # Still at min_rate
+
+    def test_backoff_with_retry_after(self) -> None:
+        """backoff() uses retry_after to set rate."""
+        limiter = RateLimiter(rate=10.0)
+        limiter.backoff(retry_after=2.0)  # 1 request per 2 seconds = 0.5/s
+        assert limiter.rate == 0.5
+
+    def test_backoff_with_retry_after_lower_than_current(self) -> None:
+        """backoff() with retry_after only reduces rate."""
+        limiter = RateLimiter(rate=10.0)
+        limiter.backoff(retry_after=0.05)  # Would suggest 20/s, higher than current
+        assert limiter.rate == 10.0  # Rate unchanged (already lower)
+
+    def test_backoff_with_retry_after_respects_min_rate(self) -> None:
+        """backoff() with retry_after respects min_rate."""
+        limiter = RateLimiter(rate=10.0, min_rate=0.5)
+        limiter.backoff(retry_after=10.0)  # Would suggest 0.1/s
+        assert limiter.rate == 0.5  # Capped at min_rate
+
+    def test_backoff_with_retry_after_zero(self) -> None:
+        """backoff() with zero retry_after uses backoff_factor."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter.backoff(retry_after=0.0)
+        assert limiter.rate == 5.0  # Used backoff_factor
+
+    def test_backoff_with_retry_after_negative(self) -> None:
+        """backoff() with negative retry_after uses backoff_factor."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter.backoff(retry_after=-1.0)
+        assert limiter.rate == 5.0  # Used backoff_factor
+
+
+class TestRateLimiterRecover:
+    """Tests for rate recovery behavior."""
+
+    def test_recover_increases_rate(self) -> None:
+        """recover() increases rate by recovery_factor."""
+        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
+        limiter.rate = 5.0  # Simulate backoff
+        limiter.recover()
+        assert limiter.rate == 7.5
+
+    def test_recover_respects_max_rate(self) -> None:
+        """Recover doesn't exceed max_rate."""
+        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
+        limiter.rate = 9.0  # Close to max
+        limiter.recover()
+        assert limiter.rate == 10.0  # Capped at max_rate
+
+    def test_recover_at_max_rate(self) -> None:
+        """Recover at max_rate stays at max_rate."""
+        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
+        # Already at max rate
+        limiter.recover()
+        assert limiter.rate == 10.0
+
+    def test_recover_multiple_times(self) -> None:
+        """Multiple recovers compound up to max."""
+        limiter = RateLimiter(rate=10.0, recovery_factor=2.0)
+        limiter.rate = 1.0  # Heavily backed off
+        limiter.recover()
+        assert limiter.rate == 2.0
+        limiter.recover()
+        assert limiter.rate == 4.0
+        limiter.recover()
+        assert limiter.rate == 8.0
+        limiter.recover()
+        assert limiter.rate == 10.0  # Capped at max
+
+
+class TestRateLimiterBackoffRecoverCycle:
+    """Tests for combined backoff and recovery cycles."""
+
+    def test_backoff_then_recover(self) -> None:
+        """Can recover after backoff."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5, recovery_factor=1.1)
+        original_rate = limiter.rate
+
+        limiter.backoff()
+        assert limiter.rate == 5.0
+
+        # Multiple recovers to get back
+        for _ in range(20):  # Enough iterations
+            limiter.recover()
+
+        assert limiter.rate == original_rate
+
+    def test_gradual_recovery_after_multiple_backoffs(self) -> None:
+        """Recovery is gradual after multiple backoffs."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5, recovery_factor=1.1)
+
+        # Multiple backoffs
+        limiter.backoff()
+        limiter.backoff()
+        limiter.backoff()
+        assert limiter.rate == 1.25  # 10 * 0.5^3
+
+        # First recovery
+        limiter.recover()
+        assert limiter.rate == pytest.approx(1.375, rel=0.01)  # 1.25 * 1.1
+
+    def test_rate_oscillation(self) -> None:
+        """Rate can oscillate between backoff and recovery."""
+        limiter = RateLimiter(rate=10.0, backoff_factor=0.5, recovery_factor=2.0)
+
+        limiter.backoff()  # 10 -> 5
+        assert limiter.rate == 5.0
+        limiter.recover()  # 5 -> 10
+        assert limiter.rate == 10.0
+        limiter.backoff()  # 10 -> 5
+        assert limiter.rate == 5.0
+        limiter.recover()  # 5 -> 10
+        assert limiter.rate == 10.0

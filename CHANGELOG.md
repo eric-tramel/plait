@@ -82,6 +82,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configurable rate (tokens per second) and max_tokens (burst capacity)
   - Async `acquire()` method waits for available tokens
   - Thread-safe implementation using asyncio.Lock
+- Add adaptive backoff to `RateLimiter` for automatic rate adjustment
+  - `backoff()` method reduces rate when hitting API limits
+  - `recover()` method gradually restores rate after successful requests
+  - Configurable `min_rate`, `recovery_factor`, and `backoff_factor`
+  - Supports server-provided `retry_after` hints for optimal rate adjustment
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
