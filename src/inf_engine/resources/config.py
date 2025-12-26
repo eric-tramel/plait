@@ -32,7 +32,7 @@ class EndpointConfig:
         max_concurrent: Maximum number of parallel requests to this endpoint.
             If None, adaptive rate limiting via backpressure is used instead
             of a hard concurrency limit.
-        rate_limit: Maximum requests per second. If None, no rate limiting
+        rate_limit: Maximum requests per minute (RPM). If None, no rate limiting
             is applied beyond concurrency limits.
         max_retries: Number of retry attempts for failed requests.
         retry_delay: Base delay in seconds between retry attempts.
@@ -47,7 +47,7 @@ class EndpointConfig:
         ...     provider_api="openai",
         ...     model="gpt-4o-mini",
         ...     max_concurrent=20,
-        ...     rate_limit=10.0,
+        ...     rate_limit=600.0,  # 600 requests per minute
         ... )
 
         >>> # Self-hosted vLLM endpoint

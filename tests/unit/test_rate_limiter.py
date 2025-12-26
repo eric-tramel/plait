@@ -2,7 +2,7 @@
 
 Tests the token bucket rate limiting algorithm including creation,
 token consumption, refill behavior, waiting mechanics, and adaptive
-backoff/recovery mechanisms.
+backoff/recovery mechanisms. All rates are in RPM (requests per minute).
 """
 
 import asyncio
@@ -19,45 +19,45 @@ class TestRateLimiterCreation:
     def test_creation_with_defaults(self) -> None:
         """RateLimiter can be created with default arguments."""
         limiter = RateLimiter()
-        assert limiter.rate == 10.0
-        assert limiter.max_tokens == 10.0
+        assert limiter.rpm == 600.0
+        assert limiter.max_tokens == 10.0  # 600 RPM / 60 = 10 tokens
         assert limiter.tokens == 10.0
 
-    def test_creation_with_custom_rate(self) -> None:
-        """RateLimiter accepts custom rate."""
-        limiter = RateLimiter(rate=5.0)
-        assert limiter.rate == 5.0
-        assert limiter.max_tokens == 5.0  # Defaults to rate
+    def test_creation_with_custom_rpm(self) -> None:
+        """RateLimiter accepts custom rpm."""
+        limiter = RateLimiter(rpm=300.0)
+        assert limiter.rpm == 300.0
+        assert limiter.max_tokens == 5.0  # Defaults to rpm/60
         assert limiter.tokens == 5.0
 
     def test_creation_with_custom_max_tokens(self) -> None:
         """RateLimiter accepts custom max_tokens."""
-        limiter = RateLimiter(rate=10.0, max_tokens=20.0)
-        assert limiter.rate == 10.0
+        limiter = RateLimiter(rpm=600.0, max_tokens=20.0)
+        assert limiter.rpm == 600.0
         assert limiter.max_tokens == 20.0
         assert limiter.tokens == 20.0
 
     def test_creation_with_small_burst(self) -> None:
-        """RateLimiter can have smaller burst than rate."""
-        limiter = RateLimiter(rate=100.0, max_tokens=5.0)
-        assert limiter.rate == 100.0
+        """RateLimiter can have smaller burst than default."""
+        limiter = RateLimiter(rpm=6000.0, max_tokens=5.0)
+        assert limiter.rpm == 6000.0
         assert limiter.max_tokens == 5.0
         assert limiter.tokens == 5.0
 
     def test_tokens_start_at_max(self) -> None:
         """Tokens start at maximum capacity."""
-        limiter = RateLimiter(rate=10.0, max_tokens=7.5)
+        limiter = RateLimiter(rpm=600.0, max_tokens=7.5)
         assert limiter.tokens == limiter.max_tokens
 
-    def test_invalid_rate_zero(self) -> None:
-        """RateLimiter raises ValueError for zero rate."""
-        with pytest.raises(ValueError, match="rate must be positive"):
-            RateLimiter(rate=0.0)
+    def test_invalid_rpm_zero(self) -> None:
+        """RateLimiter raises ValueError for zero rpm."""
+        with pytest.raises(ValueError, match="rpm must be positive"):
+            RateLimiter(rpm=0.0)
 
-    def test_invalid_rate_negative(self) -> None:
-        """RateLimiter raises ValueError for negative rate."""
-        with pytest.raises(ValueError, match="rate must be positive"):
-            RateLimiter(rate=-5.0)
+    def test_invalid_rpm_negative(self) -> None:
+        """RateLimiter raises ValueError for negative rpm."""
+        with pytest.raises(ValueError, match="rpm must be positive"):
+            RateLimiter(rpm=-300.0)
 
 
 class TestRateLimiterAcquire:
@@ -65,14 +65,14 @@ class TestRateLimiterAcquire:
 
     async def test_acquire_consumes_token(self) -> None:
         """acquire() consumes one token."""
-        limiter = RateLimiter(rate=10.0, max_tokens=5.0)
+        limiter = RateLimiter(rpm=600.0, max_tokens=5.0)
         initial_tokens = limiter.tokens
         await limiter.acquire()
         assert limiter.tokens == initial_tokens - 1
 
     async def test_acquire_multiple_times(self) -> None:
         """Multiple acquire() calls consume multiple tokens."""
-        limiter = RateLimiter(rate=10.0, max_tokens=5.0)
+        limiter = RateLimiter(rpm=600.0, max_tokens=5.0)
         await limiter.acquire()
         await limiter.acquire()
         await limiter.acquire()
@@ -81,14 +81,14 @@ class TestRateLimiterAcquire:
 
     async def test_acquire_is_async(self) -> None:
         """acquire() is an async method."""
-        limiter = RateLimiter(rate=10.0)
+        limiter = RateLimiter(rpm=600.0)
         result = limiter.acquire()
         assert asyncio.iscoroutine(result)
         await result  # Clean up the coroutine
 
     async def test_acquire_burst(self) -> None:
         """Can acquire tokens up to burst capacity instantly."""
-        limiter = RateLimiter(rate=1.0, max_tokens=5.0)
+        limiter = RateLimiter(rpm=60.0, max_tokens=5.0)  # 1 per second
 
         start = time.monotonic()
         for _ in range(5):
@@ -100,7 +100,7 @@ class TestRateLimiterAcquire:
 
     async def test_acquire_waits_when_empty(self) -> None:
         """acquire() waits when tokens are exhausted."""
-        limiter = RateLimiter(rate=100.0, max_tokens=1.0)  # High rate, low burst
+        limiter = RateLimiter(rpm=6000.0, max_tokens=1.0)  # High rate, low burst
 
         # Consume the only token
         await limiter.acquire()
@@ -110,7 +110,7 @@ class TestRateLimiterAcquire:
         await limiter.acquire()
         elapsed = time.monotonic() - start
 
-        # Should have waited ~0.01 seconds (1 token / 100 rate)
+        # Should have waited ~0.01 seconds (1 token / 100 per second)
         assert elapsed >= 0.005  # Allow some tolerance
 
 
@@ -119,7 +119,7 @@ class TestRateLimiterRefill:
 
     async def test_tokens_refill_over_time(self) -> None:
         """Tokens refill based on elapsed time."""
-        limiter = RateLimiter(rate=100.0, max_tokens=10.0)
+        limiter = RateLimiter(rpm=6000.0, max_tokens=10.0)  # 100 per second
 
         # Consume all tokens
         for _ in range(10):
@@ -138,7 +138,7 @@ class TestRateLimiterRefill:
 
     async def test_tokens_cap_at_max(self) -> None:
         """Tokens don't exceed max_tokens."""
-        limiter = RateLimiter(rate=1000.0, max_tokens=5.0)
+        limiter = RateLimiter(rpm=60000.0, max_tokens=5.0)  # 1000 per second
 
         # Already at max
         assert limiter.tokens == 5.0
@@ -159,7 +159,7 @@ class TestRateLimiterConcurrency:
 
     async def test_concurrent_acquire(self) -> None:
         """Multiple concurrent acquire() calls are safe."""
-        limiter = RateLimiter(rate=100.0, max_tokens=10.0)
+        limiter = RateLimiter(rpm=6000.0, max_tokens=10.0)
 
         async def worker() -> None:
             await limiter.acquire()
@@ -173,7 +173,7 @@ class TestRateLimiterConcurrency:
 
     async def test_serialized_under_lock(self) -> None:
         """Concurrent acquires are serialized by the lock."""
-        limiter = RateLimiter(rate=10.0, max_tokens=2.0)
+        limiter = RateLimiter(rpm=600.0, max_tokens=2.0)  # 10 per second
         acquire_order: list[int] = []
         start_time = time.monotonic()
 
@@ -189,7 +189,7 @@ class TestRateLimiterConcurrency:
         assert len(acquire_order) == 4
         elapsed = time.monotonic() - start_time
 
-        # With rate=10 and burst=2, should take ~0.2s for 4 acquires
+        # With rpm=600 (10/s) and burst=2, should take ~0.2s for 4 acquires
         # (2 instant + 2 waiting)
         assert elapsed >= 0.1
 
@@ -197,17 +197,17 @@ class TestRateLimiterConcurrency:
 class TestRateLimiterEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
-    async def test_very_high_rate(self) -> None:
-        """Works with very high rates."""
-        limiter = RateLimiter(rate=10000.0, max_tokens=100.0)
+    async def test_very_high_rpm(self) -> None:
+        """Works with very high RPM."""
+        limiter = RateLimiter(rpm=600000.0, max_tokens=100.0)  # 10000 per second
         for _ in range(50):
             await limiter.acquire()
         # Should complete nearly instantly
         assert limiter.tokens < 100.0
 
-    async def test_very_low_rate(self) -> None:
-        """Works with very low rates."""
-        limiter = RateLimiter(rate=0.1, max_tokens=1.0)  # 1 per 10 seconds
+    async def test_very_low_rpm(self) -> None:
+        """Works with very low RPM."""
+        limiter = RateLimiter(rpm=6.0, max_tokens=1.0)  # 0.1 per second
 
         start = time.monotonic()
         await limiter.acquire()  # Instant (have 1 token)
@@ -218,11 +218,11 @@ class TestRateLimiterEdgeCases:
     def test_invalid_max_tokens_below_one(self) -> None:
         """RateLimiter raises ValueError for max_tokens < 1.0."""
         with pytest.raises(ValueError, match="max_tokens must be at least 1.0"):
-            RateLimiter(rate=10.0, max_tokens=0.5)
+            RateLimiter(rpm=600.0, max_tokens=0.5)
 
     async def test_fractional_max_tokens(self) -> None:
         """Handles fractional max_tokens values >= 1.0."""
-        limiter = RateLimiter(rate=10.0, max_tokens=1.5)
+        limiter = RateLimiter(rpm=600.0, max_tokens=1.5)
         assert limiter.tokens == 1.5
 
         # Consume 1 token, should have 0.5 left
@@ -233,7 +233,7 @@ class TestRateLimiterEdgeCases:
 
     async def test_single_token_bucket(self) -> None:
         """Works with single-token bucket."""
-        limiter = RateLimiter(rate=1000.0, max_tokens=1.0)
+        limiter = RateLimiter(rpm=60000.0, max_tokens=1.0)  # 1000 per second
 
         # Can acquire one instantly
         await limiter.acquire()
@@ -252,132 +252,132 @@ class TestRateLimiterAdaptiveParameters:
 
     def test_creation_with_adaptive_defaults(self) -> None:
         """RateLimiter has correct adaptive defaults."""
-        limiter = RateLimiter(rate=10.0)
-        assert limiter.max_rate == 10.0
-        assert limiter.min_rate == 0.1
+        limiter = RateLimiter(rpm=600.0)
+        assert limiter.max_rpm == 600.0
+        assert limiter.min_rpm == 6.0
         assert limiter.recovery_factor == 1.1
         assert limiter.backoff_factor == 0.5
 
-    def test_creation_with_custom_min_rate(self) -> None:
-        """RateLimiter accepts custom min_rate."""
-        limiter = RateLimiter(rate=10.0, min_rate=1.0)
-        assert limiter.min_rate == 1.0
+    def test_creation_with_custom_min_rpm(self) -> None:
+        """RateLimiter accepts custom min_rpm."""
+        limiter = RateLimiter(rpm=600.0, min_rpm=60.0)
+        assert limiter.min_rpm == 60.0
 
     def test_creation_with_custom_recovery_factor(self) -> None:
         """RateLimiter accepts custom recovery_factor."""
-        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
+        limiter = RateLimiter(rpm=600.0, recovery_factor=1.5)
         assert limiter.recovery_factor == 1.5
 
     def test_creation_with_custom_backoff_factor(self) -> None:
         """RateLimiter accepts custom backoff_factor."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.25)
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.25)
         assert limiter.backoff_factor == 0.25
 
-    def test_invalid_min_rate_zero(self) -> None:
-        """RateLimiter raises ValueError for zero min_rate."""
-        with pytest.raises(ValueError, match="min_rate must be positive"):
-            RateLimiter(rate=10.0, min_rate=0.0)
+    def test_invalid_min_rpm_zero(self) -> None:
+        """RateLimiter raises ValueError for zero min_rpm."""
+        with pytest.raises(ValueError, match="min_rpm must be positive"):
+            RateLimiter(rpm=600.0, min_rpm=0.0)
 
-    def test_invalid_min_rate_negative(self) -> None:
-        """RateLimiter raises ValueError for negative min_rate."""
-        with pytest.raises(ValueError, match="min_rate must be positive"):
-            RateLimiter(rate=10.0, min_rate=-1.0)
+    def test_invalid_min_rpm_negative(self) -> None:
+        """RateLimiter raises ValueError for negative min_rpm."""
+        with pytest.raises(ValueError, match="min_rpm must be positive"):
+            RateLimiter(rpm=600.0, min_rpm=-60.0)
 
 
 class TestRateLimiterBackoff:
     """Tests for rate backoff behavior."""
 
-    def test_backoff_reduces_rate(self) -> None:
-        """backoff() reduces rate by backoff_factor."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+    def test_backoff_reduces_rpm(self) -> None:
+        """backoff() reduces rpm by backoff_factor."""
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5)
         limiter.backoff()
-        assert limiter.rate == 5.0
+        assert limiter.rpm == 300.0
 
     def test_backoff_multiple_times(self) -> None:
         """Multiple backoffs compound."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5)
         limiter.backoff()
-        assert limiter.rate == 5.0
+        assert limiter.rpm == 300.0
         limiter.backoff()
-        assert limiter.rate == 2.5
+        assert limiter.rpm == 150.0
         limiter.backoff()
-        assert limiter.rate == 1.25
+        assert limiter.rpm == 75.0
 
-    def test_backoff_respects_min_rate(self) -> None:
-        """Backoff doesn't go below min_rate."""
-        limiter = RateLimiter(rate=1.0, min_rate=0.5, backoff_factor=0.1)
+    def test_backoff_respects_min_rpm(self) -> None:
+        """Backoff doesn't go below min_rpm."""
+        limiter = RateLimiter(rpm=60.0, min_rpm=30.0, backoff_factor=0.1)
         limiter.backoff()
-        assert limiter.rate == 0.5  # Capped at min_rate
+        assert limiter.rpm == 30.0  # Capped at min_rpm
         limiter.backoff()
-        assert limiter.rate == 0.5  # Still at min_rate
+        assert limiter.rpm == 30.0  # Still at min_rpm
 
     def test_backoff_with_retry_after(self) -> None:
-        """backoff() uses retry_after to set rate."""
-        limiter = RateLimiter(rate=10.0)
-        limiter.backoff(retry_after=2.0)  # 1 request per 2 seconds = 0.5/s
-        assert limiter.rate == 0.5
+        """backoff() uses retry_after to set rpm."""
+        limiter = RateLimiter(rpm=600.0)
+        limiter.backoff(retry_after=2.0)  # 1 request per 2 seconds = 30 RPM
+        assert limiter.rpm == 30.0
 
     def test_backoff_with_retry_after_lower_than_current(self) -> None:
-        """backoff() with retry_after only reduces rate."""
-        limiter = RateLimiter(rate=10.0)
-        limiter.backoff(retry_after=0.05)  # Would suggest 20/s, higher than current
-        assert limiter.rate == 10.0  # Rate unchanged (already lower)
+        """backoff() with retry_after only reduces rpm."""
+        limiter = RateLimiter(rpm=600.0)
+        limiter.backoff(retry_after=0.05)  # Would suggest 1200 RPM, higher than current
+        assert limiter.rpm == 600.0  # RPM unchanged (already lower)
 
-    def test_backoff_with_retry_after_respects_min_rate(self) -> None:
-        """backoff() with retry_after respects min_rate."""
-        limiter = RateLimiter(rate=10.0, min_rate=0.5)
-        limiter.backoff(retry_after=10.0)  # Would suggest 0.1/s
-        assert limiter.rate == 0.5  # Capped at min_rate
+    def test_backoff_with_retry_after_respects_min_rpm(self) -> None:
+        """backoff() with retry_after respects min_rpm."""
+        limiter = RateLimiter(rpm=600.0, min_rpm=30.0)
+        limiter.backoff(retry_after=10.0)  # Would suggest 6 RPM
+        assert limiter.rpm == 30.0  # Capped at min_rpm
 
     def test_backoff_with_retry_after_zero(self) -> None:
         """backoff() with zero retry_after uses backoff_factor."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5)
         limiter.backoff(retry_after=0.0)
-        assert limiter.rate == 5.0  # Used backoff_factor
+        assert limiter.rpm == 300.0  # Used backoff_factor
 
     def test_backoff_with_retry_after_negative(self) -> None:
         """backoff() with negative retry_after uses backoff_factor."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5)
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5)
         limiter.backoff(retry_after=-1.0)
-        assert limiter.rate == 5.0  # Used backoff_factor
+        assert limiter.rpm == 300.0  # Used backoff_factor
 
 
 class TestRateLimiterRecover:
     """Tests for rate recovery behavior."""
 
-    def test_recover_increases_rate(self) -> None:
-        """recover() increases rate by recovery_factor."""
-        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
-        limiter.rate = 5.0  # Simulate backoff
+    def test_recover_increases_rpm(self) -> None:
+        """recover() increases rpm by recovery_factor."""
+        limiter = RateLimiter(rpm=600.0, recovery_factor=1.5)
+        limiter.rpm = 300.0  # Simulate backoff
         limiter.recover()
-        assert limiter.rate == 7.5
+        assert limiter.rpm == 450.0
 
-    def test_recover_respects_max_rate(self) -> None:
-        """Recover doesn't exceed max_rate."""
-        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
-        limiter.rate = 9.0  # Close to max
+    def test_recover_respects_max_rpm(self) -> None:
+        """Recover doesn't exceed max_rpm."""
+        limiter = RateLimiter(rpm=600.0, recovery_factor=1.5)
+        limiter.rpm = 540.0  # Close to max
         limiter.recover()
-        assert limiter.rate == 10.0  # Capped at max_rate
+        assert limiter.rpm == 600.0  # Capped at max_rpm
 
-    def test_recover_at_max_rate(self) -> None:
-        """Recover at max_rate stays at max_rate."""
-        limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
-        # Already at max rate
+    def test_recover_at_max_rpm(self) -> None:
+        """Recover at max_rpm stays at max_rpm."""
+        limiter = RateLimiter(rpm=600.0, recovery_factor=1.5)
+        # Already at max rpm
         limiter.recover()
-        assert limiter.rate == 10.0
+        assert limiter.rpm == 600.0
 
     def test_recover_multiple_times(self) -> None:
         """Multiple recovers compound up to max."""
-        limiter = RateLimiter(rate=10.0, recovery_factor=2.0)
-        limiter.rate = 1.0  # Heavily backed off
+        limiter = RateLimiter(rpm=600.0, recovery_factor=2.0)
+        limiter.rpm = 60.0  # Heavily backed off
         limiter.recover()
-        assert limiter.rate == 2.0
+        assert limiter.rpm == 120.0
         limiter.recover()
-        assert limiter.rate == 4.0
+        assert limiter.rpm == 240.0
         limiter.recover()
-        assert limiter.rate == 8.0
+        assert limiter.rpm == 480.0
         limiter.recover()
-        assert limiter.rate == 10.0  # Capped at max
+        assert limiter.rpm == 600.0  # Capped at max
 
 
 class TestRateLimiterBackoffRecoverCycle:
@@ -385,41 +385,41 @@ class TestRateLimiterBackoffRecoverCycle:
 
     def test_backoff_then_recover(self) -> None:
         """Can recover after backoff."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5, recovery_factor=1.1)
-        original_rate = limiter.rate
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5, recovery_factor=1.1)
+        original_rpm = limiter.rpm
 
         limiter.backoff()
-        assert limiter.rate == 5.0
+        assert limiter.rpm == 300.0
 
         # Multiple recovers to get back
         for _ in range(20):  # Enough iterations
             limiter.recover()
 
-        assert limiter.rate == original_rate
+        assert limiter.rpm == original_rpm
 
     def test_gradual_recovery_after_multiple_backoffs(self) -> None:
         """Recovery is gradual after multiple backoffs."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5, recovery_factor=1.1)
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5, recovery_factor=1.1)
 
         # Multiple backoffs
         limiter.backoff()
         limiter.backoff()
         limiter.backoff()
-        assert limiter.rate == 1.25  # 10 * 0.5^3
+        assert limiter.rpm == 75.0  # 600 * 0.5^3
 
         # First recovery
         limiter.recover()
-        assert limiter.rate == pytest.approx(1.375, rel=0.01)  # 1.25 * 1.1
+        assert limiter.rpm == pytest.approx(82.5, rel=0.01)  # 75 * 1.1
 
-    def test_rate_oscillation(self) -> None:
-        """Rate can oscillate between backoff and recovery."""
-        limiter = RateLimiter(rate=10.0, backoff_factor=0.5, recovery_factor=2.0)
+    def test_rpm_oscillation(self) -> None:
+        """RPM can oscillate between backoff and recovery."""
+        limiter = RateLimiter(rpm=600.0, backoff_factor=0.5, recovery_factor=2.0)
 
-        limiter.backoff()  # 10 -> 5
-        assert limiter.rate == 5.0
-        limiter.recover()  # 5 -> 10
-        assert limiter.rate == 10.0
-        limiter.backoff()  # 10 -> 5
-        assert limiter.rate == 5.0
-        limiter.recover()  # 5 -> 10
-        assert limiter.rate == 10.0
+        limiter.backoff()  # 600 -> 300
+        assert limiter.rpm == 300.0
+        limiter.recover()  # 300 -> 600
+        assert limiter.rpm == 600.0
+        limiter.backoff()  # 600 -> 300
+        assert limiter.rpm == 300.0
+        limiter.recover()  # 300 -> 600
+        assert limiter.rpm == 600.0

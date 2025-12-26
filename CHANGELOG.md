@@ -79,17 +79,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RateLimitError`: Raised when API rate limits are hit, with optional `retry_after`
   - `ExecutionError`: Raised on task execution failures, with optional `node_id` and `cause`
 - Add `RateLimiter` with token bucket algorithm for endpoint rate control
-  - Configurable rate (tokens per second) and max_tokens (burst capacity)
+  - Configurable RPM (requests per minute) and max_tokens (burst capacity)
   - Async `acquire()` method waits for available tokens
   - Thread-safe implementation using asyncio.Lock
 - Add adaptive backoff to `RateLimiter` for automatic rate adjustment
   - `backoff()` method reduces rate when hitting API limits
   - `recover()` method gradually restores rate after successful requests
-  - Configurable `min_rate`, `recovery_factor`, and `backoff_factor`
+  - Configurable `min_rpm`, `recovery_factor`, and `backoff_factor`
   - Supports server-provided `retry_after` hints for optimal rate adjustment
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
+- Standardize rate limiting units to RPM (requests per minute) across all APIs
+  - `RateLimiter` now accepts `rpm` parameter instead of `rate`
+  - `EndpointConfig.rate_limit` is now documented as requests per minute
+  - Aligns with LLM API provider conventions (OpenAI, Anthropic, etc.)
 
 ### Deprecated
 - N/A

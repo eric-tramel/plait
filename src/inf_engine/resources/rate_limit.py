@@ -4,6 +4,9 @@ This module provides a token bucket rate limiter that controls the rate
 of requests to LLM endpoints. The algorithm allows for bursting up to
 a maximum capacity while maintaining a steady long-term rate.
 
+All rate parameters use RPM (requests per minute) as the primary unit,
+which is the standard unit used by LLM API providers.
+
 The limiter supports adaptive backpressure:
     - When rate limits are hit, `backoff()` reduces the request rate
     - After successful requests, `recover()` gradually restores the rate
@@ -20,7 +23,7 @@ Example:
     >>> from inf_engine.resources.rate_limit import RateLimiter
     >>>
     >>> async def make_requests():
-    ...     limiter = RateLimiter(rate=10.0, max_tokens=10.0)
+    ...     limiter = RateLimiter(rpm=600.0, max_tokens=10.0)  # 600 RPM = 10/sec
     ...     for i in range(5):
     ...         await limiter.acquire()
     ...         print(f"Request {i} sent")
@@ -40,6 +43,10 @@ class RateLimiter:
     added to a bucket at a fixed rate. Each request consumes one token.
     When the bucket is empty, callers wait until tokens are available.
 
+    All rate parameters use RPM (requests per minute) as the primary unit.
+    Internally, the limiter converts to per-second rates for the token
+    bucket calculations.
+
     The bucket has a maximum capacity (max_tokens) that limits burst size.
     Tokens accumulate when not in use, up to this maximum, allowing short
     bursts of requests above the steady-state rate.
@@ -49,88 +56,96 @@ class RateLimiter:
         - `recover()`: Gradually restore rate after successful requests
 
     Args:
-        rate: Initial token refill rate in tokens per second. This is the
+        rpm: Initial request rate in requests per minute (RPM). This is the
             long-term average request rate the limiter will allow.
-            Must be positive. Also used as max_rate for recovery.
+            Must be positive. Also used as max_rpm for recovery.
         max_tokens: Maximum bucket capacity. Controls burst size - how
             many requests can be made instantly before rate limiting
-            kicks in. Must be at least 1.0. Defaults to same value as rate.
-        min_rate: Minimum rate after backoff. Rate will not go below this
-            value regardless of how many backoffs occur. Defaults to 0.1.
+            kicks in. Must be at least 1.0. Defaults to rpm/60 (1 second
+            worth of requests) if not specified.
+        min_rpm: Minimum rate after backoff in RPM. Rate will not go below
+            this value regardless of how many backoffs occur. Defaults to 6.0
+            (0.1 requests per second).
         recovery_factor: Multiplier for rate on each recover() call.
             Should be > 1.0 to gradually increase rate. Defaults to 1.1.
         backoff_factor: Multiplier for rate on each backoff() call.
             Should be < 1.0 to reduce rate. Defaults to 0.5.
 
     Raises:
-        ValueError: If rate is not positive, max_tokens < 1.0, or
-            min_rate is not positive.
+        ValueError: If rpm is not positive, max_tokens < 1.0, or
+            min_rpm is not positive.
 
     Attributes:
-        rate: Current token refill rate (tokens per second). Changes
+        rpm: Current request rate in requests per minute. Changes
             with backoff() and recover() calls.
-        max_rate: Maximum rate (set from initial rate). Recovery cannot
+        max_rpm: Maximum rate in RPM (set from initial rpm). Recovery cannot
             exceed this value.
-        min_rate: Minimum rate. Backoff cannot go below this value.
+        min_rpm: Minimum rate in RPM. Backoff cannot go below this value.
         max_tokens: Maximum bucket capacity.
         tokens: Current number of tokens in the bucket.
         recovery_factor: Multiplier applied on recover().
         backoff_factor: Multiplier applied on backoff().
 
     Example:
-        >>> limiter = RateLimiter(rate=10.0, max_tokens=5.0)
-        >>> limiter.rate
-        10.0
+        >>> limiter = RateLimiter(rpm=600.0, max_tokens=5.0)
+        >>> limiter.rpm
+        600.0
         >>> limiter.max_tokens
         5.0
 
         >>> # Backoff reduces rate
         >>> limiter.backoff()
-        >>> limiter.rate
-        5.0
+        >>> limiter.rpm
+        300.0
 
         >>> # Recover gradually restores rate
         >>> limiter.recover()
-        >>> limiter.rate
-        5.5
+        >>> limiter.rpm
+        330.0
     """
 
     def __init__(
         self,
-        rate: float = 10.0,
+        rpm: float = 600.0,
         max_tokens: float | None = None,
-        min_rate: float = 0.1,
+        min_rpm: float = 6.0,
         recovery_factor: float = 1.1,
         backoff_factor: float = 0.5,
     ) -> None:
         """Initialize the rate limiter.
 
         Args:
-            rate: Initial token refill rate in tokens per second.
-            max_tokens: Maximum bucket capacity. Defaults to rate value
-                if not specified.
-            min_rate: Minimum rate after backoff. Defaults to 0.1.
+            rpm: Initial request rate in requests per minute (RPM).
+            max_tokens: Maximum bucket capacity. Defaults to rpm/60
+                (one second of requests) if not specified.
+            min_rpm: Minimum rate after backoff in RPM. Defaults to 6.0.
             recovery_factor: Multiplier for rate recovery. Defaults to 1.1.
             backoff_factor: Multiplier for rate backoff. Defaults to 0.5.
         """
-        if rate <= 0:
-            raise ValueError("rate must be positive")
-        if min_rate <= 0:
-            raise ValueError("min_rate must be positive")
+        if rpm <= 0:
+            raise ValueError("rpm must be positive")
+        if min_rpm <= 0:
+            raise ValueError("min_rpm must be positive")
 
-        effective_max = max_tokens if max_tokens is not None else rate
+        # Default max_tokens to 1 second worth of requests
+        effective_max = max_tokens if max_tokens is not None else rpm / 60.0
         if effective_max < 1.0:
             raise ValueError("max_tokens must be at least 1.0")
 
-        self.rate = rate
-        self.max_rate = rate
-        self.min_rate = min_rate
+        self.rpm = rpm
+        self.max_rpm = rpm
+        self.min_rpm = min_rpm
         self.max_tokens = effective_max
         self.tokens = self.max_tokens
         self.recovery_factor = recovery_factor
         self.backoff_factor = backoff_factor
         self._last_update = time.monotonic()
         self._lock = asyncio.Lock()
+
+    @property
+    def _rate_per_second(self) -> float:
+        """Get the current rate in tokens per second for internal calculations."""
+        return self.rpm / 60.0
 
     async def acquire(self) -> None:
         """Acquire a token, waiting if necessary.
@@ -145,7 +160,7 @@ class RateLimiter:
         Example:
             >>> import asyncio
             >>> async def example():
-            ...     limiter = RateLimiter(rate=10.0, max_tokens=2.0)
+            ...     limiter = RateLimiter(rpm=600.0, max_tokens=2.0)
             ...     # First two calls are instant (burst capacity)
             ...     await limiter.acquire()
             ...     await limiter.acquire()
@@ -162,7 +177,7 @@ class RateLimiter:
 
             while self.tokens < 1:
                 # Calculate wait time for 1 token
-                wait_time = (1 - self.tokens) / self.rate
+                wait_time = (1 - self.tokens) / self._rate_per_second
                 await asyncio.sleep(wait_time)
                 self._refill()
 
@@ -183,7 +198,9 @@ class RateLimiter:
         self._last_update = now
 
         # Add tokens based on elapsed time, cap at max
-        self.tokens = min(self.max_tokens, self.tokens + elapsed * self.rate)
+        self.tokens = min(
+            self.max_tokens, self.tokens + elapsed * self._rate_per_second
+        )
 
     def backoff(self, retry_after: float | None = None) -> None:
         """Reduce rate after hitting API backpressure.
@@ -195,51 +212,52 @@ class RateLimiter:
         the rate is set to allow approximately one request per retry_after seconds.
         Otherwise, the rate is multiplied by the backoff_factor.
 
-        The rate will never go below min_rate.
+        The rate will never go below min_rpm.
 
         Args:
             retry_after: Optional number of seconds to wait before retrying.
-                If provided, rate is set to min(current_rate, 1.0/retry_after).
-                If None, rate is multiplied by backoff_factor.
+                If provided, rpm is set to min(current_rpm, 60.0/retry_after).
+                If None, rpm is multiplied by backoff_factor.
 
         Example:
-            >>> limiter = RateLimiter(rate=10.0)
+            >>> limiter = RateLimiter(rpm=600.0)
             >>> limiter.backoff()
-            >>> limiter.rate
-            5.0
+            >>> limiter.rpm
+            300.0
             >>> limiter.backoff()
-            >>> limiter.rate
-            2.5
+            >>> limiter.rpm
+            150.0
 
-            >>> # With retry_after hint
-            >>> limiter = RateLimiter(rate=10.0)
+            >>> # With retry_after hint (2 seconds = 30 RPM)
+            >>> limiter = RateLimiter(rpm=600.0)
             >>> limiter.backoff(retry_after=2.0)
-            >>> limiter.rate
-            0.5
+            >>> limiter.rpm
+            30.0
         """
         if retry_after is not None and retry_after > 0:
             # Use server-provided retry time to estimate safe rate
-            suggested_rate = 1.0 / retry_after
-            self.rate = max(self.min_rate, min(self.rate, suggested_rate))
+            # retry_after seconds between requests = 60/retry_after RPM
+            suggested_rpm = 60.0 / retry_after
+            self.rpm = max(self.min_rpm, min(self.rpm, suggested_rpm))
         else:
             # Apply multiplicative backoff
-            self.rate = max(self.min_rate, self.rate * self.backoff_factor)
+            self.rpm = max(self.min_rpm, self.rpm * self.backoff_factor)
 
     def recover(self) -> None:
         """Gradually increase rate after successful requests.
 
         Call this method after a successful API request to slowly restore
-        the rate toward max_rate. The rate is multiplied by recovery_factor
-        but will never exceed max_rate.
+        the rate toward max_rpm. The rate is multiplied by recovery_factor
+        but will never exceed max_rpm.
 
         Typical usage is to call recover() after each successful request
         to gradually undo the effects of previous backoff() calls.
 
         Example:
-            >>> limiter = RateLimiter(rate=10.0, recovery_factor=1.5)
-            >>> limiter.backoff()  # rate = 5.0
-            >>> limiter.recover()  # rate = 7.5
-            >>> limiter.recover()  # rate = 10.0 (capped at max_rate)
-            >>> limiter.recover()  # rate = 10.0 (still capped)
+            >>> limiter = RateLimiter(rpm=600.0, recovery_factor=1.5)
+            >>> limiter.backoff()  # rpm = 300.0
+            >>> limiter.recover()  # rpm = 450.0
+            >>> limiter.recover()  # rpm = 600.0 (capped at max_rpm)
+            >>> limiter.recover()  # rpm = 600.0 (still capped)
         """
-        self.rate = min(self.max_rate, self.rate * self.recovery_factor)
+        self.rpm = min(self.max_rpm, self.rpm * self.recovery_factor)
