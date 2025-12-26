@@ -10,13 +10,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (3/13)
+- [ ] **Phase 4: Resources** (4/13)
 - [ ] **Phase 5: Production Features** (0/17)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 39/93 PRs completed**
+**Total: 40/93 PRs completed**
 
 ---
 
@@ -501,7 +501,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_llm_types.py` (creation, serialization)
 - **CHANGELOG**: "Add LLMRequest and LLMResponse types"
 
-### - [ ] PR-040: LLMClient abstract base class
+### - [x] PR-040: LLMClient abstract base class
 - **Branch**: `feat/llm-client-base`
 - **Description**: Implement abstract `LLMClient` interface
 - **Design Docs**:
