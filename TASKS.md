@@ -11,12 +11,12 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
 - [ ] **Phase 4: Resources** (8/13)
-- [ ] **Phase 5: Production Features** (0/17)
+- [ ] **Phase 5: Production Features** (3/17)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 44/93 PRs completed**
+**Total: 47/93 PRs completed**
 
 ---
 
@@ -620,7 +620,7 @@ Fixes, improvements, and consistency updates identified during implementation re
 
 ## Phase 5: Production Features
 
-### - [ ] PR-050: Error types
+### - [x] PR-050: Error types
 - **Branch**: `feat/error-types`
 - **Description**: Implement `InfEngineError`, `RateLimitError`, `ExecutionError`
 - **Design Docs**:
@@ -631,7 +631,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_errors.py` (error creation, attributes)
 - **CHANGELOG**: "Add custom error types"
 
-### - [ ] PR-051: RateLimiter - token bucket
+### - [x] PR-051: RateLimiter - token bucket
 - **Branch**: `feat/rate-limiter-basic`
 - **Description**: Implement token bucket `RateLimiter` with `acquire()`
 - **Design Docs**:
@@ -643,7 +643,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_rate_limiter.py` (acquire, token consumption)
 - **CHANGELOG**: "Add RateLimiter with token bucket algorithm"
 
-### - [ ] PR-052: RateLimiter - adaptive backoff
+### - [x] PR-052: RateLimiter - adaptive backoff
 - **Branch**: `feat/rate-limiter-adaptive`
 - **Description**: Add `backoff()` and `recover()` methods
 - **Design Docs**:

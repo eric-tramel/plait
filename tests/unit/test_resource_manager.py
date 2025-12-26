@@ -1,7 +1,7 @@
 """Unit tests for ResourceManager.
 
 Tests validate ResourceManager initialization, client creation,
-and semaphore management.
+semaphore management, and rate limiter management.
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from inf_engine.clients.base import LLMClient
 from inf_engine.resources import ResourceManager
 from inf_engine.resources.config import EndpointConfig, ResourceConfig
 from inf_engine.resources.manager import ResourceManager as ResourceManagerDirect
+from inf_engine.resources.rate_limit import RateLimiter
 
 
 class TestResourceManagerInit:
@@ -473,3 +474,224 @@ class TestResourceManagerApiKeyResolution:
 
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["api_key"] is None
+
+
+class TestResourceManagerRateLimiterInit:
+    """Tests for ResourceManager rate limiter initialization."""
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_creates_rate_limiters_when_rate_limit_set(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager creates rate limiters for endpoints with rate_limit."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    rate_limit=600.0,  # 600 RPM
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert "fast" in manager.rate_limiters
+        assert isinstance(manager.rate_limiters["fast"], RateLimiter)
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_no_rate_limiter_when_rate_limit_none(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager skips rate limiter when rate_limit is None."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    rate_limit=None,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert "fast" not in manager.rate_limiters
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_rate_limiter_has_correct_rpm(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """Rate limiter is initialized with correct RPM from rate_limit."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    rate_limit=1200.0,  # 1200 RPM
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        limiter = manager.rate_limiters["fast"]
+        assert limiter.rpm == 1200.0
+        assert limiter.max_rpm == 1200.0
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_creates_rate_limiters_for_multiple_endpoints(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager creates rate limiters for multiple endpoints."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    rate_limit=600.0,
+                ),
+                "smart": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o",
+                    rate_limit=300.0,
+                ),
+                "no_limit": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o",
+                    rate_limit=None,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert "fast" in manager.rate_limiters
+        assert "smart" in manager.rate_limiters
+        assert "no_limit" not in manager.rate_limiters
+        assert manager.rate_limiters["fast"].rpm == 600.0
+        assert manager.rate_limiters["smart"].rpm == 300.0
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_empty_rate_limiters_for_empty_config(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager has empty rate_limiters for empty config."""
+        config = ResourceConfig(endpoints={})
+        manager = ResourceManager(config)
+
+        assert manager.rate_limiters == {}
+
+
+class TestResourceManagerGetRateLimiter:
+    """Tests for ResourceManager.get_rate_limiter method."""
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_rate_limiter_returns_limiter(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """get_rate_limiter returns rate limiter when rate_limit is set."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    rate_limit=600.0,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        limiter = manager.get_rate_limiter("fast")
+        assert isinstance(limiter, RateLimiter)
+        assert limiter.rpm == 600.0
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_rate_limiter_returns_none_when_not_set(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """get_rate_limiter returns None when rate_limit is not set."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    rate_limit=None,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert manager.get_rate_limiter("fast") is None
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_rate_limiter_returns_none_for_unknown_alias(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """get_rate_limiter returns None for unknown alias."""
+        config = ResourceConfig(endpoints={})
+        manager = ResourceManager(config)
+
+        assert manager.get_rate_limiter("unknown") is None
+
+
+class TestResourceManagerCombinedResources:
+    """Tests for ResourceManager with semaphores and rate limiters together."""
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_creates_both_semaphore_and_rate_limiter(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager creates both semaphore and rate limiter when both set."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=10,
+                    rate_limit=600.0,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert "fast" in manager.semaphores
+        assert "fast" in manager.rate_limiters
+        assert isinstance(manager.semaphores["fast"], asyncio.Semaphore)
+        assert isinstance(manager.rate_limiters["fast"], RateLimiter)
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_only_semaphore_no_rate_limiter(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager creates only semaphore when rate_limit not set."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=10,
+                    rate_limit=None,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert "fast" in manager.semaphores
+        assert "fast" not in manager.rate_limiters
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_only_rate_limiter_no_semaphore(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """ResourceManager creates only rate limiter when max_concurrent not set."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=None,
+                    rate_limit=600.0,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        assert "fast" not in manager.semaphores
+        assert "fast" in manager.rate_limiters

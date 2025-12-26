@@ -1,7 +1,8 @@
 """Resource manager for LLM endpoints.
 
 This module provides the `ResourceManager` class that handles runtime
-resource coordination, including client creation and concurrency control.
+resource coordination, including client creation, concurrency control,
+and rate limiting.
 """
 
 import asyncio
@@ -9,6 +10,7 @@ import asyncio
 from inf_engine.clients.base import LLMClient
 from inf_engine.clients.openai import OpenAIClient, OpenAICompatibleClient
 from inf_engine.resources.config import EndpointConfig, ResourceConfig
+from inf_engine.resources.rate_limit import RateLimiter
 
 
 class ResourceManager:
@@ -17,10 +19,11 @@ class ResourceManager:
     ResourceManager is responsible for:
     - Creating and managing LLM clients for each configured endpoint
     - Controlling concurrency with per-endpoint semaphores
-    - Providing a unified interface for executing LLM calls
+    - Managing rate limiters for endpoints with RPM limits
 
     The manager creates clients based on the `provider_api` field in each
-    endpoint configuration and enforces concurrency limits via semaphores.
+    endpoint configuration, semaphores for concurrency control, and rate
+    limiters for endpoints with rate limits configured.
 
     Args:
         config: The ResourceConfig containing endpoint definitions.
@@ -30,6 +33,8 @@ class ResourceManager:
         clients: Dict mapping aliases to LLMClient instances.
         semaphores: Dict mapping aliases to asyncio.Semaphore instances.
             Only created for endpoints with `max_concurrent` set.
+        rate_limiters: Dict mapping aliases to RateLimiter instances.
+            Only created for endpoints with `rate_limit` set.
 
     Example:
         >>> config = ResourceConfig(
@@ -38,6 +43,7 @@ class ResourceManager:
         ...             provider_api="openai",
         ...             model="gpt-4o-mini",
         ...             max_concurrent=10,
+        ...             rate_limit=600.0,  # 600 RPM
         ...         ),
         ...         "smart": EndpointConfig(
         ...             provider_api="openai",
@@ -51,6 +57,8 @@ class ResourceManager:
         True
         >>> "fast" in manager.semaphores
         True
+        >>> "fast" in manager.rate_limiters
+        True
 
     Note:
         The ResourceManager creates clients during initialization. If a
@@ -60,9 +68,10 @@ class ResourceManager:
     def __init__(self, config: ResourceConfig):
         """Initialize the resource manager with endpoint configurations.
 
-        Creates LLM clients and semaphores for each configured endpoint.
-        Clients are created based on the `provider_api` field, and semaphores
-        are only created for endpoints with `max_concurrent` set.
+        Creates LLM clients, semaphores, and rate limiters for each configured
+        endpoint. Clients are created based on the `provider_api` field,
+        semaphores are created for endpoints with `max_concurrent` set, and
+        rate limiters are created for endpoints with `rate_limit` set.
 
         Args:
             config: The ResourceConfig containing endpoint definitions.
@@ -75,16 +84,18 @@ class ResourceManager:
         # Per-endpoint resources
         self.clients: dict[str, LLMClient] = {}
         self.semaphores: dict[str, asyncio.Semaphore] = {}
+        self.rate_limiters: dict[str, RateLimiter] = {}
 
-        # Initialize clients and semaphores
+        # Initialize clients, semaphores, and rate limiters
         self._initialize()
 
     def _initialize(self) -> None:
-        """Initialize clients and semaphores for each endpoint.
+        """Initialize clients, semaphores, and rate limiters for each endpoint.
 
         Iterates through all configured endpoints and creates:
         - An LLMClient instance based on the provider_api
         - An asyncio.Semaphore if max_concurrent is set
+        - A RateLimiter if rate_limit is set
 
         Raises:
             ValueError: If an endpoint has an unsupported provider_api.
@@ -96,6 +107,10 @@ class ResourceManager:
             # Create semaphore if max_concurrent is set
             if endpoint.max_concurrent is not None:
                 self.semaphores[alias] = asyncio.Semaphore(endpoint.max_concurrent)
+
+            # Create rate limiter if rate_limit is set
+            if endpoint.rate_limit is not None:
+                self.rate_limiters[alias] = RateLimiter(rpm=endpoint.rate_limit)
 
     def _create_client(self, endpoint: EndpointConfig) -> LLMClient:
         """Create the appropriate client for an endpoint.
@@ -182,6 +197,26 @@ class ResourceManager:
             ...         pass
         """
         return self.semaphores.get(alias)
+
+    def get_rate_limiter(self, alias: str) -> RateLimiter | None:
+        """Get the rate limiter for an alias, if one exists.
+
+        Args:
+            alias: The endpoint alias.
+
+        Returns:
+            The RateLimiter for the alias, or None if no
+            rate_limit was configured for that endpoint.
+
+        Example:
+            >>> manager = ResourceManager(config)
+            >>> limiter = manager.get_rate_limiter("fast")
+            >>> if limiter:
+            ...     await limiter.acquire()
+            ...     # make request
+            ...     limiter.recover()
+        """
+        return self.rate_limiters.get(alias)
 
     def __contains__(self, alias: object) -> bool:
         """Check if an alias is managed by this ResourceManager.

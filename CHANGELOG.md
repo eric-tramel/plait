@@ -87,6 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `recover()` method gradually restores rate after successful requests
   - Configurable `min_rpm`, `recovery_factor`, and `backoff_factor`
   - Supports server-provided `retry_after` hints for optimal rate adjustment
+- Add RateLimiter integration to ResourceManager
+  - `rate_limiters` dict holds per-endpoint rate limiters
+  - `get_rate_limiter()` method retrieves rate limiter for an alias
+  - Rate limiters created automatically when `EndpointConfig.rate_limit` is set
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
