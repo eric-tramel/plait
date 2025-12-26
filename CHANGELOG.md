@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Async completion with message formatting and tool call support
   - Rate limit handling with `RateLimitError` and retry-after extraction
   - Configurable base URL, API key, and timeout
+- Add `OpenAICompatibleClient` for self-hosted models (vLLM, TGI, Ollama)
+  - Inherits from `OpenAIClient` with simplified configuration
+  - Required `base_url` parameter for custom endpoints
+  - Default `api_key="not-needed"` for local deployments
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

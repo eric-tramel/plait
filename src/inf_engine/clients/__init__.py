@@ -11,6 +11,10 @@ Supported providers:
 """
 
 from inf_engine.clients.base import LLMClient
-from inf_engine.clients.openai import OpenAIClient, RateLimitError
+from inf_engine.clients.openai import (
+    OpenAIClient,
+    OpenAICompatibleClient,
+    RateLimitError,
+)
 
-__all__ = ["LLMClient", "OpenAIClient", "RateLimitError"]
+__all__ = ["LLMClient", "OpenAIClient", "OpenAICompatibleClient", "RateLimitError"]

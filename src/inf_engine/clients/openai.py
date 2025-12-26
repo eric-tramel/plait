@@ -1,8 +1,12 @@
-"""OpenAI API client implementation.
+"""OpenAI API client implementations.
 
-This module provides the `OpenAIClient` class for making async completion
-requests to the OpenAI API. It handles message formatting, tool calls,
-and error translation.
+This module provides client classes for OpenAI and OpenAI-compatible APIs:
+
+- `OpenAIClient`: For the official OpenAI API
+- `OpenAICompatibleClient`: For self-hosted models using OpenAI-compatible APIs
+  (vLLM, TGI, Ollama, etc.)
+
+Both clients implement the `LLMClient` interface for unified access.
 """
 
 import os
@@ -243,3 +247,79 @@ class OpenAIClient(LLMClient):
                 except ValueError:
                     pass
         return None
+
+
+class OpenAICompatibleClient(OpenAIClient):
+    """Client for OpenAI-compatible APIs (vLLM, TGI, Ollama, etc.).
+
+    This client is designed for self-hosted models that expose an
+    OpenAI-compatible API. It inherits all functionality from `OpenAIClient`
+    but simplifies configuration for local/internal deployments:
+
+    - `base_url` is required (no default OpenAI endpoint)
+    - `api_key` defaults to "not-needed" (most self-hosted servers don't require auth)
+
+    Common use cases:
+    - vLLM servers: High-throughput serving of open-source models
+    - TGI (Text Generation Inference): HuggingFace's inference server
+    - Ollama: Local model runner for development
+    - LiteLLM: Unified API gateway for multiple providers
+
+    Args:
+        model: The model identifier as configured on the server.
+        base_url: The base URL of the OpenAI-compatible API endpoint.
+            Must include the path (e.g., "http://localhost:8000/v1").
+        api_key: Optional API key. Defaults to "not-needed" since most
+            self-hosted servers don't require authentication.
+        timeout: Request timeout in seconds. Defaults to 300.0 (5 minutes).
+
+    Example:
+        >>> # Connect to a local vLLM server
+        >>> client = OpenAICompatibleClient(
+        ...     model="mistral-7b",
+        ...     base_url="http://localhost:8000/v1",
+        ... )
+        >>> request = LLMRequest(prompt="Hello!")
+        >>> response = await client.complete(request)
+
+        >>> # Connect to an internal TGI server
+        >>> client = OpenAICompatibleClient(
+        ...     model="llama-70b",
+        ...     base_url="http://tgi-server.internal:8080/v1",
+        ...     timeout=600.0,  # Longer timeout for large models
+        ... )
+
+        >>> # With authentication (if required)
+        >>> client = OpenAICompatibleClient(
+        ...     model="gpt-j",
+        ...     base_url="http://secure-endpoint.internal/v1",
+        ...     api_key="internal-api-key",
+        ... )
+
+    Note:
+        This client reuses all parsing and error handling from `OpenAIClient`.
+        If the self-hosted server has API differences, you may need to
+        subclass and override specific methods.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str,
+        api_key: str = "not-needed",
+        timeout: float = 300.0,
+    ):
+        """Initialize the OpenAI-compatible client.
+
+        Args:
+            model: The model identifier as configured on the server.
+            base_url: The base URL of the API endpoint (required).
+            api_key: API key for authentication. Defaults to "not-needed".
+            timeout: Request timeout in seconds. Defaults to 300.0.
+        """
+        self.model = model
+        self._client = openai.AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            timeout=timeout,
+        )

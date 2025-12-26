@@ -10,13 +10,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (4/13)
+- [ ] **Phase 4: Resources** (5/13)
 - [ ] **Phase 5: Production Features** (0/17)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 40/93 PRs completed**
+**Total: 41/93 PRs completed**
 
 ---
 
@@ -512,7 +512,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_llm_client.py` (interface validation)
 - **CHANGELOG**: "Add LLMClient abstract base class"
 
-### - [ ] PR-041: OpenAI client implementation
+### - [x] PR-041: OpenAI client implementation
 - **Branch**: `feat/openai-client`
 - **Description**: Implement `OpenAIClient` with async completion
 - **Design Docs**:
@@ -524,7 +524,7 @@ Fixes, improvements, and consistency updates identified during implementation re
 
 ### - [ ] PR-042: OpenAI-compatible client
 - **Branch**: `feat/openai-compatible-client`
-- **Description**: Implement client for vLLM/TGI-style endpoints
+- **Description**: Implement client for vLLM/OpenAI-style endpoints
 - **Design Docs**:
   - `resources.md` → "LLM Clients" (OpenAICompatibleClient)
   - `DESIGN.md` → "Architecture" → "4. Pipeline Parallelism for Self-Hosted LLMs"

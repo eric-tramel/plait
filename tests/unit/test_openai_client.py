@@ -13,8 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from inf_engine.clients import OpenAIClient, RateLimitError
+from inf_engine.clients import OpenAIClient, OpenAICompatibleClient, RateLimitError
 from inf_engine.clients.openai import OpenAIClient as OpenAIClientDirect
+from inf_engine.clients.openai import (
+    OpenAICompatibleClient as OpenAICompatibleClientDirect,
+)
 from inf_engine.clients.openai import RateLimitError as RateLimitErrorDirect
 from inf_engine.resources.types import LLMRequest, LLMResponse
 
@@ -510,3 +513,186 @@ class TestOpenAIClientImports:
         import inf_engine.clients as clients_module
 
         assert "RateLimitError" in clients_module.__all__
+
+
+class TestOpenAICompatibleClientInit:
+    """Tests for OpenAICompatibleClient initialization."""
+
+    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    def test_init_requires_base_url(self, mock_client_class: MagicMock) -> None:
+        """Client requires base_url parameter."""
+        client = OpenAICompatibleClient(
+            model="mistral-7b",
+            base_url="http://localhost:8000/v1",
+        )
+        assert client.model == "mistral-7b"
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert call_kwargs["base_url"] == "http://localhost:8000/v1"
+
+    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    def test_init_defaults_api_key_to_not_needed(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """Client defaults api_key to 'not-needed'."""
+        OpenAICompatibleClient(
+            model="llama-70b",
+            base_url="http://vllm.internal:8000/v1",
+        )
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert call_kwargs["api_key"] == "not-needed"
+
+    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    def test_init_with_custom_api_key(self, mock_client_class: MagicMock) -> None:
+        """Client accepts custom api_key when needed."""
+        OpenAICompatibleClient(
+            model="gpt-j",
+            base_url="http://secure.internal/v1",
+            api_key="internal-key",
+        )
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert call_kwargs["api_key"] == "internal-key"
+
+    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    def test_init_with_custom_timeout(self, mock_client_class: MagicMock) -> None:
+        """Client accepts custom timeout."""
+        OpenAICompatibleClient(
+            model="llama-70b",
+            base_url="http://tgi.internal:8080/v1",
+            timeout=600.0,
+        )
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert call_kwargs["timeout"] == 600.0
+
+    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    def test_init_with_default_timeout(self, mock_client_class: MagicMock) -> None:
+        """Client uses default 300s timeout."""
+        OpenAICompatibleClient(
+            model="mistral-7b",
+            base_url="http://localhost:8000/v1",
+        )
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert call_kwargs["timeout"] == 300.0
+
+
+class TestOpenAICompatibleClientComplete:
+    """Tests for OpenAICompatibleClient.complete() method."""
+
+    @pytest.fixture
+    def mock_openai(self):
+        """Create a mock OpenAI client."""
+        with patch("inf_engine.clients.openai.openai.AsyncOpenAI") as mock_class:
+            mock_instance = MagicMock()
+            mock_instance.chat = MagicMock()
+            mock_instance.chat.completions = MagicMock()
+            mock_class.return_value = mock_instance
+            yield mock_instance
+
+    @pytest.mark.asyncio
+    async def test_complete_uses_inherited_implementation(
+        self, mock_openai: MagicMock
+    ) -> None:
+        """Client inherits complete() from OpenAIClient."""
+        mock_response = create_mock_response(content="Hello from vLLM!")
+        mock_openai.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        client = OpenAICompatibleClient(
+            model="mistral-7b",
+            base_url="http://localhost:8000/v1",
+        )
+        request = LLMRequest(prompt="Hello!")
+        response = await client.complete(request)
+
+        assert isinstance(response, LLMResponse)
+        assert response.content == "Hello from vLLM!"
+
+    @pytest.mark.asyncio
+    async def test_complete_with_system_prompt(self, mock_openai: MagicMock) -> None:
+        """Client correctly handles system prompts."""
+        mock_response = create_mock_response()
+        mock_openai.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        client = OpenAICompatibleClient(
+            model="llama-70b",
+            base_url="http://tgi.internal:8080/v1",
+        )
+        request = LLMRequest(
+            prompt="What is Python?",
+            system_prompt="You are a helpful assistant.",
+        )
+        await client.complete(request)
+
+        call_kwargs = mock_openai.chat.completions.create.call_args.kwargs
+        messages = call_kwargs["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    @pytest.mark.asyncio
+    async def test_complete_handles_rate_limit(self, mock_openai: MagicMock) -> None:
+        """Client translates rate limit errors correctly."""
+        mock_resp = MagicMock()
+        mock_resp.headers = {"retry-after": "30"}
+        mock_resp.status_code = 429
+
+        openai_error = openai.RateLimitError(
+            message="Rate limit exceeded",
+            response=mock_resp,
+            body=None,
+        )
+        mock_openai.chat.completions.create = AsyncMock(side_effect=openai_error)
+
+        client = OpenAICompatibleClient(
+            model="mistral-7b",
+            base_url="http://localhost:8000/v1",
+        )
+        request = LLMRequest(prompt="Hello!")
+
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.complete(request)
+
+        assert exc_info.value.retry_after == 30.0
+
+
+class TestOpenAICompatibleClientInheritance:
+    """Tests for OpenAICompatibleClient class hierarchy."""
+
+    def test_inherits_from_openai_client(self) -> None:
+        """OpenAICompatibleClient inherits from OpenAIClient."""
+        assert issubclass(OpenAICompatibleClient, OpenAIClient)
+
+    def test_is_llm_client(self) -> None:
+        """OpenAICompatibleClient is an LLMClient."""
+        from inf_engine.clients import LLMClient
+
+        assert issubclass(OpenAICompatibleClient, LLMClient)
+
+    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    def test_instance_is_openai_client(self, mock_client_class: MagicMock) -> None:
+        """OpenAICompatibleClient instance is also OpenAIClient."""
+        client = OpenAICompatibleClient(
+            model="mistral-7b",
+            base_url="http://localhost:8000/v1",
+        )
+        assert isinstance(client, OpenAIClient)
+
+
+class TestOpenAICompatibleClientImports:
+    """Tests for OpenAICompatibleClient imports."""
+
+    def test_import_from_clients_package(self) -> None:
+        """OpenAICompatibleClient can be imported from inf_engine.clients."""
+        from inf_engine.clients import OpenAICompatibleClient as ImportedClient
+
+        assert ImportedClient is OpenAICompatibleClientDirect
+
+    def test_import_from_openai_module(self) -> None:
+        """OpenAICompatibleClient can be imported from inf_engine.clients.openai."""
+        from inf_engine.clients.openai import OpenAICompatibleClient as ImportedClient
+
+        assert ImportedClient is OpenAICompatibleClientDirect
+
+    def test_clients_module_exports_compatible_client(self) -> None:
+        """clients module __all__ includes OpenAICompatibleClient."""
+        import inf_engine.clients as clients_module
+
+        assert "OpenAICompatibleClient" in clients_module.__all__
