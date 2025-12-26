@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `LLMClient` abstract base class for LLM provider clients
   - Defines async `complete(request: LLMRequest) -> LLMResponse` interface
   - Provides unified contract for OpenAI, Anthropic, vLLM, and other providers
+- Add `OpenAIClient` implementation for OpenAI API
+  - Async completion with message formatting and tool call support
+  - Rate limit handling with `RateLimitError` and retry-after extraction
+  - Configurable base URL, API key, and timeout
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
