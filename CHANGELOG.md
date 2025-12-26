@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - LLMInference modules are executed through ResourceManager's clients
   - Per-endpoint semaphores provide concurrency control for LLM calls
   - `_build_llm_request()` helper builds LLMRequest from module config and args
+- Add custom error types for error handling and recovery
+  - `InfEngineError`: Base exception for all inf-engine errors
+  - `RateLimitError`: Raised when API rate limits are hit, with optional `retry_after`
+  - `ExecutionError`: Raised on task execution failures, with optional `node_id` and `cause`
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
