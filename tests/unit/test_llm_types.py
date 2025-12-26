@@ -1,6 +1,6 @@
 """Unit tests for LLMRequest and LLMResponse types."""
 
-from inf_engine.resources.types import LLMRequest, LLMResponse
+from inf_engine.types import LLMRequest, LLMResponse
 
 
 class TestLLMRequest:
@@ -735,19 +735,3 @@ class TestLLMTypesIntegration:
         assert request.extra_body is not None
         assert response.has_reasoning is True
         assert "391" in reasoning_text
-
-    def test_import_from_resources_package(self) -> None:
-        """Test that types can be imported from resources package."""
-        from inf_engine.resources import LLMRequest, LLMResponse
-
-        request = LLMRequest(prompt="test")
-        response = LLMResponse(
-            content="test",
-            input_tokens=1,
-            output_tokens=1,
-            finish_reason="stop",
-            model="test-model",
-        )
-
-        assert request.prompt == "test"
-        assert response.content == "test"

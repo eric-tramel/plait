@@ -7,7 +7,7 @@ completion requests across different providers.
 
 from abc import ABC, abstractmethod
 
-from inf_engine.resources.types import LLMRequest, LLMResponse
+from inf_engine.types import LLMRequest, LLMResponse
 
 
 class LLMClient(ABC):

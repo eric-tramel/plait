@@ -1,7 +1,8 @@
-"""Request and response types for LLM API calls.
+"""Shared types for inf-engine.
 
-This module defines the data structures used to communicate with LLM clients,
-providing a unified interface across different providers (OpenAI, Anthropic, etc.).
+This module provides core data types used across the inf-engine package.
+Types defined here have no dependencies on other inf-engine modules,
+breaking circular import chains.
 """
 
 from dataclasses import dataclass

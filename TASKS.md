@@ -10,13 +10,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (5/13)
+- [ ] **Phase 4: Resources** (7/13)
 - [ ] **Phase 5: Production Features** (0/17)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 41/93 PRs completed**
+**Total: 43/93 PRs completed**
 
 ---
 
@@ -522,7 +522,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_openai_client.py` (mocked API calls)
 - **CHANGELOG**: "Add OpenAI client implementation"
 
-### - [ ] PR-042: OpenAI-compatible client
+### - [x] PR-042: OpenAI-compatible client
 - **Branch**: `feat/openai-compatible-client`
 - **Description**: Implement client for vLLM/OpenAI-style endpoints
 - **Design Docs**:
@@ -533,7 +533,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_openai_client.py` (custom base_url handling)
 - **CHANGELOG**: "Add OpenAI-compatible client for self-hosted models"
 
-### - [ ] PR-043: ResourceManager - initialization
+### - [x] PR-043: ResourceManager - initialization
 - **Branch**: `feat/resource-manager-init`
 - **Description**: Implement `ResourceManager.__init__` with client/semaphore creation
 - **Design Docs**:

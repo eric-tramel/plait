@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `visualize_graph()` function for DOT format graph output
 - Add `EndpointConfig` dataclass for LLM endpoint configuration
 - Add `ResourceConfig` dataclass for managing multiple LLM endpoints
-- Add `LLMRequest` and `LLMResponse` types for LLM API communication
+- Add shared `inf_engine.types` module for core types used across packages
   - `LLMRequest`: prompt, system_prompt, temperature, max_tokens, tools, tool_choice, extra_body
   - `LLMResponse`: content, tokens, finish_reason, reasoning, tool_calls, timing metrics
 - Add `LLMClient` abstract base class for LLM provider clients
@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Inherits from `OpenAIClient` with simplified configuration
   - Required `base_url` parameter for custom endpoints
   - Default `api_key="not-needed"` for local deployments
+- Add `ResourceManager` initialization for endpoint coordination
+  - Creates LLM clients based on provider_api configuration
+  - Creates per-endpoint semaphores for concurrency control
+  - Supports openai and vllm providers
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

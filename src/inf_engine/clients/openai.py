@@ -16,7 +16,7 @@ import openai
 import openai.types.chat
 
 from inf_engine.clients.base import LLMClient
-from inf_engine.resources.types import LLMRequest, LLMResponse
+from inf_engine.types import LLMRequest, LLMResponse
 
 
 class RateLimitError(Exception):

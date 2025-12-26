@@ -19,7 +19,7 @@ from inf_engine.clients.openai import (
     OpenAICompatibleClient as OpenAICompatibleClientDirect,
 )
 from inf_engine.clients.openai import RateLimitError as RateLimitErrorDirect
-from inf_engine.resources.types import LLMRequest, LLMResponse
+from inf_engine.types import LLMRequest, LLMResponse
 
 
 class TestRateLimitError:

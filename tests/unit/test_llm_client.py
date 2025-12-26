@@ -11,7 +11,7 @@ import pytest
 
 from inf_engine.clients import LLMClient
 from inf_engine.clients.base import LLMClient as LLMClientBase
-from inf_engine.resources.types import LLMRequest, LLMResponse
+from inf_engine.types import LLMRequest, LLMResponse
 
 
 class MockLLMClient(LLMClient):
