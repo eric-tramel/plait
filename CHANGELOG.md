@@ -78,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `InfEngineError`: Base exception for all inf-engine errors
   - `RateLimitError`: Raised when API rate limits are hit, with optional `retry_after`
   - `ExecutionError`: Raised on task execution failures, with optional `node_id` and `cause`
+- Add `RateLimiter` with token bucket algorithm for endpoint rate control
+  - Configurable rate (tokens per second) and max_tokens (burst capacity)
+  - Async `acquire()` method waits for available tokens
+  - Thread-safe implementation using asyncio.Lock
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
