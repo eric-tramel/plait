@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `LLMRequest` and `LLMResponse` types for LLM API communication
   - `LLMRequest`: prompt, system_prompt, temperature, max_tokens, tools, tool_choice, extra_body
   - `LLMResponse`: content, tokens, finish_reason, reasoning, tool_calls, timing metrics
+- Add `LLMClient` abstract base class for LLM provider clients
+  - Defines async `complete(request: LLMRequest) -> LLMResponse` interface
+  - Provides unified contract for OpenAI, Anthropic, vLLM, and other providers
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
