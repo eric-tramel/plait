@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from inf_engine.clients.base import LLMClient
+from inf_engine.errors import RateLimitError
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState, TaskStatus
 from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
@@ -1178,6 +1179,20 @@ class MockLLMClient(LLMClient):
         )
 
 
+class MockRateLimiter:
+    """A mock rate limiter for testing.
+
+    Tracks backoff calls to verify rate limit handling behavior.
+    """
+
+    def __init__(self) -> None:
+        self.backoff_calls: list[float | None] = []
+
+    def backoff(self, retry_after: float | None = None) -> None:
+        """Record backoff call."""
+        self.backoff_calls.append(retry_after)
+
+
 class MockResourceManager:
     """A mock ResourceManager for testing.
 
@@ -1189,9 +1204,11 @@ class MockResourceManager:
         self,
         clients: dict[str, LLMClient] | None = None,
         semaphores: dict[str, asyncio.Semaphore] | None = None,
+        rate_limiters: dict[str, MockRateLimiter] | None = None,
     ):
         self.clients: dict[str, LLMClient] = clients or {}
         self.semaphores: dict[str, asyncio.Semaphore] = semaphores or {}
+        self.rate_limiters: dict[str, MockRateLimiter] = rate_limiters or {}
 
     def get_client(self, alias: str) -> LLMClient:
         """Get a client by alias."""
@@ -1200,6 +1217,10 @@ class MockResourceManager:
     def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
         """Get a semaphore by alias."""
         return self.semaphores.get(alias)
+
+    def get_rate_limiter(self, alias: str) -> MockRateLimiter | None:
+        """Get a rate limiter by alias."""
+        return self.rate_limiters.get(alias)
 
 
 class TestSchedulerResourceManagerInit:
@@ -1543,3 +1564,369 @@ class TestSchedulerExecuteWithLLM:
         assert outputs == {"llm_a": "parallel result", "llm_b": "parallel result"}
         # Both LLM modules should have been called
         assert len(mock_client.requests) == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler RateLimitError Handling Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class RateLimitingMockClient(LLMClient):
+    """A mock LLM client that raises RateLimitError on first attempts.
+
+    Can be configured to fail a certain number of times before succeeding.
+    """
+
+    def __init__(
+        self,
+        fail_count: int = 1,
+        retry_after: float | None = None,
+        response_content: str = "success",
+    ):
+        self.fail_count = fail_count
+        self.retry_after = retry_after
+        self.response_content = response_content
+        self.call_count = 0
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        """Raise RateLimitError for first fail_count calls, then succeed."""
+        self.call_count += 1
+        if self.call_count <= self.fail_count:
+            raise RateLimitError(
+                f"Rate limit exceeded (attempt {self.call_count})",
+                retry_after=self.retry_after,
+            )
+        return LLMResponse(
+            content=self.response_content,
+            input_tokens=10,
+            output_tokens=5,
+            finish_reason="stop",
+            model="mock-model",
+        )
+
+
+class TestSchedulerRateLimitHandling:
+    """Tests for Scheduler RateLimitError handling."""
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_triggers_requeue(self) -> None:
+        """RateLimitError causes task to be requeued, not failed."""
+        from inf_engine.module import LLMInference
+
+        # Client fails once, then succeeds
+        mock_client = RateLimitingMockClient(fail_count=1)
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        # Task should eventually succeed after retry
+        assert outputs == {"llm_1": "success"}
+        assert state.status["llm_1"] == TaskStatus.COMPLETED
+        # Client should have been called twice (once failed, once succeeded)
+        assert mock_client.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_triggers_backoff(self) -> None:
+        """RateLimitError triggers backoff on the rate limiter."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=1)
+        mock_limiter = MockRateLimiter()
+        mock_manager = MockResourceManager(
+            clients={"fast": mock_client},
+            rate_limiters={"fast": mock_limiter},
+        )
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # Backoff should have been called once
+        assert len(mock_limiter.backoff_calls) == 1
+        assert mock_limiter.backoff_calls[0] is None  # No retry_after
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_passes_retry_after_to_backoff(self) -> None:
+        """RateLimitError passes retry_after value to backoff."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=1, retry_after=30.0)
+        mock_limiter = MockRateLimiter()
+        mock_manager = MockResourceManager(
+            clients={"fast": mock_client},
+            rate_limiters={"fast": mock_limiter},
+        )
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # Backoff should have been called with retry_after value
+        assert len(mock_limiter.backoff_calls) == 1
+        assert mock_limiter.backoff_calls[0] == 30.0
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_increments_retry_count(self) -> None:
+        """RateLimitError increments the task's retry_count."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=2)  # Fail twice
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # Task should complete with retry_count of 2 (two rate limits before success)
+        assert state.results["llm_1"].retry_count == 2
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_without_rate_limiter_still_requeues(self) -> None:
+        """RateLimitError causes requeue even without rate limiter configured."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=1)
+        # No rate_limiters configured
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        # Task should still succeed after retry
+        assert outputs == {"llm_1": "success"}
+        assert state.status["llm_1"] == TaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_does_not_call_on_error(self) -> None:
+        """RateLimitError does not invoke on_error callback."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=1)
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        errors: list[tuple[str, Exception]] = []
+
+        def on_error(node_id: str, error: Exception) -> None:
+            errors.append((node_id, error))
+
+        await scheduler.execute(state, on_error=on_error)
+
+        # No errors should be recorded (rate limits are not failures)
+        assert len(errors) == 0
+        assert state.status["llm_1"] == TaskStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_cancels_descendants_before_retry(self) -> None:
+        """RateLimitError causes descendants to be blocked until retry completes."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=1)
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        # Graph: input -> llm -> process
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        process_node = GraphNode(
+            id="process_2",
+            module=SimpleModule(),
+            args=(NodeRef("llm_1"),),
+            kwargs={},
+            dependencies=["llm_1"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "llm_1": llm_node,
+                "process_2": process_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["process_2"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        # All tasks should complete after retry
+        assert state.status["llm_1"] == TaskStatus.COMPLETED
+        assert state.status["process_2"] == TaskStatus.COMPLETED
+        assert outputs == {"process_2": "success_processed"}
+
+    @pytest.mark.asyncio
+    async def test_multiple_rate_limits_multiple_backoffs(self) -> None:
+        """Multiple RateLimitErrors cause multiple backoff calls."""
+        from inf_engine.module import LLMInference
+
+        mock_client = RateLimitingMockClient(fail_count=3)  # Fail three times
+        mock_limiter = MockRateLimiter()
+        mock_manager = MockResourceManager(
+            clients={"fast": mock_client},
+            rate_limiters={"fast": mock_limiter},
+        )
+        scheduler = Scheduler(resource_manager=mock_manager, max_concurrent=10)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # Backoff should have been called three times
+        assert len(mock_limiter.backoff_calls) == 3
+        # Task should complete successfully
+        assert state.status["llm_1"] == TaskStatus.COMPLETED
+        assert mock_client.call_count == 4  # 3 failures + 1 success

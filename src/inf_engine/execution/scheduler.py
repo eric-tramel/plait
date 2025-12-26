@@ -34,6 +34,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol
 
+from inf_engine.errors import RateLimitError
 from inf_engine.tracing.tracer import InputNode
 from inf_engine.types import LLMRequest
 
@@ -43,11 +44,23 @@ if TYPE_CHECKING:
     from inf_engine.module import LLMInference
 
 
+class RateLimiterProtocol(Protocol):
+    """Protocol defining the interface for rate limiters.
+
+    Allows the Scheduler to interact with rate limiters without
+    depending on the concrete RateLimiter implementation.
+    """
+
+    def backoff(self, retry_after: float | None = None) -> None:
+        """Reduce rate after hitting API backpressure."""
+        ...
+
+
 class ResourceManagerProtocol(Protocol):
     """Protocol defining the interface required for resource management.
 
-    Any object implementing get_client() and get_semaphore() can be used
-    as a resource manager, enabling easier testing with mock objects.
+    Any object implementing get_client(), get_semaphore(), and get_rate_limiter()
+    can be used as a resource manager, enabling easier testing with mock objects.
     """
 
     def get_client(self, alias: str) -> LLMClient:
@@ -56,6 +69,10 @@ class ResourceManagerProtocol(Protocol):
 
     def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
         """Get the concurrency semaphore for an endpoint alias."""
+        ...
+
+    def get_rate_limiter(self, alias: str) -> RateLimiterProtocol | None:
+        """Get the rate limiter for an endpoint alias."""
         ...
 
 
@@ -377,6 +394,11 @@ class Scheduler:
             if on_complete:
                 on_complete(task.node_id, task_result)
 
+        except RateLimitError as e:
+            # Rate limit hit - trigger backoff and requeue
+            self._handle_rate_limit(task, e)
+            state.requeue(task.node_id)
+
         except Exception as e:
             # Task failed - mark failed and invoke callback
             state.mark_failed(task.node_id, e)
@@ -386,6 +408,34 @@ class Scheduler:
         finally:
             # Always release the semaphore slot
             self.release()
+
+    def _handle_rate_limit(self, task: Task, error: RateLimitError) -> None:
+        """Handle a rate limit error by triggering backoff on the rate limiter.
+
+        When an LLM request hits a rate limit, this method looks up the
+        rate limiter for the endpoint and triggers backoff to reduce the
+        request rate. The task will be requeued for retry.
+
+        Args:
+            task: The Task that hit the rate limit.
+            error: The RateLimitError containing retry information.
+
+        Note:
+            If no rate limiter is configured for the endpoint, the backoff
+            is silently skipped. The task will still be requeued for retry.
+        """
+        if self.resource_manager is None:
+            return
+
+        # Get the alias from the LLM module
+        alias = getattr(task.module, "alias", None)
+        if alias is None:
+            return
+
+        # Get the rate limiter and trigger backoff
+        rate_limiter = self.resource_manager.get_rate_limiter(alias)
+        if rate_limiter is not None:
+            rate_limiter.backoff(retry_after=error.retry_after)
 
     async def _direct_execute(self, task: Task) -> Any:
         """Execute a non-LLM module directly.

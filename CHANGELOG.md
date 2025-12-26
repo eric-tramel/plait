@@ -91,6 +91,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `rate_limiters` dict holds per-endpoint rate limiters
   - `get_rate_limiter()` method retrieves rate limiter for an alias
   - Rate limiters created automatically when `EndpointConfig.rate_limit` is set
+- Add RateLimitError handling to Scheduler
+  - Catch `RateLimitError` in `_execute_task` and trigger task requeue
+  - Call `backoff()` on the endpoint's rate limiter when rate limits are hit
+  - Tasks are automatically retried without being marked as failed
+  - `retry_after` value from the error is passed to the rate limiter for optimal backoff
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
