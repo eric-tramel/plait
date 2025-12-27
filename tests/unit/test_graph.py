@@ -1686,3 +1686,396 @@ class TestVisualizeGraph:
         assert '"input:b" -> "llm2"' in dot
         assert '"llm1" -> "merge"' in dot
         assert '"llm2" -> "merge"' in dot
+
+
+class TestInferenceGraphComputeHash:
+    """Tests for InferenceGraph.compute_hash() method."""
+
+    def test_compute_hash_returns_string(self) -> None:
+        """compute_hash() returns a hex string."""
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node},
+            input_ids=["input:x"],
+            output_ids=["input:x"],
+        )
+        hash_value = graph.compute_hash()
+
+        assert isinstance(hash_value, str)
+        assert len(hash_value) == 64  # SHA-256 produces 64 hex characters
+
+    def test_compute_hash_is_deterministic(self) -> None:
+        """Same graph produces the same hash."""
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        graph = InferenceGraph(
+            nodes={"input:x": input_node},
+            input_ids=["input:x"],
+            output_ids=["input:x"],
+        )
+
+        hash1 = graph.compute_hash()
+        hash2 = graph.compute_hash()
+        assert hash1 == hash2
+
+    def test_compute_hash_different_for_different_structure(self) -> None:
+        """Different graph structures produce different hashes."""
+        # Graph 1: single node
+        input1 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        graph1 = InferenceGraph(
+            nodes={"input:x": input1},
+            input_ids=["input:x"],
+            output_ids=["input:x"],
+        )
+
+        # Graph 2: linear chain
+        input2 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm2 = GraphNode(
+            id="llm:1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+            module_name="LLMInference",
+        )
+        graph2 = InferenceGraph(
+            nodes={"input:x": input2, "llm:1": llm2},
+            input_ids=["input:x"],
+            output_ids=["llm:1"],
+        )
+
+        assert graph1.compute_hash() != graph2.compute_hash()
+
+    def test_compute_hash_independent_of_node_ids(self) -> None:
+        """Hash is independent of node ID naming."""
+        from inf_engine.module import LLMInference
+
+        # Graph 1 with node IDs "input:x" and "LLM_1"
+        llm1 = LLMInference(alias="fast")
+        input1 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node1 = GraphNode(
+            id="LLM_1",
+            module=llm1,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph1 = InferenceGraph(
+            nodes={"input:x": input1, "LLM_1": llm_node1},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        # Graph 2 with different node IDs but same logical structure
+        llm2 = LLMInference(alias="fast")
+        input2 = GraphNode(
+            id="input_0",  # Different ID
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node2 = GraphNode(
+            id="LLMInference_0",  # Different ID
+            module=llm2,
+            args=(),
+            kwargs={},
+            dependencies=["input_0"],
+        )
+        graph2 = InferenceGraph(
+            nodes={"input_0": input2, "LLMInference_0": llm_node2},
+            input_ids=["input_0"],
+            output_ids=["LLMInference_0"],
+        )
+
+        assert graph1.compute_hash() == graph2.compute_hash()
+
+    def test_compute_hash_differs_for_different_module_config(self) -> None:
+        """Hash differs when module configuration differs."""
+        from inf_engine.module import LLMInference
+
+        # Graph 1: temperature=0.5
+        llm1 = LLMInference(alias="fast", temperature=0.5)
+        input1 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node1 = GraphNode(
+            id="LLM_1",
+            module=llm1,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph1 = InferenceGraph(
+            nodes={"input:x": input1, "LLM_1": llm_node1},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        # Graph 2: temperature=0.7 (different config)
+        llm2 = LLMInference(alias="fast", temperature=0.7)
+        input2 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node2 = GraphNode(
+            id="LLM_1",
+            module=llm2,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph2 = InferenceGraph(
+            nodes={"input:x": input2, "LLM_1": llm_node2},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        assert graph1.compute_hash() != graph2.compute_hash()
+
+    def test_compute_hash_differs_for_different_alias(self) -> None:
+        """Hash differs when module alias differs."""
+        from inf_engine.module import LLMInference
+
+        # Graph 1: alias="fast"
+        llm1 = LLMInference(alias="fast")
+        input1 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node1 = GraphNode(
+            id="LLM_1",
+            module=llm1,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph1 = InferenceGraph(
+            nodes={"input:x": input1, "LLM_1": llm_node1},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        # Graph 2: alias="slow"
+        llm2 = LLMInference(alias="slow")
+        input2 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node2 = GraphNode(
+            id="LLM_1",
+            module=llm2,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph2 = InferenceGraph(
+            nodes={"input:x": input2, "LLM_1": llm_node2},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        assert graph1.compute_hash() != graph2.compute_hash()
+
+    def test_compute_hash_same_for_same_system_prompt(self) -> None:
+        """Hash is same for modules with same system_prompt."""
+        from inf_engine.module import LLMInference
+
+        prompt = "You are a helpful assistant."
+
+        llm1 = LLMInference(alias="fast", system_prompt=prompt)
+        input1 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node1 = GraphNode(
+            id="LLM_1",
+            module=llm1,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph1 = InferenceGraph(
+            nodes={"input:x": input1, "LLM_1": llm_node1},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        llm2 = LLMInference(alias="fast", system_prompt=prompt)
+        input2 = GraphNode(
+            id="other_input",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node2 = GraphNode(
+            id="other_llm",
+            module=llm2,
+            args=(),
+            kwargs={},
+            dependencies=["other_input"],
+        )
+        graph2 = InferenceGraph(
+            nodes={"other_input": input2, "other_llm": llm_node2},
+            input_ids=["other_input"],
+            output_ids=["other_llm"],
+        )
+
+        assert graph1.compute_hash() == graph2.compute_hash()
+
+    def test_compute_hash_differs_for_different_system_prompt(self) -> None:
+        """Hash differs when system_prompt differs."""
+        from inf_engine.module import LLMInference
+
+        llm1 = LLMInference(alias="fast", system_prompt="Prompt A")
+        input1 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node1 = GraphNode(
+            id="LLM_1",
+            module=llm1,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph1 = InferenceGraph(
+            nodes={"input:x": input1, "LLM_1": llm_node1},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        llm2 = LLMInference(alias="fast", system_prompt="Prompt B")
+        input2 = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="InputNode",
+        )
+        llm_node2 = GraphNode(
+            id="LLM_1",
+            module=llm2,
+            args=(),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+        graph2 = InferenceGraph(
+            nodes={"input:x": input2, "LLM_1": llm_node2},
+            input_ids=["input:x"],
+            output_ids=["LLM_1"],
+        )
+
+        assert graph1.compute_hash() != graph2.compute_hash()
+
+    def test_compute_hash_diamond_graph(self) -> None:
+        """Hash is computed correctly for diamond-shaped graphs."""
+        # input -> [a, b] -> merge
+        input_node = GraphNode(
+            id="input",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+            module_name="Input",
+        )
+        branch_a = GraphNode(
+            id="a",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input"],
+            module_name="BranchA",
+        )
+        branch_b = GraphNode(
+            id="b",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["input"],
+            module_name="BranchB",
+        )
+        merge = GraphNode(
+            id="merge",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=["a", "b"],
+            module_name="Merge",
+        )
+        graph = InferenceGraph(
+            nodes={"input": input_node, "a": branch_a, "b": branch_b, "merge": merge},
+            input_ids=["input"],
+            output_ids=["merge"],
+        )
+
+        # Should compute without error
+        hash_value = graph.compute_hash()
+        assert isinstance(hash_value, str)
+        assert len(hash_value) == 64
+
+        # Should be deterministic
+        assert graph.compute_hash() == hash_value

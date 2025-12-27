@@ -36,6 +36,8 @@ Example:
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -331,6 +333,135 @@ class InferenceGraph:
                     queue.append(nid)
 
         return result
+
+    def compute_hash(self) -> str:
+        """Compute a deterministic hash of the graph structure.
+
+        Creates a content-addressed hash based on the logical structure
+        of the graph, independent of node IDs. The hash is computed using
+        a Merkle-tree approach where each node's hash includes its
+        dependencies' hashes.
+
+        The hash is based on:
+        - Module type (class name) for each node
+        - Module configuration (alias, system_prompt, temperature, etc.)
+        - Dependency structure (captured via parent hashes)
+        - Input/output structure
+
+        Returns:
+            A hex string representing the SHA-256 hash of the graph.
+            The same logical graph structure will always produce the
+            same hash, even across different Python sessions.
+
+        Example:
+            >>> graph = tracer.trace(pipeline, "input")
+            >>> hash1 = graph.compute_hash()
+            >>> # Same pipeline traced again produces same hash
+            >>> graph2 = tracer.trace(pipeline, "different input")
+            >>> hash2 = graph2.compute_hash()
+            >>> hash1 == hash2
+            True
+
+        Note:
+            Input values are NOT included in the hash, only the structure.
+            This allows checkpoints to be reused across different inputs
+            as long as the pipeline structure is the same.
+        """
+        # Get topological order to ensure deterministic traversal
+        topo_order = self.topological_order()
+
+        # Compute hash for each node, incorporating parent hashes
+        node_hashes: dict[str, str] = {}
+
+        for node_id in topo_order:
+            node = self.nodes[node_id]
+            node_hashes[node_id] = self._compute_node_hash(node, node_hashes)
+
+        # Combine all output node hashes for final graph hash
+        output_hashes = [node_hashes[oid] for oid in sorted(self.output_ids)]
+        graph_data = {
+            "output_hashes": output_hashes,
+            "num_nodes": len(self.nodes),
+            "num_inputs": len(self.input_ids),
+            "num_outputs": len(self.output_ids),
+        }
+        graph_json = json.dumps(graph_data, sort_keys=True)
+        return hashlib.sha256(graph_json.encode()).hexdigest()
+
+    def _compute_node_hash(self, node: GraphNode, parent_hashes: dict[str, str]) -> str:
+        """Compute a deterministic hash for a single node.
+
+        Args:
+            node: The GraphNode to hash.
+            parent_hashes: Dictionary of already-computed hashes for
+                dependency nodes.
+
+        Returns:
+            A hex string representing the SHA-256 hash of this node.
+        """
+        # Get dependency hashes in sorted order for determinism
+        dep_hashes = [parent_hashes[dep] for dep in sorted(node.dependencies)]
+
+        # Extract module configuration
+        module_config = self._extract_module_config(node.module)
+
+        # Build canonical representation
+        node_data = {
+            "module_type": node.module.__class__.__name__ if node.module else "None",
+            "module_config": module_config,
+            "dependency_hashes": dep_hashes,
+            "priority": node.priority,
+            "branch_condition": node.branch_condition,
+            "branch_value": node.branch_value,
+        }
+
+        node_json = json.dumps(node_data, sort_keys=True)
+        return hashlib.sha256(node_json.encode()).hexdigest()
+
+    def _extract_module_config(
+        self, module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
+    ) -> dict[str, Any]:
+        """Extract configuration from a module for hashing.
+
+        Args:
+            module: The module to extract configuration from.
+
+        Returns:
+            A dictionary of configuration values that define the module's
+            behavior. Does not include runtime state or input values.
+        """
+        if module is None:
+            return {}
+
+        # Import here to avoid circular imports
+        from inf_engine.module import LLMInference
+        from inf_engine.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp
+
+        config: dict[str, Any] = {"class": module.__class__.__name__}
+
+        if isinstance(module, LLMInference):
+            config["alias"] = module.alias
+            # Include system_prompt value if it exists
+            if module.system_prompt is not None:
+                config["system_prompt"] = module.system_prompt.value
+            config["temperature"] = module.temperature
+            config["max_tokens"] = module.max_tokens
+            config["response_format"] = (
+                module.response_format.__name__
+                if module.response_format is not None
+                else None
+            )
+        elif isinstance(module, InputNode):
+            # Don't include the value - only that it's an input
+            config["input_name"] = getattr(module, "name", None)
+        elif isinstance(module, GetItemOp):
+            config["key"] = module.key
+        elif isinstance(module, IterOp):
+            pass  # No additional config
+        elif isinstance(module, MethodOp):
+            config["method_name"] = module.method
+
+        return config
 
 
 def visualize_graph(graph: InferenceGraph) -> str:

@@ -11,12 +11,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
 - [ ] **Phase 4: Resources** (8/13)
-- [ ] **Phase 5: Production Features** (4/17)
+- [ ] **Phase 5: Production Features** (5/17)
+- [ ] **Phase 5.5: Profiling** (0/4)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 48/93 PRs completed**
+**Total: 49/97 PRs completed**
 
 ---
 
@@ -665,7 +666,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_resource_manager.py` (rate limiter used)
 - **CHANGELOG**: "Integrate RateLimiter with ResourceManager"
 
-### - [ ] PR-054: Handle RateLimitError in Scheduler
+### - [x] PR-054: Handle RateLimitError in Scheduler
 - **Branch**: `feat/scheduler-rate-limit-handling`
 - **Description**: Catch `RateLimitError` and trigger requeue
 - **Design Docs**:
@@ -676,7 +677,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_scheduler.py` (rate limit triggers requeue)
 - **CHANGELOG**: "Add RateLimitError handling to Scheduler"
 
-### - [ ] PR-055: Checkpoint dataclass
+### - [x] PR-055: Checkpoint dataclass
 - **Branch**: `feat/checkpoint-type`
 - **Description**: Implement `Checkpoint` with save/load methods
 - **Design Docs**:
@@ -815,9 +816,62 @@ Fixes, improvements, and consistency updates identified during implementation re
 
 ---
 
+## Phase 5.5: Profiling
+
+Performance visualization and bottleneck analysis using Chrome Trace Event Format.
+
+### - [ ] PR-067: TraceEvent and TraceProfiler
+- **Branch**: `feat/trace-profiler`
+- **Description**: Implement `TraceEvent` dataclass and `TraceProfiler` for collecting execution traces
+- **Design Docs**:
+  - `profiling.md` → "Chrome Trace Event Format"
+  - `profiling.md` → "TraceProfiler"
+- **Files**:
+  - `src/inf_engine/profiling/__init__.py`
+  - `src/inf_engine/profiling/profiler.py`
+- **Tests**:
+  - `tests/unit/test_profiler.py` (event creation, task lifecycle, export)
+- **CHANGELOG**: "Add TraceProfiler for execution tracing"
+
+### - [ ] PR-068: Integrate profiling with Scheduler
+- **Branch**: `feat/scheduler-profiling`
+- **Description**: Add profiler hooks to Scheduler for task start/end/fail events
+- **Design Docs**:
+  - `profiling.md` → "Integration Points" → "Scheduler Integration"
+  - `execution.md` → "Scheduler"
+- **Files**:
+  - `src/inf_engine/execution/scheduler.py`
+- **Tests**:
+  - `tests/unit/test_scheduler.py` (profiler events emitted)
+- **CHANGELOG**: "Integrate profiling with Scheduler"
+
+### - [ ] PR-069: Add profiling to ExecutionSettings
+- **Branch**: `feat/execution-settings-profiling`
+- **Description**: Add `profile`, `profile_path`, `profile_counters`, `profile_include_args` options to ExecutionSettings
+- **Design Docs**:
+  - `profiling.md` → "Configuration via ExecutionSettings"
+  - `execution.md` → "ExecutionSettings Context Manager"
+- **Files**:
+  - `src/inf_engine/execution/context.py`
+- **Tests**:
+  - `tests/unit/test_execution_settings.py` (profiler created, trace exported on exit)
+- **CHANGELOG**: "Add profiling configuration to ExecutionSettings"
+
+### - [ ] PR-070: Profiling integration tests
+- **Branch**: `feat/profiling-integration-tests`
+- **Description**: Add integration tests for end-to-end profiling scenarios
+- **Design Docs**:
+  - `profiling.md` → "Example: Complete Profiling Flow"
+- **Files**:
+  - `tests/integration/test_profiling.py`
+- **Tests**: Trace file generation, event correctness, counter events, multi-endpoint traces
+- **CHANGELOG**: "Add profiling integration tests"
+
+---
+
 ## Phase 6: Branching
 
-### - [ ] PR-067: ConditionalProxy class
+### - [ ] PR-071: ConditionalProxy class
 - **Branch**: `feat/conditional-proxy`
 - **Description**: Implement `ConditionalProxy` with `resolve()` method
 - **Design Docs**:
@@ -828,7 +882,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_conditional_proxy.py` (creation, resolve true/false)
 - **CHANGELOG**: "Add ConditionalProxy for branching"
 
-### - [ ] PR-068: BranchContext
+### - [ ] PR-072: BranchContext
 - **Branch**: `feat/branch-context`
 - **Description**: Implement `BranchContext` context manager
 - **Design Docs**:
@@ -839,7 +893,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_branch.py` (context manager behavior)
 - **CHANGELOG**: "Add BranchContext for conditional tracing"
 
-### - [ ] PR-069: branch() decorator
+### - [ ] PR-073: branch() decorator
 - **Branch**: `feat/branch-decorator`
 - **Description**: Implement `@branch` decorator for marking conditionals
 - **Design Docs**:
@@ -850,7 +904,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_branch.py` (decorator behavior)
 - **CHANGELOG**: "Add @branch decorator"
 
-### - [ ] PR-070: match_branch() function
+### - [ ] PR-074: match_branch() function
 - **Branch**: `feat/match-branch`
 - **Description**: Implement `match_branch()` for multi-way conditionals
 - **Design Docs**:
@@ -861,7 +915,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_branch.py` (multiple cases, default)
 - **CHANGELOG**: "Add match_branch() for pattern matching"
 
-### - [ ] PR-071: Update Tracer for branches
+### - [ ] PR-075: Update Tracer for branches
 - **Branch**: `feat/tracer-branch-support`
 - **Description**: Add branch stack and conditional node handling to Tracer
 - **Design Docs**:
@@ -872,7 +926,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_tracer.py` (branch metadata captured)
 - **CHANGELOG**: "Add branch support to Tracer"
 
-### - [ ] PR-072: Update GraphNode for branches
+### - [ ] PR-076: Update GraphNode for branches
 - **Branch**: `feat/graph-node-branches`
 - **Description**: Add `branch_condition` and `branch_value` to GraphNode
 - **Design Docs**:
@@ -883,7 +937,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_graph.py` (branch fields)
 - **CHANGELOG**: "Add branch fields to GraphNode"
 
-### - [ ] PR-073: Update Executor for branches
+### - [ ] PR-077: Update Executor for branches
 - **Branch**: `feat/executor-branches`
 - **Description**: Evaluate conditions and select branch at runtime
 - **Design Docs**:
@@ -894,7 +948,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_executor.py` (correct branch executed)
 - **CHANGELOG**: "Add branch execution support"
 
-### - [ ] PR-074: Branching integration tests
+### - [ ] PR-078: Branching integration tests
 - **Branch**: `feat/branching-integration-tests`
 - **Description**: Add integration tests for conditional execution
 - **Design Docs**:

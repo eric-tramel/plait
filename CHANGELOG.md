@@ -96,6 +96,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Call `backoff()` on the endpoint's rate limiter when rate limits are hit
   - Tasks are automatically retried without being marked as failed
   - `retry_after` value from the error is passed to the rate limiter for optimal backoff
+- Add `Checkpoint` dataclass for execution state persistence
+  - `execution_id`, `timestamp`, `completed_nodes`, `failed_nodes`, `pending_nodes` attributes
+  - `graph_hash` field for detecting incompatible checkpoints when pipeline changes
+  - `save(path)` method for JSON serialization to disk
+  - `load(path)` classmethod for deserializing from disk
+  - `is_compatible_with(hash)` method for verifying checkpoint compatibility
+  - Enables progress recovery for long-running pipelines
+- Add `InferenceGraph.compute_hash()` for deterministic graph fingerprinting
+  - Merkle-tree style hash based on module types, configurations, and dependencies
+  - Independent of node IDs - same logical structure produces same hash
+  - Enables checkpoint validation across different Python sessions
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
