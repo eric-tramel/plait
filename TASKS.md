@@ -11,13 +11,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
 - [ ] **Phase 4: Resources** (8/13)
-- [ ] **Phase 5: Production Features** (5/17)
+- [ ] **Phase 5: Production Features** (7/17)
 - [ ] **Phase 5.5: Profiling** (0/4)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 49/97 PRs completed**
+**Total: 51/97 PRs completed**
 
 ---
 
@@ -689,7 +689,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_checkpoint.py` (save, load, round-trip)
 - **CHANGELOG**: "Add Checkpoint dataclass"
 
-### - [ ] PR-056: CheckpointManager
+### - [x] PR-056: CheckpointManager
 - **Branch**: `feat/checkpoint-manager`
 - **Description**: Implement `CheckpointManager` with buffered writes
 - **Design Docs**:
@@ -700,7 +700,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_checkpoint.py` (buffer, flush, record_completion)
 - **CHANGELOG**: "Add CheckpointManager for progress persistence"
 
-### - [ ] PR-057: Integrate checkpointing with run()
+### - [x] PR-057: Integrate checkpointing with run()
 - **Branch**: `feat/run-with-checkpointing`
 - **Description**: Add `checkpoint_dir` parameter to `run()`
 - **Design Docs**:
@@ -962,7 +962,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 
 ## Phase 7: Optimization
 
-### - [ ] PR-075: FeedbackType enum and Feedback dataclass
+### - [ ] PR-079: FeedbackType enum and Feedback dataclass
 - **Branch**: `feat/feedback-types`
 - **Description**: Implement feedback data structures
 - **Design Docs**:
@@ -973,7 +973,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_feedback.py` (creation, str, with score)
 - **CHANGELOG**: "Add Feedback types"
 
-### - [ ] PR-076: Loss abstract base class
+### - [ ] PR-080: Loss abstract base class
 - **Branch**: `feat/loss-base`
 - **Description**: Implement abstract `Loss` class
 - **Design Docs**:
@@ -984,7 +984,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (interface validation)
 - **CHANGELOG**: "Add Loss abstract base class"
 
-### - [ ] PR-077: VerifierLoss implementation
+### - [ ] PR-081: VerifierLoss implementation
 - **Branch**: `feat/verifier-loss`
 - **Description**: Implement `VerifierLoss` for programmatic evaluation
 - **Design Docs**:
@@ -994,7 +994,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (pass/fail scenarios)
 - **CHANGELOG**: "Add VerifierLoss for programmatic evaluation"
 
-### - [ ] PR-078: LLMJudge loss implementation
+### - [ ] PR-082: LLMJudge loss implementation
 - **Branch**: `feat/llm-judge-loss`
 - **Description**: Implement `LLMJudge` for LLM-based evaluation
 - **Design Docs**:
@@ -1004,7 +1004,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (mocked judge responses)
 - **CHANGELOG**: "Add LLMJudge for LLM-as-a-judge evaluation"
 
-### - [ ] PR-079: CompositeLoss implementation
+### - [ ] PR-083: CompositeLoss implementation
 - **Branch**: `feat/composite-loss`
 - **Description**: Implement `CompositeLoss` for combining losses
 - **Design Docs**:
@@ -1014,7 +1014,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (aggregation, weighting)
 - **CHANGELOG**: "Add CompositeLoss for combining evaluators"
 
-### - [ ] PR-080: BackwardContext and BackwardResult
+### - [ ] PR-084: BackwardContext and BackwardResult
 - **Branch**: `feat/backward-types`
 - **Description**: Implement backward pass data structures
 - **Design Docs**:
@@ -1025,7 +1025,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_backward.py` (creation, fields)
 - **CHANGELOG**: "Add BackwardContext and BackwardResult types"
 
-### - [ ] PR-081: InferenceModule.backward() method
+### - [ ] PR-085: InferenceModule.backward() method
 - **Branch**: `feat/module-backward`
 - **Description**: Add default `backward()` implementation to InferenceModule
 - **Design Docs**:
@@ -1037,7 +1037,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_module.py` (default backward behavior)
 - **CHANGELOG**: "Add backward() method to InferenceModule"
 
-### - [ ] PR-082: LLMInference.backward() method
+### - [ ] PR-086: LLMInference.backward() method
 - **Branch**: `feat/llm-inference-backward`
 - **Description**: Implement `backward()` for LLMInference with parameter feedback
 - **Design Docs**:
@@ -1048,7 +1048,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_llm_inference.py` (backward generates feedback)
 - **CHANGELOG**: "Add backward() to LLMInference"
 
-### - [ ] PR-083: backward() function
+### - [ ] PR-087: backward() function
 - **Branch**: `feat/backward-function`
 - **Description**: Implement `backward()` function for graph-wide propagation
 - **Design Docs**:
@@ -1060,7 +1060,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_backward.py` (feedback propagates through graph)
 - **CHANGELOG**: "Add backward() function for feedback propagation"
 
-### - [ ] PR-084: Optimizer - initialization
+### - [ ] PR-088: Optimizer - initialization
 - **Branch**: `feat/optimizer-init`
 - **Description**: Implement `Optimizer.__init__` with parameter collection
 - **Design Docs**:
@@ -1071,7 +1071,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_optimizer.py` (init, parameters stored)
 - **CHANGELOG**: "Add Optimizer class initialization"
 
-### - [ ] PR-085: Optimizer - accumulate and zero_feedback
+### - [ ] PR-089: Optimizer - accumulate and zero_feedback
 - **Branch**: `feat/optimizer-accumulate`
 - **Description**: Implement `accumulate()` and `zero_feedback()` methods
 - **Design Docs**:
@@ -1081,7 +1081,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_optimizer.py` (accumulation, clearing)
 - **CHANGELOG**: "Add Optimizer feedback accumulation"
 
-### - [ ] PR-086: Optimizer - step method
+### - [ ] PR-090: Optimizer - step method
 - **Branch**: `feat/optimizer-step`
 - **Description**: Implement `step()` with LLM-based aggregation and update
 - **Design Docs**:
@@ -1092,7 +1092,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_optimizer.py` (step updates parameters)
 - **CHANGELOG**: "Add Optimizer.step() for parameter updates"
 
-### - [ ] PR-087: train() function
+### - [ ] PR-091: train() function
 - **Branch**: `feat/train-function`
 - **Description**: Implement `train()` for training loop execution
 - **Design Docs**:
@@ -1104,7 +1104,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_train.py` (single epoch, multiple epochs)
 - **CHANGELOG**: "Add train() function for training loops"
 
-### - [ ] PR-088: eval() and train() modes
+### - [ ] PR-092: eval() and train() modes
 - **Branch**: `feat/eval-train-modes`
 - **Description**: Add `eval()` and `train()` methods to InferenceModule for switching behavior between inference and optimization
 - **Design Docs**:
@@ -1115,7 +1115,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_module.py` (mode switching, propagation to children)
 - **CHANGELOG**: "Add eval() and train() modes to InferenceModule"
 
-### - [ ] PR-089: requires_grad_() method
+### - [ ] PR-093: requires_grad_() method
 - **Branch**: `feat/requires-grad`
 - **Description**: Add `requires_grad_(bool)` method to freeze/unfreeze parameters on module trees
 - **Design Docs**:
@@ -1126,7 +1126,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_module.py` (freeze/unfreeze, tree propagation)
 - **CHANGELOG**: "Add requires_grad_() for parameter freezing"
 
-### - [ ] PR-090: Optimization integration tests
+### - [ ] PR-094: Optimization integration tests
 - **Branch**: `feat/optimization-integration-tests`
 - **Description**: Add integration tests for backward pass and training
 - **Design Docs**:
@@ -1142,7 +1142,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 
 ## Post-Implementation
 
-### - [ ] PR-091: Public API exports
+### - [ ] PR-095: Public API exports
 - **Branch**: `feat/public-api`
 - **Description**: Finalize `__init__.py` exports for clean public API
 - **Design Docs**:
@@ -1152,7 +1152,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 - **Tests**: Import tests for all public symbols
 - **CHANGELOG**: "Finalize public API"
 
-### - [ ] PR-092: End-to-end example
+### - [ ] PR-096: End-to-end example
 - **Branch**: `feat/e2e-example`
 - **Description**: Add complete example in `examples/` directory
 - **Design Docs**:
@@ -1163,7 +1163,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 - **Tests**: Example runs successfully
 - **CHANGELOG**: "Add getting started example"
 
-### - [ ] PR-093: Documentation
+### - [ ] PR-097: Documentation
 - **Branch**: `docs/api-documentation`
 - **Description**: Add API documentation and usage guide
 - **Design Docs**:
@@ -1184,10 +1184,11 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 | **Hardening** | **8** | **PR-029 to PR-036** |
 | Resources | 13 | PR-037 to PR-049 |
 | Production | 17 | PR-050 to PR-066 |
-| Branching | 8 | PR-067 to PR-074 |
-| Optimization | 16 | PR-075 to PR-090 |
-| Post-Implementation | 3 | PR-091 to PR-093 |
-| **Total** | **93** | |
+| **Profiling** | **4** | **PR-067 to PR-070** |
+| Branching | 8 | PR-071 to PR-078 |
+| Optimization | 16 | PR-079 to PR-094 |
+| Post-Implementation | 3 | PR-095 to PR-097 |
+| **Total** | **97** | |
 
 ---
 

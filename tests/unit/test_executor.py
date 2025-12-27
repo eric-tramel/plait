@@ -1,6 +1,7 @@
 """Unit tests for the executor module and run() function."""
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -730,3 +731,133 @@ class TestRunDependencies:
         values = set(result.values())
         assert "TEST" in values
         assert "test_suffix" in values
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Checkpointing Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRunCheckpointing:
+    """Tests for run() with checkpointing support."""
+
+    @pytest.mark.asyncio
+    async def test_run_with_checkpoint_dir_creates_checkpoint(
+        self, tmp_path: Path
+    ) -> None:
+        """run() with checkpoint_dir creates a checkpoint file."""
+        module = LinearPipeline()
+
+        result = await run(
+            module, "test", checkpoint_dir=tmp_path, execution_id="run_001"
+        )
+
+        assert result == "test_a_b_c"
+
+        # Checkpoint should exist
+        checkpoint_path = tmp_path / "run_001.json"
+        assert checkpoint_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_run_checkpoint_contains_completed_nodes(
+        self, tmp_path: Path
+    ) -> None:
+        """run() checkpoint contains all completed nodes."""
+        from inf_engine.execution.checkpoint import Checkpoint
+
+        module = LinearPipeline()
+
+        await run(module, "test", checkpoint_dir=tmp_path, execution_id="run_002")
+
+        checkpoint = Checkpoint.load(tmp_path / "run_002.json")
+        # Should have at least the final output node completed
+        assert len(checkpoint.completed_nodes) > 0
+
+    @pytest.mark.asyncio
+    async def test_run_checkpoint_contains_graph_hash(self, tmp_path: Path) -> None:
+        """run() checkpoint includes the graph hash."""
+        from inf_engine.execution.checkpoint import Checkpoint
+
+        module = LinearPipeline()
+
+        await run(module, "test", checkpoint_dir=tmp_path, execution_id="run_003")
+
+        checkpoint = Checkpoint.load(tmp_path / "run_003.json")
+        assert checkpoint.graph_hash is not None
+        assert len(checkpoint.graph_hash) > 0
+
+    @pytest.mark.asyncio
+    async def test_run_generates_execution_id_if_not_provided(
+        self, tmp_path: Path
+    ) -> None:
+        """run() generates a UUID execution_id if not provided."""
+        import uuid
+
+        module = EchoModule()
+
+        await run(module, "test", checkpoint_dir=tmp_path)
+
+        # Should have created exactly one checkpoint file
+        checkpoint_files = list(tmp_path.glob("*.json"))
+        assert len(checkpoint_files) == 1
+
+        # The filename should be a UUID
+        filename = checkpoint_files[0].stem
+        try:
+            uuid.UUID(filename)
+        except ValueError:
+            pytest.fail(f"Expected UUID filename, got: {filename}")
+
+    @pytest.mark.asyncio
+    async def test_run_without_checkpoint_dir(self, tmp_path: Path) -> None:
+        """run() without checkpoint_dir does not create checkpoints."""
+        module = EchoModule()
+
+        result = await run(module, "test")
+
+        assert result == "test"
+        # No checkpoint files should exist (tmp_path is empty)
+        checkpoint_files = list(tmp_path.glob("*.json"))
+        assert len(checkpoint_files) == 0
+
+    @pytest.mark.asyncio
+    async def test_run_parallel_pipeline_with_checkpointing(
+        self, tmp_path: Path
+    ) -> None:
+        """run() with parallel branches creates checkpoints correctly."""
+        from inf_engine.execution.checkpoint import Checkpoint
+
+        module = ParallelPipeline()
+
+        result = await run(
+            module, "test", checkpoint_dir=tmp_path, execution_id="parallel_run"
+        )
+
+        # Should get parallel results
+        assert isinstance(result, dict)
+        assert len(result) == 2
+
+        # Checkpoint should exist with multiple completed nodes
+        checkpoint = Checkpoint.load(tmp_path / "parallel_run.json")
+        assert len(checkpoint.completed_nodes) >= 2
+
+    @pytest.mark.asyncio
+    async def test_run_checkpoint_dir_created_if_missing(self, tmp_path: Path) -> None:
+        """run() creates the checkpoint_dir if it doesn't exist."""
+        nested_dir = tmp_path / "nested" / "checkpoints"
+        assert not nested_dir.exists()
+
+        module = EchoModule()
+        await run(module, "test", checkpoint_dir=nested_dir, execution_id="run_004")
+
+        assert nested_dir.exists()
+        assert (nested_dir / "run_004.json").exists()
+
+    @pytest.mark.asyncio
+    async def test_run_checkpoint_with_string_path(self, tmp_path: Path) -> None:
+        """run() accepts checkpoint_dir as a string."""
+        module = EchoModule()
+
+        await run(module, "test", checkpoint_dir=str(tmp_path), execution_id="run_005")
+
+        assert (tmp_path / "run_005.json").exists()

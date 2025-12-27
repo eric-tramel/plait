@@ -107,6 +107,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Merkle-tree style hash based on module types, configurations, and dependencies
   - Independent of node IDs - same logical structure produces same hash
   - Enables checkpoint validation across different Python sessions
+- Add `CheckpointManager` for buffered checkpoint writes during execution
+  - Configurable `buffer_size` and `flush_interval` for efficient disk I/O
+  - Per-execution buffers for parallel run tracking
+  - `record_completion()` for buffering task results
+  - `flush()` and `flush_all()` for persisting buffered completions
+  - `get_checkpoint()` for retrieving existing checkpoints
+  - `set_graph_hash()` for storing graph hash in checkpoints
+- Add `checkpoint_dir` and `execution_id` parameters to `run()` function
+  - Enables automatic progress checkpointing during execution
+  - Auto-generates UUID execution_id if not provided
+  - Creates checkpoint directory if it doesn't exist
+  - Stores graph hash for checkpoint compatibility checking
+- Add checkpointing example in `examples/06_checkpointing.py`
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
