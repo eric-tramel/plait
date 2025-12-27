@@ -120,6 +120,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Creates checkpoint directory if it doesn't exist
   - Stores graph hash for checkpoint compatibility checking
 - Add checkpointing example in `examples/06_checkpointing.py`
+- Add `ExecutionSettings` context manager for shared execution configuration
+  - Dataclass with `resources`, `checkpoint_dir`, `max_concurrent`, `scheduler`, and callback fields
+  - Both sync (`with`) and async (`async with`) context manager protocols
+  - `get_execution_settings()` function for accessing current settings
+  - Nested context support with proper restoration and value inheritance
+  - Automatic `CheckpointManager` creation when `checkpoint_dir` is set
+  - Profile configuration fields reserved for future profiling integration
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

@@ -5,16 +5,19 @@ with async parallelism, task management, and state tracking.
 """
 
 from inf_engine.execution.checkpoint import Checkpoint
+from inf_engine.execution.context import ExecutionSettings, get_execution_settings
 from inf_engine.execution.executor import run
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState, Task, TaskResult, TaskStatus
 
 __all__ = [
     "Checkpoint",
+    "ExecutionSettings",
     "ExecutionState",
     "Scheduler",
     "Task",
     "TaskResult",
     "TaskStatus",
+    "get_execution_settings",
     "run",
 ]
