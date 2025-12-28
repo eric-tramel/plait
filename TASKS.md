@@ -11,13 +11,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
 - [ ] **Phase 4: Resources** (8/13)
-- [ ] **Phase 5: Production Features** (7/17)
+- [ ] **Phase 5: Production Features** (8/17)
 - [ ] **Phase 5.5: Profiling** (0/4)
 - [ ] **Phase 6: Branching** (0/8)
 - [ ] **Phase 7: Optimization** (0/16)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 51/97 PRs completed**
+**Total: 52/97 PRs completed**
 
 ---
 
@@ -711,7 +711,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_executor.py` (checkpoints created)
 - **CHANGELOG**: "Add checkpointing support to run()"
 
-### - [ ] PR-058: ExecutionSettings context manager
+### - [x] PR-058: ExecutionSettings context manager
 - **Branch**: `feat/execution-settings`
 - **Description**: Add context manager for shared execution configuration
 - **Design Docs**:
