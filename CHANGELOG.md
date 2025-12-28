@@ -127,6 +127,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Nested context support with proper restoration and value inheritance
   - Automatic `CheckpointManager` creation when `checkpoint_dir` is set
   - Profile configuration fields reserved for future profiling integration
+- Integrate ExecutionSettings with InferenceModule for direct module execution
+  - Add `bind(resources, max_concurrent, **kwargs)` method for binding resources to modules
+  - Update `__call__` to check for resources from both bound config and ExecutionSettings context
+  - Add `_execute_bound()` async method for tracing and executing bound modules
+  - Configuration priority order: call-time kwargs > bound settings > context settings > defaults
+  - Add `resources` parameter to `run()` function for passing ResourceConfig/ResourceManager
+  - Support batch execution: `await module([input1, input2, ...])` returns list of results
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

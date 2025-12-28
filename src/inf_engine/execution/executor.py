@@ -6,6 +6,7 @@ InferenceModule, handling the complete flow from tracing to execution.
 Example:
     >>> from inf_engine.execution.executor import run
     >>> from inf_engine.module import InferenceModule, LLMInference
+    >>> from inf_engine.resources.config import ResourceConfig, EndpointConfig
     >>>
     >>> class Pipeline(InferenceModule):
     ...     def __init__(self):
@@ -15,13 +16,19 @@ Example:
     ...     def forward(self, text: str) -> str:
     ...         return self.llm(text)
     >>>
-    >>> # Execute the pipeline
-    >>> result = await run(Pipeline(), "Hello, world!")
+    >>> # Configure resources for LLM execution
+    >>> resources = ResourceConfig(endpoints={
+    ...     "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+    ... })
+    >>>
+    >>> # Execute the pipeline with resources
+    >>> result = await run(Pipeline(), "Hello, world!", resources=resources)
     >>>
     >>> # Execute with checkpointing for long-running pipelines
     >>> result = await run(
     ...     Pipeline(),
     ...     "Hello, world!",
+    ...     resources=resources,
     ...     checkpoint_dir="/data/checkpoints",
     ...     execution_id="run_001",
     ... )
@@ -41,11 +48,14 @@ from inf_engine.tracing.tracer import Tracer
 if TYPE_CHECKING:
     from inf_engine.execution.state import TaskResult
     from inf_engine.module import InferenceModule
+    from inf_engine.resources.config import ResourceConfig
+    from inf_engine.resources.manager import ResourceManager
 
 
 async def run(
     module: InferenceModule,
     *args: Any,
+    resources: ResourceConfig | ResourceManager | None = None,
     max_concurrent: int = 100,
     checkpoint_dir: Path | str | None = None,
     execution_id: str | None = None,
@@ -60,6 +70,10 @@ async def run(
     Args:
         module: The inference module to execute.
         *args: Positional arguments to pass to forward().
+        resources: Optional resource configuration or manager for LLM endpoints.
+            When provided (as ResourceConfig or ResourceManager), LLMInference
+            modules will be executed through the appropriate LLM clients.
+            When None, LLMInference modules will raise an error during execution.
         max_concurrent: Maximum number of concurrent tasks during
             execution. Defaults to 100.
         checkpoint_dir: Optional directory for saving execution checkpoints.
@@ -79,6 +93,8 @@ async def run(
     Raises:
         NotImplementedError: If the module's forward() method raises
             NotImplementedError.
+        RuntimeError: If an LLMInference module is executed without
+            a ResourceManager configured.
         Exception: Any exception raised during task execution is
             stored in the ExecutionState. If all output nodes fail
             or are cancelled, an empty dict is returned.
@@ -94,10 +110,19 @@ async def run(
         >>> print(result)
         HELLO
 
+    Example with resources:
+        >>> from inf_engine.resources.config import ResourceConfig, EndpointConfig
+        >>>
+        >>> resources = ResourceConfig(endpoints={
+        ...     "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+        ... })
+        >>> result = await run(pipeline, "input text", resources=resources)
+
     Example with max_concurrent:
         >>> result = await run(
         ...     pipeline,
         ...     "input text",
+        ...     resources=resources,
         ...     max_concurrent=10,
         ... )
 
@@ -108,6 +133,7 @@ async def run(
         >>> result = await run(
         ...     pipeline,
         ...     "input text",
+        ...     resources=resources,
         ...     checkpoint_dir=Path("/data/checkpoints"),
         ...     execution_id="batch_001",
         ... )
@@ -119,6 +145,18 @@ async def run(
 
     # Create execution state from the graph
     state = ExecutionState(graph)
+
+    # Create ResourceManager if resources are provided
+    resource_manager = None
+    if resources is not None:
+        from inf_engine.resources.config import ResourceConfig
+        from inf_engine.resources.manager import ResourceManager
+
+        if isinstance(resources, ResourceConfig):
+            resource_manager = ResourceManager(resources)
+        else:
+            # Already a ResourceManager
+            resource_manager = resources
 
     # Set up checkpointing if requested
     checkpoint_manager: CheckpointManager | None = None
@@ -142,7 +180,10 @@ async def run(
                 asyncio.create_task(checkpoint_manager.flush(exec_id))
 
     # Create scheduler and execute
-    scheduler = Scheduler(max_concurrent=max_concurrent)
+    scheduler = Scheduler(
+        resource_manager=resource_manager,
+        max_concurrent=max_concurrent,
+    )
     outputs = await scheduler.execute(
         state, on_complete=on_complete if checkpoint_manager else None
     )

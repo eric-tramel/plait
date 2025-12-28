@@ -15,6 +15,11 @@ Key Concepts:
 - execution_id: Unique identifier for each execution run
 - Graph hashing: Detects pipeline structure changes
 
+Checkpointing Methods:
+1. **run() with checkpoint_dir**: Pass checkpoint_dir to run() directly
+2. **ExecutionSettings**: Use context manager for shared checkpointing
+3. **bind() with checkpoint_dir**: Bind checkpoint configuration to module
+
 Run with: python examples/06_checkpointing.py
 """
 
@@ -26,8 +31,10 @@ import shutil
 import time
 from pathlib import Path
 from tempfile import mkdtemp
+from unittest.mock import MagicMock
 
 from inf_engine.execution.checkpoint import Checkpoint, CheckpointManager
+from inf_engine.execution.context import ExecutionSettings
 from inf_engine.execution.executor import run
 from inf_engine.execution.state import TaskResult
 from inf_engine.module import InferenceModule
@@ -380,6 +387,102 @@ async def example_auto_execution_id() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Example 6: Checkpointing with ExecutionSettings
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def example_execution_settings_checkpointing() -> None:
+    """Demonstrate checkpointing with ExecutionSettings context.
+
+    ExecutionSettings provides a convenient way to share checkpoint
+    configuration across multiple pipeline executions.
+    """
+    print("\n" + "=" * 70)
+    print("Example 6: Checkpointing with ExecutionSettings")
+    print("=" * 70)
+
+    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_context_"))
+    mock_resources = MagicMock(name="resources")
+
+    try:
+        pipeline1 = DataPipeline()
+        pipeline2 = BatchAnalyzer()
+
+        print(f"\nCheckpoint directory: {checkpoint_dir}")
+        print("Running multiple pipelines with shared checkpointing...")
+
+        # Use ExecutionSettings to share checkpoint configuration
+        async with ExecutionSettings(
+            resources=mock_resources,
+            checkpoint_dir=checkpoint_dir,
+        ):
+            # All pipelines in this context share the checkpoint directory
+            result1 = await pipeline1("first batch of data")
+            result2 = await pipeline2("second batch of data")
+            result3 = await pipeline1("third batch of data")
+
+            print(f"\nPipeline 1 result: {result1[:50]}...")
+            print(f"Pipeline 2 result: {list(result2.keys())}")
+            print(f"Pipeline 1 (again): {result3[:50]}...")
+
+        # List checkpoint files
+        checkpoint_files = list(checkpoint_dir.glob("*.json"))
+        print(f"\nCheckpoint files created: {len(checkpoint_files)}")
+        for f in sorted(checkpoint_files):
+            checkpoint = Checkpoint.load(f)
+            print(f"  - {f.name}: {len(checkpoint.completed_nodes)} nodes")
+
+        print("\nNote: Each execution gets a unique checkpoint file!")
+
+    finally:
+        shutil.rmtree(checkpoint_dir, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 7: Checkpointing with bind()
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def example_bind_checkpointing() -> None:
+    """Demonstrate checkpointing with bound modules.
+
+    You can bind checkpoint configuration to a module, making
+    checkpointing automatic for all subsequent calls.
+    """
+    print("\n" + "=" * 70)
+    print("Example 7: Checkpointing with bind()")
+    print("=" * 70)
+
+    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_bound_"))
+    mock_resources = MagicMock(name="resources")
+
+    try:
+        # Bind checkpoint configuration to the pipeline
+        pipeline = DataPipeline().bind(
+            resources=mock_resources,
+            checkpoint_dir=checkpoint_dir,
+        )
+
+        print(f"\nCheckpoint directory: {checkpoint_dir}")
+        print("Pipeline bound with checkpoint configuration.")
+
+        # Execute multiple times - each gets a unique checkpoint
+        print("\nRunning pipeline 3 times...")
+        for i in range(3):
+            result = await pipeline(f"batch {i + 1}")
+            print(f"  Batch {i + 1}: {result[:40]}...")
+
+        # Show checkpoint files
+        checkpoint_files = list(checkpoint_dir.glob("*.json"))
+        print(f"\nCheckpoint files: {len(checkpoint_files)}")
+        for f in sorted(checkpoint_files):
+            print(f"  - {f.name}")
+
+    finally:
+        shutil.rmtree(checkpoint_dir, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -394,14 +497,27 @@ These examples demonstrate checkpointing for tracking execution
 progress in long-running inference pipelines.
 """)
 
+    # Basic checkpointing with run()
     await example_basic_checkpointing()
     await example_checkpoint_manager()
     await example_checkpoint_compatibility()
     await example_inspect_checkpoint()
     await example_auto_execution_id()
 
+    # Modern patterns with ExecutionSettings and bind()
+    await example_execution_settings_checkpointing()
+    await example_bind_checkpointing()
+
     print("\n" + "=" * 70)
-    print("All examples completed!")
+    print("Checkpointing Methods Summary:")
+    print("=" * 70)
+    print("""
+  1. run(module, input, checkpoint_dir=...)  - Explicit checkpointing
+  2. ExecutionSettings(checkpoint_dir=...)   - Shared across modules
+  3. module.bind(checkpoint_dir=...)         - Bound to the module
+
+All methods produce JSON checkpoint files for progress tracking!
+""")
     print("=" * 70)
 
 

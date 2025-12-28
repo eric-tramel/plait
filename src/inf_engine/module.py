@@ -7,12 +7,14 @@ inference pipelines, inspired by PyTorch's nn.Module.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from inf_engine.tracing.context import get_trace_context
 
 if TYPE_CHECKING:
     from inf_engine.parameter import Parameter
+    from inf_engine.resources.config import ResourceConfig
+    from inf_engine.resources.manager import ResourceManager
 
 
 class InferenceModule:
@@ -46,6 +48,8 @@ class InferenceModule:
     _children: dict[str, InferenceModule]
     _parameters: dict[str, Parameter]
     _name: str | None
+    _bound_resources: ResourceConfig | ResourceManager | None
+    _bound_config: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize the module with empty registries.
@@ -57,6 +61,8 @@ class InferenceModule:
         object.__setattr__(self, "_children", {})
         object.__setattr__(self, "_parameters", {})
         object.__setattr__(self, "_name", None)
+        object.__setattr__(self, "_bound_resources", None)
+        object.__setattr__(self, "_bound_config", {})
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Set an attribute with automatic registration of modules and parameters.
@@ -345,6 +351,55 @@ class InferenceModule:
             params[name].value = value
 
     # ─────────────────────────────────────────────────────────────
+    # Resource Binding (Direct Execution API)
+    # ─────────────────────────────────────────────────────────────
+
+    def bind(
+        self,
+        resources: ResourceConfig | ResourceManager,
+        max_concurrent: int = 100,
+        **kwargs: Any,
+    ) -> Self:
+        """Bind resources to this module for direct execution.
+
+        After binding, the module can be called directly with await:
+            pipeline = MyPipeline().bind(resources=config)
+            result = await pipeline("input")
+
+        Args:
+            resources: Resource configuration or manager for LLM endpoints.
+            max_concurrent: Maximum concurrent tasks during execution.
+            **kwargs: Additional execution options (checkpoint_dir, etc.).
+
+        Returns:
+            Self, for method chaining.
+
+        Example:
+            >>> from inf_engine.resources.config import ResourceConfig, EndpointConfig
+            >>> config = ResourceConfig(endpoints={
+            ...     "fast": EndpointConfig(provider_api="openai", model="gpt-4o-mini")
+            ... })
+            >>> pipeline = MyPipeline().bind(resources=config)
+            >>> result = await pipeline("Hello!")
+
+        Example with additional options:
+            >>> pipeline = MyPipeline().bind(
+            ...     resources=config,
+            ...     max_concurrent=50,
+            ...     checkpoint_dir="/data/checkpoints",
+            ... )
+
+        Note:
+            Bound resources and config can be overridden per-call by passing
+            keyword arguments to __call__, or by using ExecutionSettings context.
+        """
+        object.__setattr__(self, "_bound_resources", resources)
+        object.__setattr__(
+            self, "_bound_config", {"max_concurrent": max_concurrent, **kwargs}
+        )
+        return self
+
+    # ─────────────────────────────────────────────────────────────
     # Forward and Call (Core Execution Interface)
     # ─────────────────────────────────────────────────────────────
 
@@ -379,9 +434,14 @@ class InferenceModule:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the module.
 
-        If a trace context is active, records the call and returns a Proxy
-        representing the eventual output. Otherwise, executes forward()
-        directly to perform the actual computation.
+        Behavior depends on context:
+        1. If a trace context is active: records the call and returns a Proxy
+        2. If resources are bound OR ExecutionSettings is active: traces and executes
+        3. Otherwise: executes forward() directly (for non-LLM modules)
+
+        When bound or in an ExecutionSettings context, this method is async
+        and should be awaited. Supports batch execution when the first
+        argument is a list.
 
         Args:
             *args: Positional arguments passed to forward().
@@ -389,6 +449,7 @@ class InferenceModule:
 
         Returns:
             If tracing: A Proxy representing the eventual output of this call.
+            If bound/context: A coroutine that yields the execution result.
             Otherwise: The result from forward().
 
         Example:
@@ -400,15 +461,122 @@ class InferenceModule:
             >>> doubler(5)  # Without trace context, calls forward() directly
             10
 
+        Example with bound resources:
+            >>> pipeline = MyPipeline().bind(resources=config)
+            >>> result = await pipeline("input")  # Async execution
+
+        Example with ExecutionSettings:
+            >>> async with ExecutionSettings(resources=config):
+            ...     result = await pipeline("input")
+
         Note:
             During tracing, the tracer records this call as a node in the
             execution graph. The forward() method is not called; instead,
             dependencies are tracked based on Proxy arguments.
         """
+        from inf_engine.execution.context import get_execution_settings
+
         tracer = get_trace_context()
         if tracer is not None:
             return tracer.record_call(self, args, kwargs)
+
+        # Check if we have resources (bound or from context)
+        settings = get_execution_settings()
+        has_resources = self._bound_resources is not None or (
+            settings is not None and settings.resources is not None
+        )
+
+        if has_resources:
+            # Bound or context execution: trace and execute
+            return self._execute_bound(*args, **kwargs)
+
         return self.forward(*args, **kwargs)
+
+    async def _execute_bound(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute with bound or context resources.
+
+        Traces the module and executes it using the run() function.
+        Settings are merged with this priority (highest first):
+        1. Call-time kwargs
+        2. Bound settings (from .bind())
+        3. Context settings (from ExecutionSettings)
+        4. Defaults
+
+        Args:
+            *args: Positional arguments passed to forward().
+            **kwargs: Keyword arguments passed to forward().
+
+        Returns:
+            The output of the module's forward() method. For batch execution
+            (list input), returns a list of outputs.
+
+        Example:
+            >>> pipeline = MyPipeline().bind(resources=config)
+            >>> result = await pipeline("Hello!")
+
+        Example with batch execution:
+            >>> results = await pipeline(["input1", "input2", "input3"])
+
+        Note:
+            This method is called internally by __call__ when resources
+            are available. Users should not call it directly.
+        """
+        from inf_engine.execution.context import get_execution_settings
+        from inf_engine.execution.executor import run
+
+        # Get context settings
+        settings = get_execution_settings()
+
+        # Build effective config: context < bound < kwargs
+        # Start with defaults
+        effective_config: dict[str, Any] = {}
+
+        # Layer 1: Context settings (lowest priority)
+        if settings is not None:
+            if settings.max_concurrent is not None:
+                effective_config["max_concurrent"] = settings.max_concurrent
+            checkpoint_dir = settings.get_checkpoint_dir()
+            if checkpoint_dir is not None:
+                effective_config["checkpoint_dir"] = checkpoint_dir
+
+        # Layer 2: Bound settings (medium priority)
+        effective_config.update(self._bound_config)
+
+        # Layer 3: Call-time kwargs (highest priority)
+        # Extract execution-related kwargs from user kwargs
+        execution_keys = {"max_concurrent", "checkpoint_dir", "execution_id"}
+        user_execution_kwargs = {k: v for k, v in kwargs.items() if k in execution_keys}
+        forward_kwargs = {k: v for k, v in kwargs.items() if k not in execution_keys}
+        effective_config.update(user_execution_kwargs)
+
+        # Determine resources: bound takes precedence over context
+        resources = self._bound_resources
+        if resources is None and settings is not None:
+            resources = settings.resources
+
+        # Handle batch execution
+        if args and isinstance(args[0], list):
+            inputs = args[0]
+            results = []
+            for inp in inputs:
+                result = await run(
+                    self,
+                    inp,
+                    *args[1:],
+                    resources=resources,
+                    **forward_kwargs,
+                    **effective_config,
+                )
+                results.append(result)
+            return results
+
+        return await run(
+            self,
+            *args,
+            resources=resources,
+            **forward_kwargs,
+            **effective_config,
+        )
 
 
 class LLMInference(InferenceModule):

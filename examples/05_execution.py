@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Execution examples demonstrating the run() function.
+"""Execution examples demonstrating the run() function and bound execution.
 
-This example demonstrates how to execute inference modules using the
-run() function, which traces the module and executes the resulting
-graph with proper dependency handling and concurrency control.
+This example demonstrates how to execute inference modules using:
 
-Note: Since we don't have actual LLM endpoints configured yet (Phase 4),
-these examples use mock modules that simulate computation. The API is
-identical - once resources are configured, the same patterns work with
-real LLM calls.
+1. **run() function**: Explicit tracing and execution with full control
+2. **bind() method**: Attach resources for `await module(input)` pattern
+3. **ExecutionSettings**: Share resources across multiple modules
 
-Once Phase 4 (Resources) is complete, you'll also be able to use the
-preferred "bound execution" pattern:
+Note: Since we don't have actual LLM endpoints configured, these examples
+use mock modules that simulate computation. The API is identical - once
+resources are configured, the same patterns work with real LLM calls.
+
+Bound execution pattern (preferred for production):
 
     # Bind resources once, call directly
     pipeline = MyPipeline().bind(resources=config)
@@ -20,14 +20,21 @@ preferred "bound execution" pattern:
     # Batch execution
     results = await pipeline(["input_a", "input_b", "input_c"])
 
-This mirrors PyTorch's intuitive model(x) → y pattern.
+    # Or use ExecutionSettings for shared resources
+    async with ExecutionSettings(resources=config):
+        result1 = await pipeline1("input")
+        result2 = await pipeline2("input")
+
+This mirrors PyTorch's intuitive model(x) -> y pattern.
 
 Run with: python examples/05_execution.py
 """
 
 import asyncio
 import time
+from unittest.mock import MagicMock
 
+from inf_engine.execution.context import ExecutionSettings
 from inf_engine.execution.executor import run
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState, TaskResult
@@ -467,6 +474,102 @@ async def demo_complex_pipeline() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Example 10: Bound Execution with bind()
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def demo_bound_execution() -> None:
+    """Demonstrate bound execution pattern with bind().
+
+    The bind() method attaches resources to a module, enabling the
+    clean `await module(input)` pattern instead of `await run(module, input)`.
+    """
+    print("\n10. Bound Execution with bind()")
+    print("-" * 40)
+
+    # Mock resources (in production, this would be ResourceConfig)
+    mock_resources = MagicMock(name="resources")
+
+    # Bind resources to the pipeline
+    pipeline = SimplePipeline().bind(resources=mock_resources)
+
+    print("   Pattern: pipeline.bind(resources=...) then await pipeline(input)")
+
+    # Now call directly with await
+    result = await pipeline("Hello, bound world!")
+
+    print("   Input: 'Hello, bound world!'")
+    print(f"   Output: '{result}'")
+    print("\n   This is the preferred pattern for production code!")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 11: ExecutionSettings Context
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def demo_execution_settings() -> None:
+    """Demonstrate ExecutionSettings for shared resources.
+
+    ExecutionSettings provides a context manager for sharing resources
+    across multiple module executions without binding each one.
+    """
+    print("\n11. ExecutionSettings Context")
+    print("-" * 40)
+
+    mock_resources = MagicMock(name="shared_resources")
+
+    # Create multiple unbound modules
+    pipeline1 = SimplePipeline()
+    pipeline2 = LinearChain()
+
+    print("   Using ExecutionSettings to share resources across modules:")
+
+    async with ExecutionSettings(resources=mock_resources, max_concurrent=50):
+        # Both modules can be called with await
+        result1 = await pipeline1("Input for pipeline 1")
+        result2 = await pipeline2("Input for pipeline 2")
+
+        print(f"   Pipeline 1: '{result1}'")
+        print(f"   Pipeline 2: '{result2}'")
+
+    print("\n   Both modules shared the same resources and settings!")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example 12: Batch Execution
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def demo_batch_execution() -> None:
+    """Demonstrate batch execution with list inputs.
+
+    When you pass a list as the first argument to a bound module,
+    it processes each item and returns a list of results.
+    """
+    print("\n12. Batch Execution")
+    print("-" * 40)
+
+    mock_resources = MagicMock(name="resources")
+    pipeline = SimplePipeline().bind(resources=mock_resources)
+
+    # Batch inputs
+    inputs = ["alpha", "beta", "gamma"]
+
+    print(f"   Batch inputs: {inputs}")
+
+    start = time.time()
+    results = await pipeline(inputs)
+    elapsed = (time.time() - start) * 1000
+
+    print(f"   Batch results ({elapsed:.0f}ms):")
+    for inp, res in zip(inputs, results, strict=True):
+        print(f"      '{inp}' -> '{res}'")
+
+    print("\n   Batch processing: one call, multiple results!")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Run all demos
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -477,6 +580,7 @@ async def main() -> None:
     print("inf-engine: Execution Examples")
     print("=" * 60)
 
+    # Basic run() examples
     await demo_simple_execution()
     await demo_linear_execution()
     await demo_parallel_execution()
@@ -487,8 +591,22 @@ async def main() -> None:
     await demo_multiple_inputs()
     await demo_complex_pipeline()
 
+    # Modern bound execution patterns
+    await demo_bound_execution()
+    await demo_execution_settings()
+    await demo_batch_execution()
+
     print("\n" + "=" * 60)
-    print("The run() function traces and executes modules efficiently!")
+    print("Execution Patterns Summary:")
+    print("=" * 60)
+    print("""
+  1. run(module, input)     - Explicit execution with full control
+  2. module.bind(resources) - Attach resources, then `await module(input)`
+  3. ExecutionSettings()    - Share resources across multiple modules
+  4. await module([...])    - Batch execution with list inputs
+
+The bind() and ExecutionSettings patterns are preferred for production!
+""")
     print("=" * 60)
 
 
