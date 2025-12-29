@@ -10,14 +10,14 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (8/13)
-- [ ] **Phase 5: Production Features** (9/17)
-- [ ] **Phase 5.5: Profiling** (0/4)
-- [ ] **Phase 6: Branching** (0/8)
-- [ ] **Phase 7: Optimization** (0/16)
+- [ ] **Phase 4: Resources** (8/12)
+- [ ] **Phase 5: Production Features** (10/13)
+- [ ] **Phase 5.5: Profiling** (0/1)
+- [ ] **Phase 6: Optimization** (0/5)
+- [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 53/97 PRs completed**
+**Total: 54/74 PRs completed**
 
 ---
 
@@ -559,55 +559,56 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_scheduler.py` (execute with mocked ResourceManager/client)
 - **CHANGELOG**: "Add ResourceManager integration to Scheduler for LLM execution"
 
-### - [ ] PR-045: Update run() with resources parameter
-- **Branch**: `feat/run-with-resources`
-- **Description**: Add `resources` parameter to `run()` function
+### - [ ] PR-045: Module binding and resources parameter
+- **Branch**: `feat/module-binding`
+- **Description**: Add `resources` parameter to `run()`, `bind()` method to InferenceModule, and enable `await module(input)` for bound modules
 - **Design Docs**:
   - `execution.md` → "The run() Function" (resources parameter)
-  - `development_plan.md` → "4.1.5 Update run() Function"
-- **Files**: `src/inf_engine/execution/executor.py`
+  - `inference_module.md` → "InferenceModule Base Class" (bind method, __call__ method)
+  - `execution.md` → "Bound Execution (Recommended)"
+  - `architecture.md` → "Module Execution API"
+  - `development_plan.md` → "4.1.5 Update run() Function", "4.1.6 Add bind() Method", "4.1.7 Update __call__ for Bound Execution"
+- **Files**:
+  - `src/inf_engine/execution/executor.py`
+  - `src/inf_engine/module.py`
 - **Tests**:
   - `tests/unit/test_executor.py` (run with ResourceManager)
-- **CHANGELOG**: "Add resources parameter to run()"
+  - `tests/unit/test_module_binding.py` (bind returns self, stores resources, bound call is async)
+- **CHANGELOG**: "Add module binding and resources parameter to run()"
 
-### - [ ] PR-046: Add bind() method to InferenceModule
-- **Branch**: `feat/module-bind`
-- **Description**: Add `bind()` method for direct module execution with resources
-- **Design Docs**:
-  - `inference_module.md` → "InferenceModule Base Class" (bind method)
-  - `architecture.md` → "Module Execution API"
-  - `development_plan.md` → "4.1.6 Add bind() Method"
-- **Files**: `src/inf_engine/module.py`
-- **Tests**:
-  - `tests/unit/test_module_binding.py` (bind returns self, stores resources)
-- **CHANGELOG**: "Add bind() method for direct module execution"
-
-### - [ ] PR-047: Update InferenceModule.__call__ for bound execution
-- **Branch**: `feat/bound-execution`
-- **Description**: Enable `await module(input)` when resources are bound
-- **Design Docs**:
-  - `inference_module.md` → "InferenceModule Base Class" (__call__ method)
-  - `execution.md` → "Bound Execution (Recommended)"
-  - `development_plan.md` → "4.1.7 Update __call__ for Bound Execution"
-- **Files**: `src/inf_engine/module.py`
-- **Tests**:
-  - `tests/unit/test_module_binding.py` (bound call is async, executes correctly)
-- **CHANGELOG**: "Enable direct execution for bound modules"
-
-### - [ ] PR-048: Add batch execution support
+### - [ ] PR-046: Batch execution and run_sync
 - **Branch**: `feat/batch-execution`
-- **Description**: Support list inputs for batch execution: `await module([a, b, c])`
+- **Description**: Support list inputs for concurrent batch execution (`await module([a, b, c])`) and add `run_sync()` for synchronous blocking execution
 - **Design Docs**:
-  - `inference_module.md` → "Module Execution" (batch execution)
+  - `inference_module.md` → "Module Execution" (batch execution, run_sync method)
   - `architecture.md` → "Module Execution API"
+  - `execution.md` → "Execution Patterns" → "Async Execution", "Synchronous Execution"
   - `development_plan.md` → "4.1.8 Add Batch Execution Support"
 - **Files**: `src/inf_engine/module.py`
 - **Tests**:
-  - `tests/unit/test_module_binding.py` (list input returns list output)
-  - `tests/integration/test_binding.py` (batch processing works)
-- **CHANGELOG**: "Add batch execution support for bound modules"
+  - `tests/unit/test_module_binding.py` (list input returns list output, concurrent execution, run_sync blocks)
+  - `tests/integration/test_binding.py` (batch processing runs concurrently)
+- **CHANGELOG**: "Add concurrent batch execution and run_sync()"
 
-### - [ ] PR-049: Resource integration tests
+### - [ ] PR-047: Streaming execution
+- **Branch**: `feat/streaming-execution`
+- **Description**: Add `BatchResult` type, `streaming` and `preserve_order` flags to ExecutionSettings, `on_progress` callback, and cancellation support for streaming batch execution
+- **Design Docs**:
+  - `execution.md` → "Execution Patterns" → "BatchResult", "Streaming Execution", "Progress Tracking", "Cancellation"
+  - `execution.md` → "Updated ExecutionSettings"
+  - `inference_module.md` → "InferenceModule Base Class" (_stream_batch method)
+- **Files**:
+  - `src/inf_engine/execution/types.py`
+  - `src/inf_engine/execution/context.py`
+  - `src/inf_engine/module.py`
+- **Tests**:
+  - `tests/unit/test_batch_result.py` (creation, ok property, error handling)
+  - `tests/unit/test_execution_settings.py` (streaming flag, preserve_order, on_progress callback)
+  - `tests/unit/test_module_binding.py` (streaming returns async iterator, progress callback invoked, break cancels pending)
+  - `tests/integration/test_streaming.py` (full streaming flow, cancellation cleanup)
+- **CHANGELOG**: "Add streaming execution with BatchResult, progress tracking, and cancellation"
+
+### - [ ] PR-048: Resource integration tests
 - **Branch**: `feat/resource-integration-tests`
 - **Description**: Add integration tests with mocked LLM endpoints
 - **Design Docs**:
@@ -736,82 +737,45 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/integration/test_execution_settings.py`
 - **CHANGELOG**: "Integrate ExecutionSettings with InferenceModule"
 
-### - [ ] PR-060: ExecutionSettings integration tests
-- **Branch**: `feat/execution-settings-integration-tests`
-- **Description**: Add integration tests for ExecutionSettings with checkpointing
-- **Design Docs**:
-  - `development_plan.md` → "5.3 Integration Tests"
-- **Files**: `tests/integration/test_execution_settings.py`
-- **Tests**: Shared checkpointing, priority order, multiple pipelines
-- **CHANGELOG**: "Add ExecutionSettings integration tests"
-
-### - [ ] PR-061: ResourceMetrics
+### - [ ] PR-060: Resource metrics
 - **Branch**: `feat/resource-metrics`
-- **Description**: Implement metrics collection for endpoints
+- **Description**: Implement `ResourceMetrics` for endpoint observability and integrate with ResourceManager
 - **Design Docs**:
   - `resources.md` → "Metrics and Monitoring"
-- **Files**: `src/inf_engine/resources/metrics.py`
+  - `resources.md` → "Resource Manager" (metrics integration)
+- **Files**:
+  - `src/inf_engine/resources/metrics.py`
+  - `src/inf_engine/resources/manager.py`
 - **Tests**:
   - `tests/unit/test_metrics.py` (record success, failure, stats)
+  - `tests/unit/test_resource_manager.py` (metrics recorded)
 - **CHANGELOG**: "Add ResourceMetrics for observability"
 
-### - [ ] PR-062: Integrate metrics with ResourceManager
-- **Branch**: `feat/resource-manager-metrics`
-- **Description**: Add metrics recording to `ResourceManager`
-- **Design Docs**:
-  - `resources.md` → "Resource Manager" (metrics integration)
-  - `resources.md` → "Metrics and Monitoring" (ResourceMetrics usage)
-- **Files**: `src/inf_engine/resources/manager.py`
-- **Tests**:
-  - `tests/unit/test_resource_manager.py` (metrics recorded)
-- **CHANGELOG**: "Integrate metrics with ResourceManager"
-
-### - [ ] PR-063: Task timeout handling
-- **Branch**: `feat/task-timeout`
-- **Description**: Implement `timeout_per_task` configuration with proper async timeout handling
+### - [ ] PR-061: Error handling and robustness
+- **Branch**: `feat/error-handling`
+- **Description**: Implement task timeout handling, `ErrorPolicy` enum with `FAIL_FAST`, `CONTINUE`, `RETRY_THEN_FAIL` behaviors, and execution cancellation support
 - **Design Docs**:
   - `execution.md` → "Execution Config" (timeout_per_task)
-- **Files**:
-  - `src/inf_engine/execution/scheduler.py`
-  - `src/inf_engine/execution/state.py`
-- **Tests**:
-  - `tests/unit/test_scheduler.py` (timeout triggers, proper cleanup)
-- **CHANGELOG**: "Add task timeout handling"
-
-### - [ ] PR-064: ErrorPolicy and retry logic
-- **Branch**: `feat/error-policy`
-- **Description**: Implement `ErrorPolicy` enum with `FAIL_FAST`, `CONTINUE`, `RETRY_THEN_FAIL` behaviors
-- **Design Docs**:
   - `execution.md` → "Error Handling Policies"
-- **Files**:
-  - `src/inf_engine/execution/state.py`
-  - `src/inf_engine/execution/scheduler.py`
-- **Tests**:
-  - `tests/unit/test_scheduler.py` (each policy behavior)
-- **CHANGELOG**: "Add ErrorPolicy with configurable retry behavior"
-
-### - [ ] PR-065: Execution cancellation support
-- **Branch**: `feat/execution-cancellation`
-- **Description**: Add ability to cancel in-progress executions with proper cleanup
-- **Design Docs**:
   - `execution.md` → "Execution Manager" (cancellation)
 - **Files**:
   - `src/inf_engine/execution/scheduler.py`
   - `src/inf_engine/execution/state.py`
 - **Tests**:
-  - `tests/unit/test_scheduler.py` (cancellation, cleanup verification)
-- **CHANGELOG**: "Add execution cancellation support"
+  - `tests/unit/test_scheduler.py` (timeout triggers, each policy behavior, cancellation, cleanup verification)
+- **CHANGELOG**: "Add task timeout, ErrorPolicy, and execution cancellation"
 
-### - [ ] PR-066: Production features integration tests
+### - [ ] PR-062: Production features integration tests
 - **Branch**: `feat/production-integration-tests`
-- **Description**: Add integration tests for rate limiting, checkpointing, timeouts, and cancellation
+- **Description**: Add integration tests for ExecutionSettings, rate limiting, checkpointing, timeouts, and cancellation
 - **Design Docs**:
   - `development_plan.md` → "5.3 Integration Tests"
 - **Files**:
+  - `tests/integration/test_execution_settings.py`
   - `tests/integration/test_rate_limiting.py`
   - `tests/integration/test_checkpointing.py`
   - `tests/integration/test_reliability.py`
-- **Tests**: Rate limit handling, checkpoint persistence, timeout behavior, cancellation
+- **Tests**: Shared checkpointing, priority order, multiple pipelines, rate limit handling, checkpoint persistence, timeout behavior, cancellation
 - **CHANGELOG**: "Add production features integration tests"
 
 ---
@@ -820,91 +784,125 @@ Fixes, improvements, and consistency updates identified during implementation re
 
 Performance visualization and bottleneck analysis using Chrome Trace Event Format.
 
-### - [ ] PR-067: TraceEvent and TraceProfiler
-- **Branch**: `feat/trace-profiler`
-- **Description**: Implement `TraceEvent` dataclass and `TraceProfiler` for collecting execution traces
+### - [ ] PR-063: Profiling infrastructure
+- **Branch**: `feat/profiling`
+- **Description**: Implement `TraceEvent` dataclass, `TraceProfiler` for collecting execution traces, integrate with Scheduler, and add profiling options to ExecutionSettings
 - **Design Docs**:
   - `profiling.md` → "Chrome Trace Event Format"
   - `profiling.md` → "TraceProfiler"
+  - `profiling.md` → "Integration Points" → "Scheduler Integration"
+  - `profiling.md` → "Configuration via ExecutionSettings"
+  - `execution.md` → "Scheduler"
+  - `execution.md` → "ExecutionSettings Context Manager"
 - **Files**:
   - `src/inf_engine/profiling/__init__.py`
   - `src/inf_engine/profiling/profiler.py`
-- **Tests**:
-  - `tests/unit/test_profiler.py` (event creation, task lifecycle, export)
-- **CHANGELOG**: "Add TraceProfiler for execution tracing"
-
-### - [ ] PR-068: Integrate profiling with Scheduler
-- **Branch**: `feat/scheduler-profiling`
-- **Description**: Add profiler hooks to Scheduler for task start/end/fail events
-- **Design Docs**:
-  - `profiling.md` → "Integration Points" → "Scheduler Integration"
-  - `execution.md` → "Scheduler"
-- **Files**:
   - `src/inf_engine/execution/scheduler.py`
-- **Tests**:
-  - `tests/unit/test_scheduler.py` (profiler events emitted)
-- **CHANGELOG**: "Integrate profiling with Scheduler"
-
-### - [ ] PR-069: Add profiling to ExecutionSettings
-- **Branch**: `feat/execution-settings-profiling`
-- **Description**: Add `profile`, `profile_path`, `profile_counters`, `profile_include_args` options to ExecutionSettings
-- **Design Docs**:
-  - `profiling.md` → "Configuration via ExecutionSettings"
-  - `execution.md` → "ExecutionSettings Context Manager"
-- **Files**:
   - `src/inf_engine/execution/context.py`
 - **Tests**:
+  - `tests/unit/test_profiler.py` (event creation, task lifecycle, export)
+  - `tests/unit/test_scheduler.py` (profiler events emitted)
   - `tests/unit/test_execution_settings.py` (profiler created, trace exported on exit)
-- **CHANGELOG**: "Add profiling configuration to ExecutionSettings"
-
-### - [ ] PR-070: Profiling integration tests
-- **Branch**: `feat/profiling-integration-tests`
-- **Description**: Add integration tests for end-to-end profiling scenarios
-- **Design Docs**:
-  - `profiling.md` → "Example: Complete Profiling Flow"
-- **Files**:
-  - `tests/integration/test_profiling.py`
-- **Tests**: Trace file generation, event correctness, counter events, multi-endpoint traces
-- **CHANGELOG**: "Add profiling integration tests"
+  - `tests/integration/test_profiling.py` (trace file generation, event correctness, counter events, multi-endpoint traces)
+- **CHANGELOG**: "Add profiling infrastructure with TraceProfiler and ExecutionSettings integration"
 
 ---
 
-## Phase 6: Branching
+## Phase 6: Optimization
 
-### - [ ] PR-071: ConditionalProxy class
-- **Branch**: `feat/conditional-proxy`
-- **Description**: Implement `ConditionalProxy` with `resolve()` method
+### - [ ] PR-064: Feedback and loss types
+- **Branch**: `feat/feedback-loss-types`
+- **Description**: Implement `FeedbackType` enum, `Feedback` dataclass, and abstract `Loss` class
+- **Design Docs**:
+  - `optimization.md` → "Core Components" → "Feedback"
+  - `optimization.md` → "Core Components" → "Loss Functions"
+  - `development_plan.md` → "7.1.1 Feedback Types", "7.1.2 Loss Functions"
+- **Files**: `src/inf_engine/optimization/feedback.py`, `src/inf_engine/optimization/loss.py`
+- **Tests**:
+  - `tests/unit/test_feedback.py` (creation, str, with score)
+  - `tests/unit/test_loss.py` (interface validation)
+- **CHANGELOG**: "Add Feedback and Loss types"
+
+### - [ ] PR-065: Loss implementations
+- **Branch**: `feat/loss-implementations`
+- **Description**: Implement `VerifierLoss` for programmatic evaluation, `LLMJudge` for LLM-based evaluation, and `CompositeLoss` for combining losses
+- **Design Docs**:
+  - `optimization.md` → "Core Components" → "Loss Functions" (VerifierLoss, LLMJudge, CompositeLoss)
+- **Files**: `src/inf_engine/optimization/loss.py`
+- **Tests**:
+  - `tests/unit/test_loss.py` (pass/fail scenarios, mocked judge responses, aggregation, weighting)
+- **CHANGELOG**: "Add VerifierLoss, LLMJudge, and CompositeLoss"
+
+### - [ ] PR-066: Backward pass
+- **Branch**: `feat/backward-pass`
+- **Description**: Implement `BackwardContext`, `BackwardResult`, `InferenceModule.backward()`, `LLMInference.backward()`, and `backward()` function for graph-wide propagation
+- **Design Docs**:
+  - `optimization.md` → "Core Components" → "Backward Context"
+  - `optimization.md` → "Module Backward Implementation"
+  - `optimization.md` → "Training Loop" (backward function)
+  - `inference_module.md` → "InferenceModule Base Class" (backward method)
+  - `architecture.md` → "Execution Flow" → "Backward Pass"
+  - `development_plan.md` → "7.1.3 Backward Context", "7.1.6 Backward Function"
+- **Files**:
+  - `src/inf_engine/optimization/backward.py`
+  - `src/inf_engine/module.py`
+- **Tests**:
+  - `tests/unit/test_backward.py` (creation, fields, feedback propagates through graph)
+  - `tests/unit/test_module.py` (default backward behavior)
+  - `tests/unit/test_llm_inference.py` (backward generates feedback)
+- **CHANGELOG**: "Add backward pass with BackwardContext and module backward methods"
+
+### - [ ] PR-067: Optimizer
+- **Branch**: `feat/optimizer`
+- **Description**: Implement `Optimizer` with initialization, `accumulate()`, `zero_feedback()`, and `step()` methods
+- **Design Docs**:
+  - `optimization.md` → "Optimizer"
+  - `development_plan.md` → "7.1.7 Optimizer"
+- **Files**: `src/inf_engine/optimization/optimizer.py`
+- **Tests**:
+  - `tests/unit/test_optimizer.py` (init, parameters stored, accumulation, clearing, step updates parameters)
+- **CHANGELOG**: "Add Optimizer with feedback accumulation and step()"
+
+### - [ ] PR-068: Training utilities and integration tests
+- **Branch**: `feat/training-utilities`
+- **Description**: Implement `train()` function, `eval()` and `train()` modes on InferenceModule, `requires_grad_()` method, and optimization integration tests
+- **Design Docs**:
+  - `optimization.md` → "Training Loop" (train function)
+  - `optimization.md` → "Complete Example"
+  - `inference_module.md` → "InferenceModule Base Class" (eval/train modes, requires_grad_)
+  - `development_plan.md` → "7.1.8 Training Loop", "7.3 Integration Tests"
+- **Files**:
+  - `src/inf_engine/optimization/train.py`
+  - `src/inf_engine/module.py`
+  - `tests/integration/test_backward_pass.py`
+  - `tests/integration/test_training.py`
+- **Tests**:
+  - `tests/unit/test_train.py` (single epoch, multiple epochs)
+  - `tests/unit/test_module.py` (mode switching, propagation to children, freeze/unfreeze, tree propagation)
+  - Integration tests for full backward propagation, parameter updates
+- **CHANGELOG**: "Add train() function, eval/train modes, requires_grad_(), and optimization integration tests"
+
+---
+
+## Phase 7: Branching
+
+### - [ ] PR-069: Core branching primitives
+- **Branch**: `feat/branching-primitives`
+- **Description**: Implement `ConditionalProxy` with `resolve()` method, `BranchContext` context manager, and `@branch` decorator
 - **Design Docs**:
   - `tracing.md` → "Handling Branches" → "Solution: Branch Decorator"
-  - `development_plan.md` → "6.1.1 Conditional Proxy"
-- **Files**: `src/inf_engine/tracing/proxy.py`
+  - `tracing.md` → "Handling Branches" → "Branch Implementation"
+  - `architecture.md` → "Branching and Conditional Logic"
+  - `development_plan.md` → "6.1.1 Conditional Proxy", "6.1.2 Branch Decorator"
+- **Files**:
+  - `src/inf_engine/tracing/proxy.py`
+  - `src/inf_engine/tracing/branch.py`
 - **Tests**:
   - `tests/unit/test_conditional_proxy.py` (creation, resolve true/false)
-- **CHANGELOG**: "Add ConditionalProxy for branching"
+  - `tests/unit/test_branch.py` (context manager behavior, decorator behavior)
+- **CHANGELOG**: "Add ConditionalProxy, BranchContext, and @branch decorator"
 
-### - [ ] PR-072: BranchContext
-- **Branch**: `feat/branch-context`
-- **Description**: Implement `BranchContext` context manager
-- **Design Docs**:
-  - `tracing.md` → "Handling Branches" → "Branch Implementation"
-  - `development_plan.md` → "6.1.2 Branch Decorator"
-- **Files**: `src/inf_engine/tracing/branch.py`
-- **Tests**:
-  - `tests/unit/test_branch.py` (context manager behavior)
-- **CHANGELOG**: "Add BranchContext for conditional tracing"
-
-### - [ ] PR-073: branch() decorator
-- **Branch**: `feat/branch-decorator`
-- **Description**: Implement `@branch` decorator for marking conditionals
-- **Design Docs**:
-  - `tracing.md` → "Handling Branches" → "Solution: Branch Decorator"
-  - `architecture.md` → "Branching and Conditional Logic"
-- **Files**: `src/inf_engine/tracing/branch.py`
-- **Tests**:
-  - `tests/unit/test_branch.py` (decorator behavior)
-- **CHANGELOG**: "Add @branch decorator"
-
-### - [ ] PR-074: match_branch() function
+### - [ ] PR-070: match_branch function
 - **Branch**: `feat/match-branch`
 - **Description**: Implement `match_branch()` for multi-way conditionals
 - **Design Docs**:
@@ -915,234 +913,40 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_branch.py` (multiple cases, default)
 - **CHANGELOG**: "Add match_branch() for pattern matching"
 
-### - [ ] PR-075: Update Tracer for branches
-- **Branch**: `feat/tracer-branch-support`
-- **Description**: Add branch stack and conditional node handling to Tracer
+### - [ ] PR-071: Graph and tracer branch support
+- **Branch**: `feat/graph-tracer-branches`
+- **Description**: Add branch stack and conditional node handling to Tracer, add `branch_condition` and `branch_value` fields to GraphNode
 - **Design Docs**:
   - `tracing.md` → "Handling Branches" (Tracer modifications)
-  - `development_plan.md` → "6.1.4 Update Tracer for branches"
-- **Files**: `src/inf_engine/tracing/tracer.py`
+  - `tracing.md` → "Core Concepts" → "Graph Nodes" (branch fields)
+  - `development_plan.md` → "6.1.4 Update Tracer for branches", "6.1.5 Update GraphNode for branches"
+- **Files**:
+  - `src/inf_engine/tracing/tracer.py`
+  - `src/inf_engine/graph.py`
 - **Tests**:
   - `tests/unit/test_tracer.py` (branch metadata captured)
-- **CHANGELOG**: "Add branch support to Tracer"
-
-### - [ ] PR-076: Update GraphNode for branches
-- **Branch**: `feat/graph-node-branches`
-- **Description**: Add `branch_condition` and `branch_value` to GraphNode
-- **Design Docs**:
-  - `tracing.md` → "Core Concepts" → "Graph Nodes" (branch fields)
-  - `development_plan.md` → "6.1.5 Update GraphNode for branches"
-- **Files**: `src/inf_engine/graph.py`
-- **Tests**:
   - `tests/unit/test_graph.py` (branch fields)
-- **CHANGELOG**: "Add branch fields to GraphNode"
+- **CHANGELOG**: "Add branch support to Tracer and GraphNode"
 
-### - [ ] PR-077: Update Executor for branches
-- **Branch**: `feat/executor-branches`
-- **Description**: Evaluate conditions and select branch at runtime
+### - [ ] PR-072: Branch execution and integration tests
+- **Branch**: `feat/branch-execution`
+- **Description**: Update Executor to evaluate conditions and select branch at runtime, add integration tests for conditional execution
 - **Design Docs**:
   - `architecture.md` → "Branching and Conditional Logic"
-  - `development_plan.md` → "6.1.6 Update Executor for branches"
-- **Files**: `src/inf_engine/execution/executor.py`
+  - `development_plan.md` → "6.1.6 Update Executor for branches", "6.3 Integration Tests"
+- **Files**:
+  - `src/inf_engine/execution/executor.py`
+  - `tests/integration/test_branching.py`
 - **Tests**:
   - `tests/unit/test_executor.py` (correct branch executed)
-- **CHANGELOG**: "Add branch execution support"
-
-### - [ ] PR-078: Branching integration tests
-- **Branch**: `feat/branching-integration-tests`
-- **Description**: Add integration tests for conditional execution
-- **Design Docs**:
-  - `architecture.md` → "Branching and Conditional Logic" (example)
-  - `development_plan.md` → "6.3 Integration Tests"
-- **Files**: `tests/integration/test_branching.py`
-- **Tests**: True branch, false branch, nested branches
-- **CHANGELOG**: "Add branching integration tests"
-
----
-
-## Phase 7: Optimization
-
-### - [ ] PR-079: FeedbackType enum and Feedback dataclass
-- **Branch**: `feat/feedback-types`
-- **Description**: Implement feedback data structures
-- **Design Docs**:
-  - `optimization.md` → "Core Components" → "Feedback"
-  - `development_plan.md` → "7.1.1 Feedback Types"
-- **Files**: `src/inf_engine/optimization/feedback.py`
-- **Tests**:
-  - `tests/unit/test_feedback.py` (creation, str, with score)
-- **CHANGELOG**: "Add Feedback types"
-
-### - [ ] PR-080: Loss abstract base class
-- **Branch**: `feat/loss-base`
-- **Description**: Implement abstract `Loss` class
-- **Design Docs**:
-  - `optimization.md` → "Core Components" → "Loss Functions"
-  - `development_plan.md` → "7.1.2 Loss Functions"
-- **Files**: `src/inf_engine/optimization/loss.py`
-- **Tests**:
-  - `tests/unit/test_loss.py` (interface validation)
-- **CHANGELOG**: "Add Loss abstract base class"
-
-### - [ ] PR-081: VerifierLoss implementation
-- **Branch**: `feat/verifier-loss`
-- **Description**: Implement `VerifierLoss` for programmatic evaluation
-- **Design Docs**:
-  - `optimization.md` → "Core Components" → "Loss Functions" (VerifierLoss)
-- **Files**: `src/inf_engine/optimization/loss.py`
-- **Tests**:
-  - `tests/unit/test_loss.py` (pass/fail scenarios)
-- **CHANGELOG**: "Add VerifierLoss for programmatic evaluation"
-
-### - [ ] PR-082: LLMJudge loss implementation
-- **Branch**: `feat/llm-judge-loss`
-- **Description**: Implement `LLMJudge` for LLM-based evaluation
-- **Design Docs**:
-  - `optimization.md` → "Core Components" → "Loss Functions" (LLMJudge)
-- **Files**: `src/inf_engine/optimization/loss.py`
-- **Tests**:
-  - `tests/unit/test_loss.py` (mocked judge responses)
-- **CHANGELOG**: "Add LLMJudge for LLM-as-a-judge evaluation"
-
-### - [ ] PR-083: CompositeLoss implementation
-- **Branch**: `feat/composite-loss`
-- **Description**: Implement `CompositeLoss` for combining losses
-- **Design Docs**:
-  - `optimization.md` → "Core Components" → "Loss Functions" (CompositeLoss)
-- **Files**: `src/inf_engine/optimization/loss.py`
-- **Tests**:
-  - `tests/unit/test_loss.py` (aggregation, weighting)
-- **CHANGELOG**: "Add CompositeLoss for combining evaluators"
-
-### - [ ] PR-084: BackwardContext and BackwardResult
-- **Branch**: `feat/backward-types`
-- **Description**: Implement backward pass data structures
-- **Design Docs**:
-  - `optimization.md` → "Core Components" → "Backward Context"
-  - `development_plan.md` → "7.1.3 Backward Context"
-- **Files**: `src/inf_engine/optimization/backward.py`
-- **Tests**:
-  - `tests/unit/test_backward.py` (creation, fields)
-- **CHANGELOG**: "Add BackwardContext and BackwardResult types"
-
-### - [ ] PR-085: InferenceModule.backward() method
-- **Branch**: `feat/module-backward`
-- **Description**: Add default `backward()` implementation to InferenceModule
-- **Design Docs**:
-  - `optimization.md` → "Module Backward Implementation"
-  - `inference_module.md` → "InferenceModule Base Class" (backward method)
-  - `architecture.md` → "Execution Flow" → "Backward Pass"
-- **Files**: `src/inf_engine/module.py`
-- **Tests**:
-  - `tests/unit/test_module.py` (default backward behavior)
-- **CHANGELOG**: "Add backward() method to InferenceModule"
-
-### - [ ] PR-086: LLMInference.backward() method
-- **Branch**: `feat/llm-inference-backward`
-- **Description**: Implement `backward()` for LLMInference with parameter feedback
-- **Design Docs**:
-  - `optimization.md` → "Module Backward Implementation" (LLMInference.backward)
-  - `optimization.md` → "Custom Backward Example"
-- **Files**: `src/inf_engine/module.py`
-- **Tests**:
-  - `tests/unit/test_llm_inference.py` (backward generates feedback)
-- **CHANGELOG**: "Add backward() to LLMInference"
-
-### - [ ] PR-087: backward() function
-- **Branch**: `feat/backward-function`
-- **Description**: Implement `backward()` function for graph-wide propagation
-- **Design Docs**:
-  - `optimization.md` → "Training Loop" (backward function)
-  - `architecture.md` → "Execution Flow" → "Backward Pass"
-  - `development_plan.md` → "7.1.6 Backward Function"
-- **Files**: `src/inf_engine/optimization/backward.py`
-- **Tests**:
-  - `tests/unit/test_backward.py` (feedback propagates through graph)
-- **CHANGELOG**: "Add backward() function for feedback propagation"
-
-### - [ ] PR-088: Optimizer - initialization
-- **Branch**: `feat/optimizer-init`
-- **Description**: Implement `Optimizer.__init__` with parameter collection
-- **Design Docs**:
-  - `optimization.md` → "Optimizer"
-  - `development_plan.md` → "7.1.7 Optimizer"
-- **Files**: `src/inf_engine/optimization/optimizer.py`
-- **Tests**:
-  - `tests/unit/test_optimizer.py` (init, parameters stored)
-- **CHANGELOG**: "Add Optimizer class initialization"
-
-### - [ ] PR-089: Optimizer - accumulate and zero_feedback
-- **Branch**: `feat/optimizer-accumulate`
-- **Description**: Implement `accumulate()` and `zero_feedback()` methods
-- **Design Docs**:
-  - `optimization.md` → "Optimizer" (accumulate, zero_feedback methods)
-- **Files**: `src/inf_engine/optimization/optimizer.py`
-- **Tests**:
-  - `tests/unit/test_optimizer.py` (accumulation, clearing)
-- **CHANGELOG**: "Add Optimizer feedback accumulation"
-
-### - [ ] PR-090: Optimizer - step method
-- **Branch**: `feat/optimizer-step`
-- **Description**: Implement `step()` with LLM-based aggregation and update
-- **Design Docs**:
-  - `optimization.md` → "Optimizer" (step method)
-  - `optimization.md` → "Optimizer" (_aggregate_feedback, _generate_update)
-- **Files**: `src/inf_engine/optimization/optimizer.py`
-- **Tests**:
-  - `tests/unit/test_optimizer.py` (step updates parameters)
-- **CHANGELOG**: "Add Optimizer.step() for parameter updates"
-
-### - [ ] PR-091: train() function
-- **Branch**: `feat/train-function`
-- **Description**: Implement `train()` for training loop execution
-- **Design Docs**:
-  - `optimization.md` → "Training Loop" (train function)
-  - `optimization.md` → "Complete Example"
-  - `development_plan.md` → "7.1.8 Training Loop"
-- **Files**: `src/inf_engine/optimization/train.py`
-- **Tests**:
-  - `tests/unit/test_train.py` (single epoch, multiple epochs)
-- **CHANGELOG**: "Add train() function for training loops"
-
-### - [ ] PR-092: eval() and train() modes
-- **Branch**: `feat/eval-train-modes`
-- **Description**: Add `eval()` and `train()` methods to InferenceModule for switching behavior between inference and optimization
-- **Design Docs**:
-  - `inference_module.md` → "InferenceModule Base Class" (eval/train modes)
-  - `optimization.md` → "Training Loop"
-- **Files**: `src/inf_engine/module.py`
-- **Tests**:
-  - `tests/unit/test_module.py` (mode switching, propagation to children)
-- **CHANGELOG**: "Add eval() and train() modes to InferenceModule"
-
-### - [ ] PR-093: requires_grad_() method
-- **Branch**: `feat/requires-grad`
-- **Description**: Add `requires_grad_(bool)` method to freeze/unfreeze parameters on module trees
-- **Design Docs**:
-  - `inference_module.md` → "InferenceModule Base Class" (requires_grad_)
-  - `optimization.md` → "Optimizer" (frozen parameters)
-- **Files**: `src/inf_engine/module.py`
-- **Tests**:
-  - `tests/unit/test_module.py` (freeze/unfreeze, tree propagation)
-- **CHANGELOG**: "Add requires_grad_() for parameter freezing"
-
-### - [ ] PR-094: Optimization integration tests
-- **Branch**: `feat/optimization-integration-tests`
-- **Description**: Add integration tests for backward pass and training
-- **Design Docs**:
-  - `optimization.md` → "Complete Example"
-  - `development_plan.md` → "7.3 Integration Tests"
-- **Files**:
-  - `tests/integration/test_backward_pass.py`
-  - `tests/integration/test_training.py`
-- **Tests**: Full backward propagation, parameter updates
-- **CHANGELOG**: "Add optimization integration tests"
+  - Integration tests for true branch, false branch, nested branches
+- **CHANGELOG**: "Add branch execution support and branching integration tests"
 
 ---
 
 ## Post-Implementation
 
-### - [ ] PR-095: Public API exports
+### - [ ] PR-073: Public API exports
 - **Branch**: `feat/public-api`
 - **Description**: Finalize `__init__.py` exports for clean public API
 - **Design Docs**:
@@ -1152,7 +956,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 - **Tests**: Import tests for all public symbols
 - **CHANGELOG**: "Finalize public API"
 
-### - [ ] PR-096: End-to-end example
+### - [ ] PR-074: End-to-end example
 - **Branch**: `feat/e2e-example`
 - **Description**: Add complete example in `examples/` directory
 - **Design Docs**:
@@ -1163,7 +967,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 - **Tests**: Example runs successfully
 - **CHANGELOG**: "Add getting started example"
 
-### - [ ] PR-097: Documentation
+### - [ ] PR-075: Documentation
 - **Branch**: `docs/api-documentation`
 - **Description**: Add API documentation and usage guide
 - **Design Docs**:
@@ -1181,14 +985,14 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 | Foundation | 7 | PR-001 to PR-007 |
 | Tracing | 11 | PR-008 to PR-018 |
 | Execution | 10 | PR-019 to PR-028 |
-| **Hardening** | **8** | **PR-029 to PR-036** |
-| Resources | 13 | PR-037 to PR-049 |
-| Production | 17 | PR-050 to PR-066 |
-| **Profiling** | **4** | **PR-067 to PR-070** |
-| Branching | 8 | PR-071 to PR-078 |
-| Optimization | 16 | PR-079 to PR-094 |
-| Post-Implementation | 3 | PR-095 to PR-097 |
-| **Total** | **97** | |
+| Hardening | 8 | PR-029 to PR-036 |
+| Resources | 12 | PR-037 to PR-048 |
+| Production | 13 | PR-050 to PR-062 |
+| Profiling | 1 | PR-063 |
+| Optimization | 5 | PR-064 to PR-068 |
+| Branching | 4 | PR-069 to PR-072 |
+| Post-Implementation | 3 | PR-073 to PR-075 |
+| **Total** | **74** | |
 
 ---
 
