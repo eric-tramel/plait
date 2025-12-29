@@ -2,14 +2,16 @@
 
 This module provides the `ResourceManager` class that handles runtime
 resource coordination, including client creation, concurrency control,
-and rate limiting.
+rate limiting, and metrics collection.
 """
 
 import asyncio
+from typing import Any
 
 from inf_engine.clients.base import LLMClient
 from inf_engine.clients.openai import OpenAIClient, OpenAICompatibleClient
 from inf_engine.resources.config import EndpointConfig, ResourceConfig
+from inf_engine.resources.metrics import ResourceMetrics
 from inf_engine.resources.rate_limit import RateLimiter
 
 
@@ -20,10 +22,12 @@ class ResourceManager:
     - Creating and managing LLM clients for each configured endpoint
     - Controlling concurrency with per-endpoint semaphores
     - Managing rate limiters for endpoints with RPM limits
+    - Collecting metrics for endpoint observability
 
     The manager creates clients based on the `provider_api` field in each
-    endpoint configuration, semaphores for concurrency control, and rate
-    limiters for endpoints with rate limits configured.
+    endpoint configuration, semaphores for concurrency control, rate
+    limiters for endpoints with rate limits configured, and a shared
+    metrics collector for monitoring request counts, latencies, and tokens.
 
     Args:
         config: The ResourceConfig containing endpoint definitions.
@@ -35,6 +39,7 @@ class ResourceManager:
             Only created for endpoints with `max_concurrent` set.
         rate_limiters: Dict mapping aliases to RateLimiter instances.
             Only created for endpoints with `rate_limit` set.
+        metrics: ResourceMetrics instance for tracking endpoint usage.
 
     Example:
         >>> config = ResourceConfig(
@@ -59,6 +64,8 @@ class ResourceManager:
         True
         >>> "fast" in manager.rate_limiters
         True
+        >>> manager.metrics is not None
+        True
 
     Note:
         The ResourceManager creates clients during initialization. If a
@@ -68,10 +75,11 @@ class ResourceManager:
     def __init__(self, config: ResourceConfig):
         """Initialize the resource manager with endpoint configurations.
 
-        Creates LLM clients, semaphores, and rate limiters for each configured
-        endpoint. Clients are created based on the `provider_api` field,
-        semaphores are created for endpoints with `max_concurrent` set, and
-        rate limiters are created for endpoints with `rate_limit` set.
+        Creates LLM clients, semaphores, rate limiters, and a metrics
+        collector for each configured endpoint. Clients are created based
+        on the `provider_api` field, semaphores are created for endpoints
+        with `max_concurrent` set, and rate limiters are created for
+        endpoints with `rate_limit` set.
 
         Args:
             config: The ResourceConfig containing endpoint definitions.
@@ -85,6 +93,9 @@ class ResourceManager:
         self.clients: dict[str, LLMClient] = {}
         self.semaphores: dict[str, asyncio.Semaphore] = {}
         self.rate_limiters: dict[str, RateLimiter] = {}
+
+        # Metrics collection
+        self.metrics = ResourceMetrics()
 
         # Initialize clients, semaphores, and rate limiters
         self._initialize()
@@ -235,3 +246,49 @@ class ResourceManager:
             return alias in self.clients
         except TypeError:
             return False
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get resource utilization statistics for all endpoints.
+
+        Returns a dictionary with availability and metrics information
+        for each configured endpoint. This is useful for monitoring
+        dashboards and debugging.
+
+        Returns:
+            Dictionary mapping aliases to their stats, including:
+            - available: Current semaphore availability (if configured)
+            - max: Maximum concurrent requests (if configured)
+            - metrics: Endpoint metrics from ResourceMetrics
+
+        Example:
+            >>> config = ResourceConfig(
+            ...     endpoints={
+            ...         "fast": EndpointConfig(
+            ...             provider_api="openai",
+            ...             model="gpt-4o-mini",
+            ...             max_concurrent=10,
+            ...         ),
+            ...     }
+            ... )
+            >>> manager = ResourceManager(config)
+            >>> stats = manager.get_stats()
+            >>> stats["fast"]["max"]
+            10
+            >>> stats["fast"]["metrics"]["total_requests"]
+            0
+        """
+        result: dict[str, Any] = {}
+        for alias in self.clients:
+            endpoint = self.config.endpoints[alias]
+            alias_stats: dict[str, Any] = {
+                "metrics": self.metrics.get_alias_stats(alias),
+            }
+
+            # Include semaphore stats if available
+            if alias in self.semaphores:
+                alias_stats["available"] = self.semaphores[alias]._value
+                alias_stats["max"] = endpoint.max_concurrent
+
+            result[alias] = alias_stats
+
+        return result

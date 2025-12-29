@@ -157,6 +157,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - End-to-end pipeline tests with mocked LLM endpoints
   - Configuration example validation from design docs
 - Update examples documentation with best practices for resource configuration
+- Add `ResourceMetrics` for endpoint observability
+  - `EndpointMetrics` dataclass tracks per-endpoint request counts, latency, and tokens
+  - Thread-safe `ResourceMetrics` class aggregates metrics across endpoints
+  - `record_success()`, `record_error()`, `record_rate_limit()` for recording outcomes
+  - `get_alias_stats()` and `get_all_stats()` for retrieving metrics
+  - `estimate_cost()` for calculating costs based on token usage and endpoint pricing
+  - `reset()` and `get_endpoint_metrics()` for testing and detailed access
+- Integrate `ResourceMetrics` with `ResourceManager`
+  - `metrics` attribute automatically created during initialization
+  - `get_stats()` method returns availability and metrics for all endpoints
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

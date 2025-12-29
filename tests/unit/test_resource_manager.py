@@ -1,7 +1,7 @@
 """Unit tests for ResourceManager.
 
 Tests validate ResourceManager initialization, client creation,
-semaphore management, and rate limiter management.
+semaphore management, rate limiter management, and metrics integration.
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from inf_engine.clients.base import LLMClient
 from inf_engine.resources import ResourceManager
 from inf_engine.resources.config import EndpointConfig, ResourceConfig
 from inf_engine.resources.manager import ResourceManager as ResourceManagerDirect
+from inf_engine.resources.metrics import ResourceMetrics
 from inf_engine.resources.rate_limit import RateLimiter
 
 
@@ -695,3 +696,131 @@ class TestResourceManagerCombinedResources:
 
         assert "fast" not in manager.semaphores
         assert "fast" in manager.rate_limiters
+
+
+class TestResourceManagerMetrics:
+    """Tests for ResourceManager metrics integration."""
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_init_creates_metrics(self, mock_client_class: MagicMock) -> None:
+        """ResourceManager creates ResourceMetrics during initialization."""
+        config = ResourceConfig(endpoints={})
+        manager = ResourceManager(config)
+
+        assert hasattr(manager, "metrics")
+        assert isinstance(manager.metrics, ResourceMetrics)
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_metrics_is_empty_initially(self, mock_client_class: MagicMock) -> None:
+        """ResourceManager metrics starts with no recorded data."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        all_stats = manager.metrics.get_all_stats()
+        assert all_stats == {}
+
+
+class TestResourceManagerGetStats:
+    """Tests for ResourceManager.get_stats method."""
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_stats_empty_config(self, mock_client_class: MagicMock) -> None:
+        """get_stats returns empty dict for empty config."""
+        config = ResourceConfig(endpoints={})
+        manager = ResourceManager(config)
+
+        assert manager.get_stats() == {}
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_stats_returns_metrics(self, mock_client_class: MagicMock) -> None:
+        """get_stats includes metrics for each endpoint."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        stats = manager.get_stats()
+
+        assert "fast" in stats
+        assert "metrics" in stats["fast"]
+        assert stats["fast"]["metrics"]["total_requests"] == 0
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_stats_includes_semaphore_info(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """get_stats includes semaphore availability when configured."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=10,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        stats = manager.get_stats()
+
+        assert stats["fast"]["available"] == 10
+        assert stats["fast"]["max"] == 10
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_stats_no_semaphore_info_when_not_configured(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """get_stats omits semaphore info when not configured."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=None,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        stats = manager.get_stats()
+
+        assert "available" not in stats["fast"]
+        assert "max" not in stats["fast"]
+
+    @patch("inf_engine.resources.manager.OpenAIClient")
+    def test_get_stats_multiple_endpoints(self, mock_client_class: MagicMock) -> None:
+        """get_stats returns stats for all endpoints."""
+        config = ResourceConfig(
+            endpoints={
+                "fast": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o-mini",
+                    max_concurrent=20,
+                ),
+                "smart": EndpointConfig(
+                    provider_api="openai",
+                    model="gpt-4o",
+                    max_concurrent=5,
+                ),
+            }
+        )
+        manager = ResourceManager(config)
+
+        stats = manager.get_stats()
+
+        assert "fast" in stats
+        assert "smart" in stats
+        assert stats["fast"]["max"] == 20
+        assert stats["smart"]["max"] == 5
