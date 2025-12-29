@@ -1,10 +1,12 @@
 """Integration tests for ExecutionSettings with module execution.
 
-This file contains tests for PR-059: Update InferenceModule for ExecutionSettings.
+This file contains tests for PR-059 and PR-062.
 Tests verify:
 - Shared checkpointing across multiple pipelines
 - Priority order for configuration (context < bound < kwargs)
 - Multiple modules sharing ExecutionSettings
+- Timeout and retry settings propagation (PR-062)
+- Multiple pipelines sharing context (PR-062)
 """
 
 from pathlib import Path
@@ -411,3 +413,173 @@ class TestEdgeCases:
             assert mock_run.call_args_list[0].kwargs["resources"] is resources1
             # Second call used bound resources
             assert mock_run.call_args_list[1].kwargs["resources"] is resources2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Timeout and Retry Settings Tests (PR-062)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestTimeoutRetrySettings:
+    """Tests for timeout and retry settings in ExecutionSettings."""
+
+    def test_default_timeout_is_none(self) -> None:
+        """ExecutionSettings defaults to no task timeout."""
+        settings = ExecutionSettings()
+        assert settings.get_task_timeout() is None
+
+    def test_default_retries_is_zero(self) -> None:
+        """ExecutionSettings defaults to no retries."""
+        settings = ExecutionSettings()
+        assert settings.get_max_task_retries() == 0
+
+    def test_default_retry_delay_is_one(self) -> None:
+        """ExecutionSettings defaults to 1 second retry delay."""
+        settings = ExecutionSettings()
+        assert settings.get_task_retry_delay() == 1.0
+
+    def test_timeout_setting_accessible(self) -> None:
+        """task_timeout is accessible via get_task_timeout()."""
+        settings = ExecutionSettings(task_timeout=30.0)
+        assert settings.get_task_timeout() == 30.0
+
+    def test_retry_settings_accessible(self) -> None:
+        """Retry settings are accessible via getters."""
+        settings = ExecutionSettings(max_task_retries=3, task_retry_delay=0.5)
+        assert settings.get_max_task_retries() == 3
+        assert settings.get_task_retry_delay() == 0.5
+
+    def test_nested_context_inherits_timeout(self) -> None:
+        """Nested context can access parent timeout setting."""
+        with ExecutionSettings(task_timeout=60.0) as outer:
+            with ExecutionSettings():
+                # Inner should inherit timeout from parent via _get_effective_value
+                parent_timeout = outer.get_task_timeout()
+                assert parent_timeout == 60.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multiple Pipelines Tests (PR-062)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestMultiplePipelines:
+    """Tests for multiple pipelines sharing ExecutionSettings."""
+
+    @pytest.mark.asyncio
+    async def test_multiple_pipelines_share_checkpoint_dir(
+        self, tmp_path: Path
+    ) -> None:
+        """Multiple pipelines in same context share checkpoint_dir."""
+        pipeline1 = EchoModule(prefix="p1:")
+        pipeline2 = UpperModule()
+        checkpoint_dir = tmp_path / "shared_checkpoints"
+        mock_resources = MagicMock()
+
+        with patch("inf_engine.execution.executor.run") as mock_run:
+            mock_run.side_effect = ["result1", "result2"]
+
+            with ExecutionSettings(
+                resources=mock_resources, checkpoint_dir=checkpoint_dir
+            ):
+                await pipeline1("input1")
+                await pipeline2("input2")
+
+            # Both should use same checkpoint_dir
+            for call in mock_run.call_args_list:
+                assert call.kwargs["checkpoint_dir"] == checkpoint_dir
+
+    @pytest.mark.asyncio
+    async def test_multiple_pipelines_share_timeout(self) -> None:
+        """Multiple pipelines in same context share timeout settings."""
+        mock_resources = MagicMock()
+
+        with ExecutionSettings(resources=mock_resources, task_timeout=45.0) as settings:
+            # Both pipelines would see the same timeout
+            assert settings.get_task_timeout() == 45.0
+
+    @pytest.mark.asyncio
+    async def test_multiple_sequential_calls_within_context(self) -> None:
+        """Multiple sequential calls within context share settings."""
+        module = EchoModule()
+        mock_resources = MagicMock()
+
+        with patch("inf_engine.execution.executor.run") as mock_run:
+            mock_run.side_effect = ["r1", "r2", "r3"]
+
+            with ExecutionSettings(resources=mock_resources, max_concurrent=25):
+                await module("input1")
+                await module("input2")
+                await module("input3")
+
+            # All three calls should use max_concurrent=25
+            assert mock_run.call_count == 3
+            for call in mock_run.call_args_list:
+                assert call.kwargs["max_concurrent"] == 25
+
+    @pytest.mark.asyncio
+    async def test_different_contexts_are_independent(self) -> None:
+        """Different ExecutionSettings contexts are independent."""
+        module = EchoModule()
+        resources1 = MagicMock(name="r1")
+        resources2 = MagicMock(name="r2")
+
+        with patch("inf_engine.execution.executor.run") as mock_run:
+            mock_run.side_effect = ["result1", "result2"]
+
+            with ExecutionSettings(resources=resources1, max_concurrent=10):
+                await module("input1")
+
+            with ExecutionSettings(resources=resources2, max_concurrent=50):
+                await module("input2")
+
+            # First context used resources1 and max_concurrent=10
+            assert mock_run.call_args_list[0].kwargs["resources"] is resources1
+            assert mock_run.call_args_list[0].kwargs["max_concurrent"] == 10
+
+            # Second context used resources2 and max_concurrent=50
+            assert mock_run.call_args_list[1].kwargs["resources"] is resources2
+            assert mock_run.call_args_list[1].kwargs["max_concurrent"] == 50
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Streaming Settings Tests (PR-062)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestStreamingSettings:
+    """Tests for streaming configuration in ExecutionSettings."""
+
+    def test_default_streaming_is_false(self) -> None:
+        """ExecutionSettings defaults streaming to False."""
+        settings = ExecutionSettings()
+        assert settings.get_streaming() is False
+
+    def test_default_preserve_order_is_false(self) -> None:
+        """ExecutionSettings defaults preserve_order to False."""
+        settings = ExecutionSettings()
+        assert settings.get_preserve_order() is False
+
+    def test_streaming_setting_accessible(self) -> None:
+        """streaming is accessible via get_streaming()."""
+        settings = ExecutionSettings(streaming=True)
+        assert settings.get_streaming() is True
+
+    def test_preserve_order_setting_accessible(self) -> None:
+        """preserve_order is accessible via get_preserve_order()."""
+        settings = ExecutionSettings(preserve_order=True)
+        assert settings.get_preserve_order() is True
+
+    def test_on_progress_callback_accessible(self) -> None:
+        """on_progress callback is accessible via get_on_progress()."""
+
+        def progress_callback(done: int, total: int) -> None:
+            pass
+
+        settings = ExecutionSettings(on_progress=progress_callback)
+        assert settings.get_on_progress() is progress_callback
+
+    def test_on_progress_defaults_to_none(self) -> None:
+        """on_progress defaults to None."""
+        settings = ExecutionSettings()
+        assert settings.get_on_progress() is None

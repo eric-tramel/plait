@@ -176,6 +176,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Timed-out tasks are marked as failed with descriptive error message
   - TransientError triggers automatic retry with exponential backoff (delay doubles each retry)
   - Getter methods on ExecutionSettings: `get_task_timeout()`, `get_max_task_retries()`, `get_task_retry_delay()`
+- Add production features integration tests (`tests/integration/test_*.py`)
+  - `test_rate_limiting.py`: Rate limit requeue, backoff, recovery, multiple endpoint handling
+  - `test_checkpointing.py`: Checkpoint creation, persistence, compatibility, multiple pipelines
+  - `test_reliability.py`: Task timeout, transient error retry, exponential backoff, cancellation cascade
+  - `test_execution_settings.py`: Extended with timeout/retry settings, multiple pipeline sharing
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

@@ -11,13 +11,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
 - [ ] **Phase 4: Resources** (11/12)
-- [ ] **Phase 5: Production Features** (11/13)
+- [ ] **Phase 5: Production Features** (12/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
-- [ ] **Phase 6: Optimization** (0/5)
+- [ ] **Phase 6: Optimization** (0/7)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 58/74 PRs completed**
+**Total: 59/76 PRs completed**
 
 ---
 
@@ -766,7 +766,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_execution_settings.py` (timeout/retry settings)
 - **CHANGELOG**: "Add task timeout and retry handling with TransientError"
 
-### - [ ] PR-062: Production features integration tests
+### - [x] PR-062: Production features integration tests
 - **Branch**: `feat/production-integration-tests`
 - **Description**: Add integration tests for ExecutionSettings, rate limiting, checkpointing, timeouts, and cancellation
 - **Design Docs**:
@@ -811,83 +811,114 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 
 ## Phase 6: Optimization
 
-### - [ ] PR-064: Feedback and loss types
+### - [ ] PR-064: Parameter description and ForwardRecord
+- **Branch**: `feat/parameter-forward-record`
+- **Description**: Update `Parameter` to require `description` field for self-documenting optimization. Implement `ForwardRecord` dataclass to capture forward pass state (graph, node inputs/outputs, module map) for backward propagation.
+- **Design Docs**:
+  - `optimization.md` → "Core Components" → "Parameter"
+  - `optimization.md` → "Core Components" → "ForwardRecord"
+- **Files**:
+  - `src/inf_engine/parameter.py` (add required description field)
+  - `src/inf_engine/optimization/__init__.py`
+  - `src/inf_engine/optimization/record.py` (ForwardRecord)
+  - `src/inf_engine/execution/executor.py` (update run() to support record=True)
+- **Tests**:
+  - `tests/unit/test_parameter.py` (description required, included in str)
+  - `tests/unit/test_forward_record.py` (creation, fields, from execution)
+  - `tests/unit/test_executor.py` (run with record=True returns ForwardRecord)
+- **CHANGELOG**: "Add required Parameter.description and ForwardRecord for backward pass"
+
+### - [ ] PR-065: Feedback and Loss base types
 - **Branch**: `feat/feedback-loss-types`
-- **Description**: Implement `FeedbackType` enum, `Feedback` dataclass, and abstract `Loss` class
+- **Description**: Implement `FeedbackType` enum, `Feedback` dataclass with `backward()` method (mirrors PyTorch's `loss.backward()`), and abstract `Loss` class that attaches ForwardRecord to Feedback.
 - **Design Docs**:
   - `optimization.md` → "Core Components" → "Feedback"
-  - `optimization.md` → "Core Components" → "Loss Functions"
-  - `development_plan.md` → "7.1.1 Feedback Types", "7.1.2 Loss Functions"
-- **Files**: `src/inf_engine/optimization/feedback.py`, `src/inf_engine/optimization/loss.py`
+  - `optimization.md` → "Loss Functions"
+- **Files**:
+  - `src/inf_engine/optimization/feedback.py`
+  - `src/inf_engine/optimization/loss.py`
 - **Tests**:
-  - `tests/unit/test_feedback.py` (creation, str, with score)
-  - `tests/unit/test_loss.py` (interface validation)
-- **CHANGELOG**: "Add Feedback and Loss types"
+  - `tests/unit/test_feedback.py` (creation, str, score, backward raises without record)
+  - `tests/unit/test_loss.py` (ABC interface, _attach_record helper)
+- **CHANGELOG**: "Add Feedback with backward() method and Loss base class"
 
-### - [ ] PR-065: Loss implementations
+### - [ ] PR-066: Loss implementations
 - **Branch**: `feat/loss-implementations`
-- **Description**: Implement `VerifierLoss` for programmatic evaluation, `LLMJudge` for LLM-based evaluation, and `CompositeLoss` for combining losses
+- **Description**: Implement `VerifierLoss` for programmatic evaluation, `LLMJudge` for LLM-based evaluation, and `CompositeLoss` for weighted multi-objective optimization. All loss functions accept `record=` parameter and attach it to returned Feedback.
 - **Design Docs**:
-  - `optimization.md` → "Core Components" → "Loss Functions" (VerifierLoss, LLMJudge, CompositeLoss)
+  - `optimization.md` → "Loss Functions" (VerifierLoss, LLMJudge, CompositeLoss)
 - **Files**: `src/inf_engine/optimization/loss.py`
 - **Tests**:
-  - `tests/unit/test_loss.py` (pass/fail scenarios, mocked judge responses, aggregation, weighting)
+  - `tests/unit/test_loss.py` (VerifierLoss pass/fail, LLMJudge mocked responses and parsing, CompositeLoss aggregation and weighting, record attachment)
 - **CHANGELOG**: "Add VerifierLoss, LLMJudge, and CompositeLoss"
 
-### - [ ] PR-066: Backward pass
+### - [ ] PR-067: Backward pass infrastructure
 - **Branch**: `feat/backward-pass`
-- **Description**: Implement `BackwardContext`, `BackwardResult`, `InferenceModule.backward()`, `LLMInference.backward()`, and `backward()` function for graph-wide propagation
+- **Description**: Implement `BackwardContext` (with `reason()` method for optimizer-provided LLM), `BackwardResult`, async `InferenceModule.backward()` default implementation, `LLMInference.backward()` that generates parameter feedback using description, and `_propagate_backward()` for graph traversal in reverse topological order.
 - **Design Docs**:
-  - `optimization.md` → "Core Components" → "Backward Context"
+  - `optimization.md` → "Core Components" → "BackwardContext"
   - `optimization.md` → "Module Backward Implementation"
-  - `optimization.md` → "Training Loop" (backward function)
-  - `inference_module.md` → "InferenceModule Base Class" (backward method)
-  - `architecture.md` → "Execution Flow" → "Backward Pass"
-  - `development_plan.md` → "7.1.3 Backward Context", "7.1.6 Backward Function"
+  - `optimization.md` → "Backward Propagation"
 - **Files**:
-  - `src/inf_engine/optimization/backward.py`
-  - `src/inf_engine/module.py`
+  - `src/inf_engine/optimization/backward.py` (BackwardContext, BackwardResult, _propagate_backward)
+  - `src/inf_engine/optimization/feedback.py` (Feedback.backward() implementation)
+  - `src/inf_engine/module.py` (async backward() method)
 - **Tests**:
-  - `tests/unit/test_backward.py` (creation, fields, feedback propagates through graph)
-  - `tests/unit/test_module.py` (default backward behavior)
-  - `tests/unit/test_llm_inference.py` (backward generates feedback)
-- **CHANGELOG**: "Add backward pass with BackwardContext and module backward methods"
+  - `tests/unit/test_backward_context.py` (creation, reason() with/without LLM)
+  - `tests/unit/test_backward.py` (propagation through linear graph, fan-out aggregation)
+  - `tests/unit/test_module.py` (default backward passes feedback to inputs)
+  - `tests/unit/test_llm_inference.py` (backward generates parameter feedback with description)
+- **CHANGELOG**: "Add backward pass with BackwardContext, module backward methods, and graph propagation"
 
-### - [ ] PR-067: Optimizer
+### - [ ] PR-068: Optimizer base and SFAOptimizer
 - **Branch**: `feat/optimizer`
-- **Description**: Implement `Optimizer` with initialization, `accumulate()`, `zero_feedback()`, and `step()` methods
+- **Description**: Implement `Optimizer` ABC following torch.optim pattern: initialized with `module.parameters()`, has `zero_feedback()`, `bind()`, and async `step()`. Internal LLMs use fixed aliases (`optimizer/aggregator`, `optimizer/updater`, `optimizer/reasoning`). Implement `SFAOptimizer` (Stochastic Feedback Ascent) with `conservatism` hyperparameter for incremental updates.
 - **Design Docs**:
   - `optimization.md` → "Optimizer"
-  - `development_plan.md` → "7.1.7 Optimizer"
+  - `optimization.md` → "SFAOptimizer"
 - **Files**: `src/inf_engine/optimization/optimizer.py`
 - **Tests**:
-  - `tests/unit/test_optimizer.py` (init, parameters stored, accumulation, clearing, step updates parameters)
-- **CHANGELOG**: "Add Optimizer with feedback accumulation and step()"
+  - `tests/unit/test_optimizer.py` (init with parameters, zero_feedback clears buffers, bind required before step, step aggregates and updates, conservatism affects prompts)
+- **CHANGELOG**: "Add Optimizer base class and SFAOptimizer with torch.optim-style API"
 
-### - [ ] PR-068: Training utilities and integration tests
+### - [ ] PR-069: Training utilities
 - **Branch**: `feat/training-utilities`
-- **Description**: Implement `train()` function, `eval()` and `train()` modes on InferenceModule, `requires_grad_()` method, and optimization integration tests
+- **Description**: Implement `train()` function with mini-batch support (batch_size parameter), epoch iteration, and shuffle option. Add `TrainingHistory` for tracking losses and parameter snapshots. Add `eval()` and `train()` mode methods to InferenceModule, and `requires_grad_()` for freezing/unfreezing parameters.
 - **Design Docs**:
-  - `optimization.md` → "Training Loop" (train function)
+  - `optimization.md` → "Mini-Batch Training"
   - `optimization.md` → "Complete Example"
-  - `inference_module.md` → "InferenceModule Base Class" (eval/train modes, requires_grad_)
-  - `development_plan.md` → "7.1.8 Training Loop", "7.3 Integration Tests"
 - **Files**:
-  - `src/inf_engine/optimization/train.py`
-  - `src/inf_engine/module.py`
-  - `tests/integration/test_backward_pass.py`
-  - `tests/integration/test_training.py`
+  - `src/inf_engine/optimization/train.py` (train function, TrainingHistory)
+  - `src/inf_engine/module.py` (eval/train modes, requires_grad_)
 - **Tests**:
-  - `tests/unit/test_train.py` (single epoch, multiple epochs)
-  - `tests/unit/test_module.py` (mode switching, propagation to children, freeze/unfreeze, tree propagation)
-  - Integration tests for full backward propagation, parameter updates
-- **CHANGELOG**: "Add train() function, eval/train modes, requires_grad_(), and optimization integration tests"
+  - `tests/unit/test_train.py` (single epoch, multiple epochs, batch accumulation, shuffle)
+  - `tests/unit/test_training_history.py` (record_step, record_epoch, snapshots)
+  - `tests/unit/test_module.py` (eval/train mode switching, requires_grad_ propagation)
+- **CHANGELOG**: "Add train() function with mini-batch support and training mode utilities"
+
+### - [ ] PR-070: Optimization integration tests
+- **Branch**: `feat/optimization-integration-tests`
+- **Description**: Add comprehensive integration tests for the full optimization workflow: forward with recording, loss computation, feedback.backward(), mini-batch accumulation, optimizer.step(), and parameter updates across epochs.
+- **Design Docs**:
+  - `optimization.md` → "Complete Example"
+  - `optimization.md` → "Feedback Accumulation"
+- **Files**:
+  - `tests/integration/test_backward_pass.py` (feedback propagation through complex graphs)
+  - `tests/integration/test_training.py` (full training loop with mocked LLMs)
+  - `tests/integration/test_mini_batch.py` (batch accumulation, fan-out + mini-batch combined)
+- **Tests**:
+  - Linear graph backward propagation
+  - Diamond graph with fan-out feedback aggregation
+  - Mini-batch accumulation across 4-8 samples
+  - Full training loop with parameter updates
+  - Optimizer with different conservatism levels
+- **CHANGELOG**: "Add optimization integration tests"
 
 ---
 
 ## Phase 7: Branching
 
-### - [ ] PR-069: Core branching primitives
+### - [ ] PR-071: Core branching primitives
 - **Branch**: `feat/branching-primitives`
 - **Description**: Implement `ConditionalProxy` with `resolve()` method, `BranchContext` context manager, and `@branch` decorator
 - **Design Docs**:
@@ -903,7 +934,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_branch.py` (context manager behavior, decorator behavior)
 - **CHANGELOG**: "Add ConditionalProxy, BranchContext, and @branch decorator"
 
-### - [ ] PR-070: match_branch function
+### - [ ] PR-072: match_branch function
 - **Branch**: `feat/match-branch`
 - **Description**: Implement `match_branch()` for multi-way conditionals
 - **Design Docs**:
@@ -914,7 +945,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_branch.py` (multiple cases, default)
 - **CHANGELOG**: "Add match_branch() for pattern matching"
 
-### - [ ] PR-071: Graph and tracer branch support
+### - [ ] PR-073: Graph and tracer branch support
 - **Branch**: `feat/graph-tracer-branches`
 - **Description**: Add branch stack and conditional node handling to Tracer, add `branch_condition` and `branch_value` fields to GraphNode
 - **Design Docs**:
@@ -929,7 +960,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_graph.py` (branch fields)
 - **CHANGELOG**: "Add branch support to Tracer and GraphNode"
 
-### - [ ] PR-072: Branch execution and integration tests
+### - [ ] PR-074: Branch execution and integration tests
 - **Branch**: `feat/branch-execution`
 - **Description**: Update Executor to evaluate conditions and select branch at runtime, add integration tests for conditional execution
 - **Design Docs**:
@@ -947,7 +978,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 
 ## Post-Implementation
 
-### - [ ] PR-073: Public API exports
+### - [ ] PR-075: Public API exports
 - **Branch**: `feat/public-api`
 - **Description**: Finalize `__init__.py` exports for clean public API
 - **Design Docs**:
@@ -957,7 +988,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 - **Tests**: Import tests for all public symbols
 - **CHANGELOG**: "Finalize public API"
 
-### - [ ] PR-074: End-to-end example
+### - [ ] PR-076: End-to-end example
 - **Branch**: `feat/e2e-example`
 - **Description**: Add complete example in `examples/` directory
 - **Design Docs**:
@@ -968,7 +999,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 - **Tests**: Example runs successfully
 - **CHANGELOG**: "Add getting started example"
 
-### - [ ] PR-075: Documentation
+### - [ ] PR-077: Documentation
 - **Branch**: `docs/api-documentation`
 - **Description**: Add API documentation and usage guide
 - **Design Docs**:
@@ -990,10 +1021,10 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 | Resources | 12 | PR-037 to PR-048 |
 | Production | 13 | PR-050 to PR-062 |
 | Profiling | 1 | PR-063 |
-| Optimization | 5 | PR-064 to PR-068 |
-| Branching | 4 | PR-069 to PR-072 |
-| Post-Implementation | 3 | PR-073 to PR-075 |
-| **Total** | **74** | |
+| Optimization | 7 | PR-064 to PR-070 |
+| Branching | 4 | PR-071 to PR-074 |
+| Post-Implementation | 3 | PR-075 to PR-077 |
+| **Total** | **76** | |
 
 ---
 
