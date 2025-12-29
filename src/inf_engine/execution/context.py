@@ -101,6 +101,16 @@ class ExecutionSettings:
             Receives the node_id and TaskResult.
         on_task_failed: Optional callback invoked when a task fails.
             Receives the node_id and the exception.
+        task_timeout: Maximum seconds for a single task (LLM call) before
+            timeout. When set, tasks exceeding this duration raise TimeoutError
+            and dependent nodes are cancelled. None means no timeout (default).
+            Recommended: 60-300 seconds depending on model and prompt length.
+        max_task_retries: Maximum retry attempts for transient failures.
+            Retries apply to TransientError, not to permanent errors (4xx)
+            or rate limits (handled separately). Default 0 means no retries.
+        task_retry_delay: Base delay in seconds between retry attempts. Uses
+            exponential backoff: delay doubles each retry. E.g., with delay=1.0,
+            retries occur at 1s, 2s, 4s, etc. Defaults to 1.0.
         streaming: When True, batch calls return an async iterator yielding
             BatchResult objects as they complete. When False (default),
             batch calls return a list of all results.
@@ -161,6 +171,11 @@ class ExecutionSettings:
     scheduler: Scheduler | None = None
     on_task_complete: Callable[[str, TaskResult], None] | None = None
     on_task_failed: Callable[[str, Exception], None] | None = None
+
+    # Timeout and retry configuration
+    task_timeout: float | None = None
+    max_task_retries: int = 0
+    task_retry_delay: float = 1.0
 
     # Streaming and progress configuration
     streaming: bool = False
@@ -285,6 +300,32 @@ class ExecutionSettings:
             The on_progress callback, or None if not set.
         """
         return self._get_effective_value("on_progress")
+
+    def get_task_timeout(self) -> float | None:
+        """Get the effective task_timeout setting.
+
+        Checks this context and parent contexts for the timeout value.
+
+        Returns:
+            The task timeout in seconds, or None if no timeout.
+        """
+        return self._get_effective_value("task_timeout")
+
+    def get_max_task_retries(self) -> int:
+        """Get the effective max_task_retries setting.
+
+        Returns:
+            The maximum number of retry attempts for transient failures.
+        """
+        return self.max_task_retries
+
+    def get_task_retry_delay(self) -> float:
+        """Get the effective task_retry_delay setting.
+
+        Returns:
+            The base delay in seconds between retry attempts.
+        """
+        return self.task_retry_delay
 
     def _enter(self) -> Self:
         """Common entry logic for both sync and async context managers.

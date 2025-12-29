@@ -34,7 +34,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol
 
-from inf_engine.errors import RateLimitError
+from inf_engine.errors import RateLimitError, TransientError
 from inf_engine.tracing.tracer import InputNode
 from inf_engine.types import LLMRequest
 
@@ -116,11 +116,17 @@ class Scheduler:
 
     resource_manager: ResourceManagerProtocol | None
     max_concurrent: int
+    task_timeout: float | None
+    max_task_retries: int
+    task_retry_delay: float
 
     def __init__(
         self,
         resource_manager: ResourceManagerProtocol | None = None,
         max_concurrent: int = 100,
+        task_timeout: float | None = None,
+        max_task_retries: int = 0,
+        task_retry_delay: float = 1.0,
     ) -> None:
         """Initialize the scheduler with optional resource manager and concurrency limit.
 
@@ -136,6 +142,15 @@ class Scheduler:
                 When None, LLM modules will raise an error during execution.
             max_concurrent: Maximum number of tasks that can execute
                 simultaneously. Must be positive. Defaults to 100.
+            task_timeout: Maximum seconds for a single task before timeout.
+                When set, tasks exceeding this duration raise TimeoutError.
+                None means no timeout (default).
+            max_task_retries: Maximum retry attempts for TransientError.
+                Default 0 means no retries. Does not apply to rate limits
+                (which use requeue) or permanent errors.
+            task_retry_delay: Base delay in seconds between retry attempts.
+                Uses exponential backoff: delay doubles each retry.
+                Defaults to 1.0 second.
 
         Raises:
             ValueError: If max_concurrent is less than 1.
@@ -148,12 +163,19 @@ class Scheduler:
             >>> scheduler = Scheduler(max_concurrent=20)
             >>> scheduler.max_concurrent
             20
+            >>>
+            >>> scheduler = Scheduler(task_timeout=60.0, max_task_retries=3)
+            >>> scheduler.task_timeout
+            60.0
         """
         if max_concurrent < 1:
             raise ValueError("max_concurrent must be at least 1")
 
         self.resource_manager = resource_manager
         self.max_concurrent = max_concurrent
+        self.task_timeout = task_timeout
+        self.max_task_retries = max_task_retries
+        self.task_retry_delay = task_retry_delay
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._active_count = 0
 
@@ -351,6 +373,13 @@ class Scheduler:
         Runs the task's module with its resolved arguments, records the result
         or error in the ExecutionState, and invokes any callbacks.
 
+        Handles timeouts, transient error retries, and rate limits:
+        - TimeoutError: Task is marked as failed
+        - RateLimitError: Task is requeued with rate limiter backoff
+        - TransientError: Task is retried up to max_task_retries times
+          with exponential backoff
+        - Other exceptions: Task is marked as failed
+
         Args:
             state: The ExecutionState to update with results.
             task: The Task to execute.
@@ -363,20 +392,15 @@ class Scheduler:
             stored value) and regular module tasks (which call forward()).
             The semaphore slot is always released, even if the task fails.
         """
-        from inf_engine.module import LLMInference
-
         start_time = time.time()
 
         try:
-            # Handle input nodes specially - just return their stored value
-            if isinstance(task.module, InputNode):
-                result = task.module.value
-            elif isinstance(task.module, LLMInference):
-                # Execute LLM modules through ResourceManager
-                result = await self._execute_llm(task.module, task.args, task.kwargs)
+            # Execute with optional timeout
+            if self.task_timeout is not None:
+                async with asyncio.timeout(self.task_timeout):
+                    result = await self._run_task_inner(task)
             else:
-                # Execute non-LLM modules directly
-                result = await self._direct_execute(task)
+                result = await self._run_task_inner(task)
 
             # Calculate duration and create result
             duration_ms = (time.time() - start_time) * 1000
@@ -394,10 +418,32 @@ class Scheduler:
             if on_complete:
                 on_complete(task.node_id, task_result)
 
+        except TimeoutError:
+            # Task timed out - mark as failed with descriptive error
+            timeout_error = TimeoutError(
+                f"Task '{task.node_id}' timed out after {self.task_timeout}s"
+            )
+            state.mark_failed(task.node_id, timeout_error)
+            if on_error:
+                on_error(task.node_id, timeout_error)
+
         except RateLimitError as e:
             # Rate limit hit - trigger backoff and requeue
             self._handle_rate_limit(task, e)
             state.requeue(task.node_id)
+
+        except TransientError as e:
+            # Transient error - retry with exponential backoff if retries remain
+            if task.retry_count < self.max_task_retries:
+                # Calculate delay with exponential backoff
+                delay = self.task_retry_delay * (2**task.retry_count)
+                await asyncio.sleep(delay)
+                state.requeue(task.node_id)
+            else:
+                # Max retries exhausted - mark as failed
+                state.mark_failed(task.node_id, e)
+                if on_error:
+                    on_error(task.node_id, e)
 
         except Exception as e:
             # Task failed - mark failed and invoke callback
@@ -408,6 +454,29 @@ class Scheduler:
         finally:
             # Always release the semaphore slot
             self.release()
+
+    async def _run_task_inner(self, task: Task) -> Any:
+        """Execute the actual task logic.
+
+        Separated from _execute_task to allow timeout wrapping.
+
+        Args:
+            task: The Task to execute.
+
+        Returns:
+            The result of the task execution.
+        """
+        from inf_engine.module import LLMInference
+
+        # Handle input nodes specially - just return their stored value
+        if isinstance(task.module, InputNode):
+            return task.module.value
+        elif isinstance(task.module, LLMInference):
+            # Execute LLM modules through ResourceManager
+            return await self._execute_llm(task.module, task.args, task.kwargs)
+        else:
+            # Execute non-LLM modules directly
+            return await self._direct_execute(task)
 
     def _handle_rate_limit(self, task: Task, error: RateLimitError) -> None:
         """Handle a rate limit error by triggering backoff on the rate limiter.

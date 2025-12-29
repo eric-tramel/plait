@@ -167,6 +167,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integrate `ResourceMetrics` with `ResourceManager`
   - `metrics` attribute automatically created during initialization
   - `get_stats()` method returns availability and metrics for all endpoints
+- Add task timeout and retry handling with TransientError
+  - `TransientError` for retryable failures (connection timeouts, server errors)
+  - `ExecutionSettings.task_timeout` sets maximum seconds per task
+  - `ExecutionSettings.max_task_retries` controls retry attempts for transient failures
+  - `ExecutionSettings.task_retry_delay` sets base delay with exponential backoff
+  - Scheduler uses `asyncio.timeout()` for task timeout enforcement
+  - Timed-out tasks are marked as failed with descriptive error message
+  - TransientError triggers automatic retry with exponential backoff (delay doubles each retry)
+  - Getter methods on ExecutionSettings: `get_task_timeout()`, `get_max_task_retries()`, `get_task_retry_delay()`
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

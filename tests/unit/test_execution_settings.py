@@ -38,6 +38,9 @@ class TestExecutionSettingsCreation:
         assert settings.scheduler is None
         assert settings.on_task_complete is None
         assert settings.on_task_failed is None
+        assert settings.task_timeout is None
+        assert settings.max_task_retries == 0
+        assert settings.task_retry_delay == 1.0
         assert settings.streaming is False
         assert settings.preserve_order is False
         assert settings.on_progress is None
@@ -65,6 +68,9 @@ class TestExecutionSettingsCreation:
             scheduler=None,  # Would normally be a Scheduler
             on_task_complete=on_complete,
             on_task_failed=on_failed,
+            task_timeout=120.0,
+            max_task_retries=3,
+            task_retry_delay=2.0,
             streaming=True,
             preserve_order=True,
             on_progress=on_progress,
@@ -78,6 +84,9 @@ class TestExecutionSettingsCreation:
         assert settings.max_concurrent == 50
         assert settings.on_task_complete is on_complete
         assert settings.on_task_failed is on_failed
+        assert settings.task_timeout == 120.0
+        assert settings.max_task_retries == 3
+        assert settings.task_retry_delay == 2.0
         assert settings.streaming is True
         assert settings.preserve_order is True
         assert settings.on_progress is on_progress
@@ -631,6 +640,114 @@ class TestRepr:
         assert "_token" not in repr_str
         assert "_checkpoint_manager" not in repr_str
         assert "_parent" not in repr_str
+
+
+class TestTimeoutRetryConfiguration:
+    """Tests for timeout and retry configuration."""
+
+    def test_task_timeout_default_none(self) -> None:
+        """task_timeout defaults to None."""
+        settings = ExecutionSettings()
+        assert settings.task_timeout is None
+
+    def test_task_timeout_can_be_set(self) -> None:
+        """task_timeout can be set to a float."""
+        settings = ExecutionSettings(task_timeout=60.0)
+        assert settings.task_timeout == 60.0
+
+    def test_max_task_retries_default_zero(self) -> None:
+        """max_task_retries defaults to 0."""
+        settings = ExecutionSettings()
+        assert settings.max_task_retries == 0
+
+    def test_max_task_retries_can_be_set(self) -> None:
+        """max_task_retries can be set."""
+        settings = ExecutionSettings(max_task_retries=3)
+        assert settings.max_task_retries == 3
+
+    def test_task_retry_delay_default_one(self) -> None:
+        """task_retry_delay defaults to 1.0."""
+        settings = ExecutionSettings()
+        assert settings.task_retry_delay == 1.0
+
+    def test_task_retry_delay_can_be_set(self) -> None:
+        """task_retry_delay can be set."""
+        settings = ExecutionSettings(task_retry_delay=2.5)
+        assert settings.task_retry_delay == 2.5
+
+    def test_all_timeout_retry_settings(self) -> None:
+        """All timeout/retry settings can be set together."""
+        settings = ExecutionSettings(
+            task_timeout=120.0,
+            max_task_retries=5,
+            task_retry_delay=0.5,
+        )
+        assert settings.task_timeout == 120.0
+        assert settings.max_task_retries == 5
+        assert settings.task_retry_delay == 0.5
+
+    def test_get_task_timeout(self) -> None:
+        """get_task_timeout returns the timeout value."""
+        settings = ExecutionSettings(task_timeout=30.0)
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_task_timeout() == 30.0
+
+    def test_get_task_timeout_none(self) -> None:
+        """get_task_timeout returns None when not set."""
+        settings = ExecutionSettings()
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_task_timeout() is None
+
+    def test_get_task_timeout_inherits_from_parent(self) -> None:
+        """get_task_timeout inherits from parent context."""
+        outer = ExecutionSettings(task_timeout=60.0)
+        inner = ExecutionSettings(max_task_retries=3)  # No timeout
+
+        with outer:
+            with inner:
+                current = get_execution_settings()
+                assert current is not None
+                # Inner inherits outer's timeout
+                assert current.get_task_timeout() == 60.0
+
+    def test_get_task_timeout_override(self) -> None:
+        """Inner task_timeout overrides outer."""
+        outer = ExecutionSettings(task_timeout=60.0)
+        inner = ExecutionSettings(task_timeout=30.0)
+
+        with outer:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_task_timeout() == 60.0
+
+            with inner:
+                current = get_execution_settings()
+                assert current is not None
+                assert current.get_task_timeout() == 30.0
+
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_task_timeout() == 60.0
+
+    def test_get_max_task_retries(self) -> None:
+        """get_max_task_retries returns the retries value."""
+        settings = ExecutionSettings(max_task_retries=5)
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_max_task_retries() == 5
+
+    def test_get_task_retry_delay(self) -> None:
+        """get_task_retry_delay returns the delay value."""
+        settings = ExecutionSettings(task_retry_delay=2.0)
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_task_retry_delay() == 2.0
 
 
 class TestStreamingConfiguration:

@@ -6,7 +6,12 @@ proper error handling and recovery capabilities.
 
 import pytest
 
-from inf_engine.errors import ExecutionError, InfEngineError, RateLimitError
+from inf_engine.errors import (
+    ExecutionError,
+    InfEngineError,
+    RateLimitError,
+    TransientError,
+)
 
 
 class TestInfEngineError:
@@ -68,6 +73,57 @@ class TestRateLimitError:
         assert error.retry_after == 1.5
 
 
+class TestTransientError:
+    """Tests for TransientError."""
+
+    def test_creation(self) -> None:
+        """TransientError can be created with a message."""
+        error = TransientError("Connection timeout")
+        assert str(error) == "Connection timeout"
+        assert error.message == "Connection timeout"
+
+    def test_inheritance_from_inf_engine_error(self) -> None:
+        """TransientError inherits from InfEngineError."""
+        error = TransientError("timeout")
+        assert isinstance(error, InfEngineError)
+        assert isinstance(error, Exception)
+
+    def test_can_catch_as_inf_engine_error(self) -> None:
+        """TransientError can be caught as InfEngineError."""
+        with pytest.raises(InfEngineError):
+            raise TransientError("connection failed")
+
+    def test_not_rate_limit_error(self) -> None:
+        """TransientError is not a RateLimitError."""
+        error = TransientError("timeout")
+        assert not isinstance(error, RateLimitError)
+
+    def test_not_execution_error(self) -> None:
+        """TransientError is not an ExecutionError."""
+        error = TransientError("timeout")
+        assert not isinstance(error, ExecutionError)
+
+    def test_can_be_raised_and_caught_specifically(self) -> None:
+        """TransientError can be raised and caught specifically."""
+        with pytest.raises(TransientError) as exc_info:
+            raise TransientError("server error 503")
+        assert "503" in str(exc_info.value)
+
+    def test_used_for_retryable_errors(self) -> None:
+        """TransientError is appropriate for retryable failure scenarios."""
+        # Connection timeout
+        error1 = TransientError("Connection timed out after 30s")
+        assert "timed out" in str(error1)
+
+        # Server error
+        error2 = TransientError("Server returned 503 Service Unavailable")
+        assert "503" in str(error2)
+
+        # DNS resolution failure
+        error3 = TransientError("DNS resolution failed for api.example.com")
+        assert "DNS" in str(error3)
+
+
 class TestExecutionError:
     """Tests for ExecutionError."""
 
@@ -125,6 +181,7 @@ class TestErrorHierarchy:
         errors = [
             InfEngineError("base error"),
             RateLimitError("rate limit", retry_after=10.0),
+            TransientError("transient failure"),
             ExecutionError("execution failed", node_id="n1"),
         ]
 
@@ -135,12 +192,22 @@ class TestErrorHierarchy:
     def test_specific_error_types_are_distinct(self) -> None:
         """Different error types can be distinguished."""
         rate_error = RateLimitError("rate limit")
+        transient_error = TransientError("transient")
         exec_error = ExecutionError("exec failed")
 
-        # RateLimitError is not ExecutionError
+        # RateLimitError is not ExecutionError or TransientError
         assert not isinstance(rate_error, ExecutionError)
-        # ExecutionError is not RateLimitError
+        assert not isinstance(rate_error, TransientError)
+
+        # TransientError is not RateLimitError or ExecutionError
+        assert not isinstance(transient_error, RateLimitError)
+        assert not isinstance(transient_error, ExecutionError)
+
+        # ExecutionError is not RateLimitError or TransientError
         assert not isinstance(exec_error, RateLimitError)
-        # Both are InfEngineError
+        assert not isinstance(exec_error, TransientError)
+
+        # All are InfEngineError
         assert isinstance(rate_error, InfEngineError)
+        assert isinstance(transient_error, InfEngineError)
         assert isinstance(exec_error, InfEngineError)

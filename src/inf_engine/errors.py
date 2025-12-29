@@ -8,6 +8,7 @@ to be caught individually.
 Exception Hierarchy:
     InfEngineError (base)
     ├── RateLimitError - API rate limiting and backpressure
+    ├── TransientError - Temporary failures that may succeed on retry
     └── ExecutionError - Task execution failures
 
 Example:
@@ -93,6 +94,40 @@ class RateLimitError(InfEngineError):
         """
         super().__init__(message)
         self.retry_after = retry_after
+
+
+class TransientError(InfEngineError):
+    """Error for transient failures that may succeed on retry.
+
+    Raised for connection errors, server errors (5xx), and other temporary
+    failures that may resolve on retry. The scheduler will automatically
+    retry these errors if max_task_retries > 0.
+
+    Unlike RateLimitError (which triggers backoff on the rate limiter),
+    TransientError uses the configured retry delay with exponential backoff.
+
+    Args:
+        message: A human-readable description of the transient failure.
+
+    Example:
+        >>> error = TransientError("Connection timeout to API server")
+        >>> str(error)
+        'Connection timeout to API server'
+
+        >>> # Distinguishing from other error types
+        >>> isinstance(TransientError("timeout"), RateLimitError)
+        False
+        >>> isinstance(TransientError("timeout"), InfEngineError)
+        True
+    """
+
+    def __init__(self, message: str) -> None:
+        """Initialize the transient error.
+
+        Args:
+            message: A human-readable description of the transient failure.
+        """
+        super().__init__(message)
 
 
 class ExecutionError(InfEngineError):

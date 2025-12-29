@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from inf_engine.clients.base import LLMClient
-from inf_engine.errors import RateLimitError
+from inf_engine.errors import RateLimitError, TransientError
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState, TaskStatus
 from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
@@ -1930,3 +1930,517 @@ class TestSchedulerRateLimitHandling:
         # Task should complete successfully
         assert state.status["llm_1"] == TaskStatus.COMPLETED
         assert mock_client.call_count == 4  # 3 failures + 1 success
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler Timeout Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TimeoutModule(InferenceModule):
+    """A module that takes longer than the timeout."""
+
+    async def forward(self, x: str) -> str:
+        """Sleep for a long time."""
+        await asyncio.sleep(10.0)  # Will be cancelled by timeout
+        return f"{x}_done"
+
+
+class TestSchedulerTimeout:
+    """Tests for Scheduler task timeout handling."""
+
+    def test_init_with_timeout(self) -> None:
+        """Scheduler accepts task_timeout parameter."""
+        scheduler = Scheduler(task_timeout=60.0)
+        assert scheduler.task_timeout == 60.0
+
+    def test_init_without_timeout(self) -> None:
+        """Scheduler defaults to no timeout."""
+        scheduler = Scheduler()
+        assert scheduler.task_timeout is None
+
+    @pytest.mark.asyncio
+    async def test_timeout_triggers_failure(self) -> None:
+        """Task exceeding timeout is marked as failed."""
+        scheduler = Scheduler(max_concurrent=10, task_timeout=0.01)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        slow_node = GraphNode(
+            id="slow_1",
+            module=TimeoutModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "slow_1": slow_node},
+            input_ids=["input:input_0"],
+            output_ids=["slow_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        assert state.status["slow_1"] == TaskStatus.FAILED
+        assert "slow_1" in state.errors
+        assert isinstance(state.errors["slow_1"], TimeoutError)
+        assert "timed out" in str(state.errors["slow_1"])
+
+    @pytest.mark.asyncio
+    async def test_timeout_invokes_on_error_callback(self) -> None:
+        """Timeout invokes on_error callback."""
+        scheduler = Scheduler(max_concurrent=10, task_timeout=0.01)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        slow_node = GraphNode(
+            id="slow_1",
+            module=TimeoutModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "slow_1": slow_node},
+            input_ids=["input:input_0"],
+            output_ids=["slow_1"],
+        )
+        state = ExecutionState(graph)
+
+        errors: list[tuple[str, Exception]] = []
+
+        def on_error(node_id: str, error: Exception) -> None:
+            errors.append((node_id, error))
+
+        await scheduler.execute(state, on_error=on_error)
+
+        assert len(errors) == 1
+        assert errors[0][0] == "slow_1"
+        assert isinstance(errors[0][1], TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_timeout_cancels_dependents(self) -> None:
+        """Timeout causes dependent tasks to be cancelled."""
+        scheduler = Scheduler(max_concurrent=10, task_timeout=0.01)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        slow_node = GraphNode(
+            id="slow_1",
+            module=TimeoutModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        dependent_node = GraphNode(
+            id="dependent_2",
+            module=SimpleModule(),
+            args=(NodeRef("slow_1"),),
+            kwargs={},
+            dependencies=["slow_1"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "slow_1": slow_node,
+                "dependent_2": dependent_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["dependent_2"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        assert state.status["slow_1"] == TaskStatus.FAILED
+        assert state.status["dependent_2"] == TaskStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_no_timeout_allows_slow_tasks(self) -> None:
+        """Without timeout, slow tasks complete normally."""
+
+        class SlowerModule(InferenceModule):
+            async def forward(self, x: str) -> str:
+                await asyncio.sleep(0.05)
+                return f"{x}_slow"
+
+        scheduler = Scheduler(max_concurrent=10)  # No timeout
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        slow_node = GraphNode(
+            id="slow_1",
+            module=SlowerModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "slow_1": slow_node},
+            input_ids=["input:input_0"],
+            output_ids=["slow_1"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert state.status["slow_1"] == TaskStatus.COMPLETED
+        assert outputs == {"slow_1": "test_slow"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler TransientError Retry Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TransientFailingModule(InferenceModule):
+    """A module that raises TransientError a configurable number of times."""
+
+    def __init__(self, fail_count: int = 1) -> None:
+        super().__init__()
+        self.fail_count = fail_count
+        self.call_count = 0
+
+    async def forward(self, x: str) -> str:
+        """Raise TransientError for first fail_count calls, then succeed."""
+        self.call_count += 1
+        if self.call_count <= self.fail_count:
+            raise TransientError(f"Transient failure (attempt {self.call_count})")
+        return f"{x}_success"
+
+
+class TestSchedulerTransientRetry:
+    """Tests for Scheduler TransientError retry handling."""
+
+    def test_init_with_retry_settings(self) -> None:
+        """Scheduler accepts retry parameters."""
+        scheduler = Scheduler(max_task_retries=3, task_retry_delay=2.0)
+        assert scheduler.max_task_retries == 3
+        assert scheduler.task_retry_delay == 2.0
+
+    def test_init_retry_defaults(self) -> None:
+        """Scheduler defaults to no retries."""
+        scheduler = Scheduler()
+        assert scheduler.max_task_retries == 0
+        assert scheduler.task_retry_delay == 1.0
+
+    @pytest.mark.asyncio
+    async def test_transient_error_retries_and_succeeds(self) -> None:
+        """TransientError triggers retry and eventually succeeds."""
+        module = TransientFailingModule(fail_count=2)
+        scheduler = Scheduler(
+            max_concurrent=10, max_task_retries=3, task_retry_delay=0.001
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=module,
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert state.status["failing_1"] == TaskStatus.COMPLETED
+        assert outputs == {"failing_1": "test_success"}
+        # Module was called 3 times: 2 failures + 1 success
+        assert module.call_count == 3
+        # Retry count in result should be 2 (two retries before success)
+        assert state.results["failing_1"].retry_count == 2
+
+    @pytest.mark.asyncio
+    async def test_transient_error_exhausts_retries(self) -> None:
+        """TransientError fails after max retries exhausted."""
+        module = TransientFailingModule(fail_count=5)  # More failures than retries
+        scheduler = Scheduler(
+            max_concurrent=10, max_task_retries=2, task_retry_delay=0.001
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=module,
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        assert state.status["failing_1"] == TaskStatus.FAILED
+        assert "failing_1" in state.errors
+        assert isinstance(state.errors["failing_1"], TransientError)
+        # Module was called 3 times: initial + 2 retries
+        assert module.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_transient_error_invokes_on_error_after_exhausted(self) -> None:
+        """TransientError invokes on_error only after retries exhausted."""
+        module = TransientFailingModule(fail_count=5)
+        scheduler = Scheduler(
+            max_concurrent=10, max_task_retries=1, task_retry_delay=0.001
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=module,
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+
+        errors: list[tuple[str, Exception]] = []
+
+        def on_error(node_id: str, error: Exception) -> None:
+            errors.append((node_id, error))
+
+        await scheduler.execute(state, on_error=on_error)
+
+        # Only one error (after retries exhausted)
+        assert len(errors) == 1
+        assert errors[0][0] == "failing_1"
+        assert isinstance(errors[0][1], TransientError)
+
+    @pytest.mark.asyncio
+    async def test_transient_error_no_retry_when_zero_retries(self) -> None:
+        """TransientError fails immediately when max_task_retries=0."""
+        module = TransientFailingModule(fail_count=1)
+        scheduler = Scheduler(max_concurrent=10, max_task_retries=0)  # No retries
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=module,
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        assert state.status["failing_1"] == TaskStatus.FAILED
+        # Module was called only once (no retries)
+        assert module.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_transient_error_exponential_backoff(self) -> None:
+        """TransientError uses exponential backoff between retries."""
+        import time
+
+        module = TransientFailingModule(fail_count=2)
+        scheduler = Scheduler(
+            max_concurrent=10,
+            max_task_retries=3,
+            task_retry_delay=0.01,  # 10ms base delay
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=module,
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "failing_1": failing_node},
+            input_ids=["input:input_0"],
+            output_ids=["failing_1"],
+        )
+        state = ExecutionState(graph)
+
+        start_time = time.perf_counter()
+        await scheduler.execute(state)
+        elapsed = time.perf_counter() - start_time
+
+        assert state.status["failing_1"] == TaskStatus.COMPLETED
+        # Total delay should be at least 10ms (retry 1) + 20ms (retry 2) = 30ms
+        # Allow some slack for timing
+        assert elapsed >= 0.025, f"Expected at least 25ms delay, got {elapsed * 1000}ms"
+
+    @pytest.mark.asyncio
+    async def test_transient_error_cancels_dependents_on_failure(self) -> None:
+        """TransientError cancels dependents when retries exhausted."""
+        module = TransientFailingModule(fail_count=5)
+        scheduler = Scheduler(
+            max_concurrent=10, max_task_retries=1, task_retry_delay=0.001
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="test"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        failing_node = GraphNode(
+            id="failing_1",
+            module=module,
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        dependent_node = GraphNode(
+            id="dependent_2",
+            module=SimpleModule(),
+            args=(NodeRef("failing_1"),),
+            kwargs={},
+            dependencies=["failing_1"],
+        )
+        graph = InferenceGraph(
+            nodes={
+                "input:input_0": input_node,
+                "failing_1": failing_node,
+                "dependent_2": dependent_node,
+            },
+            input_ids=["input:input_0"],
+            output_ids=["dependent_2"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        assert state.status["failing_1"] == TaskStatus.FAILED
+        assert state.status["dependent_2"] == TaskStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_transient_error_with_llm_module(self) -> None:
+        """TransientError from LLM client triggers retry."""
+
+        class TransientLLMClient(LLMClient):
+            """A mock LLM client that raises TransientError."""
+
+            def __init__(self, fail_count: int = 1) -> None:
+                self.fail_count = fail_count
+                self.call_count = 0
+
+            async def complete(self, request: LLMRequest) -> LLMResponse:
+                self.call_count += 1
+                if self.call_count <= self.fail_count:
+                    raise TransientError(
+                        f"Connection failed (attempt {self.call_count})"
+                    )
+                return LLMResponse(
+                    content="success",
+                    input_tokens=10,
+                    output_tokens=5,
+                    finish_reason="stop",
+                    model="mock-model",
+                )
+
+        from inf_engine.module import LLMInference
+
+        mock_client = TransientLLMClient(fail_count=1)
+        mock_manager = MockResourceManager(clients={"fast": mock_client})
+        scheduler = Scheduler(
+            resource_manager=mock_manager,
+            max_concurrent=10,
+            max_task_retries=3,
+            task_retry_delay=0.001,
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        outputs = await scheduler.execute(state)
+
+        assert state.status["llm_1"] == TaskStatus.COMPLETED
+        assert outputs == {"llm_1": "success"}
+        # Client was called twice: 1 failure + 1 success
+        assert mock_client.call_count == 2
