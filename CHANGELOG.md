@@ -139,6 +139,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Blocks until execution completes and returns the result
   - Supports both single and batch inputs
   - Raises `RuntimeError` if called from async context or without bound resources
+- Add streaming execution with BatchResult, progress tracking, and cancellation
+  - New `BatchResult` type wraps streaming results with index, input, output, and error fields
+  - `BatchResult.ok` property for easy success/failure checking
+  - `ExecutionSettings.streaming=True` enables async iteration over batch results
+  - `ExecutionSettings.preserve_order` controls result ordering (completion vs input order)
+  - `ExecutionSettings.on_progress` callback tracks batch progress (completed, total)
+  - `InferenceModule._stream_batch()` method for internal streaming implementation
+  - Cancellation support: breaking from streaming loop cancels all pending tasks
+  - Progress callbacks work in both streaming and non-streaming batch modes
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

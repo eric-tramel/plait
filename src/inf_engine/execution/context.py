@@ -22,6 +22,22 @@ Example:
     ...     with ExecutionSettings(max_concurrent=10):
     ...         result2 = await pipeline(input2)  # Uses max_concurrent=10
     ...     result3 = await pipeline(input3)  # Back to max_concurrent=100
+
+Example with streaming:
+    >>> # Stream results as they complete (out of order)
+    >>> async with ExecutionSettings(resources=config, streaming=True):
+    ...     async for result in pipeline(["doc1", "doc2", "doc3"]):
+    ...         if result.ok:
+    ...             print(f"Input {result.index}: {result.output}")
+    ...         else:
+    ...             print(f"Input {result.index} failed: {result.error}")
+
+Example with progress tracking:
+    >>> def on_progress(done: int, total: int) -> None:
+    ...     print(f"Progress: {done}/{total}")
+    >>>
+    >>> with ExecutionSettings(resources=config, on_progress=on_progress):
+    ...     results = pipeline.run_sync(documents)
 """
 
 from __future__ import annotations
@@ -85,8 +101,18 @@ class ExecutionSettings:
             Receives the node_id and TaskResult.
         on_task_failed: Optional callback invoked when a task fails.
             Receives the node_id and the exception.
+        streaming: When True, batch calls return an async iterator yielding
+            BatchResult objects as they complete. When False (default),
+            batch calls return a list of all results.
+        preserve_order: When True, streaming results are yielded in input
+            order (may wait on slower items). When False (default), results
+            yield as soon as they complete for maximum throughput.
+            Only applies when streaming=True.
+        on_progress: Optional callback for batch progress updates. Called
+            with (completed_count, total_count) after each input completes.
+            Works with both streaming and non-streaming batch execution.
         profile: Whether to enable profiling. Defaults to False.
-            Note: Profiling is not yet implemented (see PR-067).
+            Note: Profiling is not yet implemented (see PR-063).
         profile_path: Path for saving profile traces. Defaults to auto-generated.
         profile_counters: Whether to include counter events. Defaults to True.
         profile_include_args: Whether to include args in trace. Defaults to True.
@@ -108,6 +134,21 @@ class ExecutionSettings:
         >>> with ExecutionSettings(on_task_complete=on_complete):
         ...     result = await pipeline(input)
 
+    Example with streaming:
+        >>> async with ExecutionSettings(resources=config, streaming=True):
+        ...     async for result in pipeline(["doc1", "doc2"]):
+        ...         if result.ok:
+        ...             await send_to_client(result.output)
+        ...         else:
+        ...             logger.error(f"Input {result.index} failed")
+
+    Example with progress tracking:
+        >>> def on_progress(done: int, total: int) -> None:
+        ...     print(f"Progress: {done}/{total}")
+        >>>
+        >>> with ExecutionSettings(resources=config, on_progress=on_progress):
+        ...     results = pipeline.run_sync(documents)
+
     Note:
         ExecutionSettings supports both sync and async context managers.
         Use `with` for synchronous code and `async with` for async code.
@@ -121,7 +162,12 @@ class ExecutionSettings:
     on_task_complete: Callable[[str, TaskResult], None] | None = None
     on_task_failed: Callable[[str, Exception], None] | None = None
 
-    # Profiling configuration (reserved for PR-067)
+    # Streaming and progress configuration
+    streaming: bool = False
+    preserve_order: bool = False
+    on_progress: Callable[[int, int], None] | None = None
+
+    # Profiling configuration (reserved for PR-063)
     profile: bool = False
     profile_path: Path | str | None = None
     profile_counters: bool = True
@@ -213,6 +259,32 @@ class ExecutionSettings:
         if self._parent is not None:
             return self._parent.get_checkpoint_manager()
         return None
+
+    def get_streaming(self) -> bool:
+        """Get the effective streaming setting.
+
+        Returns:
+            True if streaming mode is enabled, False otherwise.
+        """
+        return self.streaming
+
+    def get_preserve_order(self) -> bool:
+        """Get the effective preserve_order setting.
+
+        Returns:
+            True if results should be yielded in input order, False otherwise.
+        """
+        return self.preserve_order
+
+    def get_on_progress(self) -> Callable[[int, int], None] | None:
+        """Get the effective on_progress callback.
+
+        Checks this context and parent contexts for the callback.
+
+        Returns:
+            The on_progress callback, or None if not set.
+        """
+        return self._get_effective_value("on_progress")
 
     def _enter(self) -> Self:
         """Common entry logic for both sync and async context managers.

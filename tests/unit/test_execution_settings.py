@@ -38,6 +38,9 @@ class TestExecutionSettingsCreation:
         assert settings.scheduler is None
         assert settings.on_task_complete is None
         assert settings.on_task_failed is None
+        assert settings.streaming is False
+        assert settings.preserve_order is False
+        assert settings.on_progress is None
         assert settings.profile is False
         assert settings.profile_path is None
         assert settings.profile_counters is True
@@ -52,6 +55,9 @@ class TestExecutionSettingsCreation:
         def on_failed(node_id: str, error: Exception) -> None:
             pass
 
+        def on_progress(done: int, total: int) -> None:
+            pass
+
         settings = ExecutionSettings(
             resources=None,  # Would normally be ResourceConfig/ResourceManager
             checkpoint_dir="/data/checkpoints",
@@ -59,6 +65,9 @@ class TestExecutionSettingsCreation:
             scheduler=None,  # Would normally be a Scheduler
             on_task_complete=on_complete,
             on_task_failed=on_failed,
+            streaming=True,
+            preserve_order=True,
+            on_progress=on_progress,
             profile=True,
             profile_path="/traces/trace.json",
             profile_counters=False,
@@ -69,6 +78,9 @@ class TestExecutionSettingsCreation:
         assert settings.max_concurrent == 50
         assert settings.on_task_complete is on_complete
         assert settings.on_task_failed is on_failed
+        assert settings.streaming is True
+        assert settings.preserve_order is True
+        assert settings.on_progress is on_progress
         assert settings.profile is True
         assert settings.profile_path == "/traces/trace.json"
         assert settings.profile_counters is False
@@ -619,3 +631,132 @@ class TestRepr:
         assert "_token" not in repr_str
         assert "_checkpoint_manager" not in repr_str
         assert "_parent" not in repr_str
+
+
+class TestStreamingConfiguration:
+    """Tests for streaming execution configuration."""
+
+    def test_streaming_default_false(self) -> None:
+        """streaming defaults to False."""
+        settings = ExecutionSettings()
+        assert settings.streaming is False
+
+    def test_streaming_can_be_enabled(self) -> None:
+        """streaming can be set to True."""
+        settings = ExecutionSettings(streaming=True)
+        assert settings.streaming is True
+
+    def test_preserve_order_default_false(self) -> None:
+        """preserve_order defaults to False."""
+        settings = ExecutionSettings()
+        assert settings.preserve_order is False
+
+    def test_preserve_order_can_be_enabled(self) -> None:
+        """preserve_order can be set to True."""
+        settings = ExecutionSettings(preserve_order=True)
+        assert settings.preserve_order is True
+
+    def test_on_progress_default_none(self) -> None:
+        """on_progress defaults to None."""
+        settings = ExecutionSettings()
+        assert settings.on_progress is None
+
+    def test_on_progress_callback(self) -> None:
+        """on_progress can be set to a callback."""
+        calls: list[tuple[int, int]] = []
+
+        def on_progress(done: int, total: int) -> None:
+            calls.append((done, total))
+
+        settings = ExecutionSettings(on_progress=on_progress)
+        assert settings.on_progress is on_progress
+
+        # Verify callback is callable
+        settings.on_progress(5, 10)
+        assert calls == [(5, 10)]
+
+    def test_get_streaming(self) -> None:
+        """get_streaming returns the streaming value."""
+        settings = ExecutionSettings(streaming=True)
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_streaming() is True
+
+    def test_get_preserve_order(self) -> None:
+        """get_preserve_order returns the preserve_order value."""
+        settings = ExecutionSettings(preserve_order=True)
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_preserve_order() is True
+
+    def test_get_on_progress(self) -> None:
+        """get_on_progress returns the callback."""
+
+        def callback(done: int, total: int) -> None:
+            pass
+
+        settings = ExecutionSettings(on_progress=callback)
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_on_progress() is callback
+
+    def test_get_on_progress_inherits_from_parent(self) -> None:
+        """get_on_progress inherits from parent context."""
+
+        def callback(done: int, total: int) -> None:
+            pass
+
+        outer = ExecutionSettings(on_progress=callback)
+        inner = ExecutionSettings(streaming=True)  # No on_progress
+
+        with outer:
+            with inner:
+                current = get_execution_settings()
+                assert current is not None
+                # Inner inherits outer's on_progress
+                assert current.get_on_progress() is callback
+
+    def test_streaming_and_preserve_order_combination(self) -> None:
+        """streaming and preserve_order can be used together."""
+        settings = ExecutionSettings(streaming=True, preserve_order=True)
+
+        with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_streaming() is True
+            assert current.get_preserve_order() is True
+
+    def test_nested_context_streaming_override(self) -> None:
+        """Inner context can have different streaming settings."""
+        outer = ExecutionSettings(streaming=True)
+        inner = ExecutionSettings(streaming=False)
+
+        with outer:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_streaming() is True
+
+            with inner:
+                current = get_execution_settings()
+                assert current is not None
+                # Inner overrides to False
+                assert current.get_streaming() is False
+
+            # Back to outer
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_streaming() is True
+
+    @pytest.mark.asyncio
+    async def test_async_context_with_streaming(self) -> None:
+        """Streaming settings work in async context."""
+        settings = ExecutionSettings(streaming=True, preserve_order=True)
+
+        async with settings:
+            current = get_execution_settings()
+            assert current is not None
+            assert current.get_streaming() is True
+            assert current.get_preserve_order() is True

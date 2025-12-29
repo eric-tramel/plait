@@ -6,12 +6,13 @@ inference pipelines, inspired by PyTorch's nn.Module.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import TYPE_CHECKING, Any, Self
 
 from inf_engine.tracing.context import get_trace_context
 
 if TYPE_CHECKING:
+    from inf_engine.execution.types import BatchResult
     from inf_engine.parameter import Parameter
     from inf_engine.resources.config import ResourceConfig
     from inf_engine.resources.manager import ResourceManager
@@ -558,7 +559,117 @@ class InferenceModule:
 
         return self.forward(*args, **kwargs)
 
-    async def _execute_bound(self, *args: Any, **kwargs: Any) -> Any:
+    async def _stream_batch(
+        self,
+        inputs: list[Any],
+        extra_args: tuple[Any, ...],
+        resources: Any,
+        forward_kwargs: dict[str, Any],
+        effective_config: dict[str, Any],
+        preserve_order: bool = False,
+        on_progress: Any = None,
+    ) -> AsyncIterator[BatchResult[Any]]:
+        """Stream batch results as they complete.
+
+        Creates tasks for all inputs and yields BatchResult objects
+        as they complete. Supports both completion order (fastest)
+        and preserve_order (input order) modes.
+
+        Args:
+            inputs: List of inputs to process.
+            extra_args: Additional positional arguments after the input.
+            resources: Resource configuration for execution.
+            forward_kwargs: Keyword arguments for forward().
+            effective_config: Execution configuration options.
+            preserve_order: If True, yield in input order. If False,
+                yield as soon as each result completes.
+            on_progress: Optional callback(completed, total) for progress.
+
+        Yields:
+            BatchResult objects containing index, input, output, and error.
+
+        Example:
+            >>> async for result in module._stream_batch(inputs, ...):
+            ...     if result.ok:
+            ...         process(result.output)
+            ...     else:
+            ...         log_error(result.error)
+
+        Note:
+            When the consumer breaks out of the loop, pending tasks are
+            cancelled automatically by Python's async generator cleanup.
+        """
+        import asyncio
+
+        from inf_engine.execution.executor import run
+        from inf_engine.execution.types import BatchResult
+
+        total = len(inputs)
+        completed = 0
+
+        # Create all tasks upfront with their indices
+        async def run_with_index(
+            idx: int, inp: Any
+        ) -> tuple[int, Any, Any, Exception | None]:
+            """Run a single input and return (index, input, output, error)."""
+            try:
+                result = await run(
+                    self,
+                    inp,
+                    *extra_args,
+                    resources=resources,
+                    **forward_kwargs,
+                    **effective_config,
+                )
+                return (idx, inp, result, None)
+            except Exception as e:
+                return (idx, inp, None, e)
+
+        tasks = [
+            asyncio.create_task(run_with_index(i, inp)) for i, inp in enumerate(inputs)
+        ]
+
+        try:
+            if preserve_order:
+                # Yield results in input order (may wait on slower items)
+                for task in tasks:
+                    idx, inp, output, error = await task
+                    completed += 1
+                    if on_progress is not None:
+                        on_progress(completed, total)
+                    yield BatchResult(index=idx, input=inp, output=output, error=error)
+            else:
+                # Yield results as they complete (fastest throughput)
+                # Map tasks to their indices for lookup
+                pending = {task: i for i, task in enumerate(tasks)}
+
+                while pending:
+                    done, _ = await asyncio.wait(
+                        pending.keys(),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in done:
+                        del pending[task]
+                        idx, inp, output, error = task.result()
+                        completed += 1
+                        if on_progress is not None:
+                            on_progress(completed, total)
+                        yield BatchResult(
+                            index=idx, input=inp, output=output, error=error
+                        )
+        finally:
+            # Cancel any remaining tasks if consumer breaks early
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+    async def _execute_bound(
+        self, *args: Any, **kwargs: Any
+    ) -> Any | AsyncIterator[BatchResult[Any]]:
         """Execute with bound or context resources.
 
         Traces the module and executes it using the run() function.
@@ -573,8 +684,9 @@ class InferenceModule:
             **kwargs: Keyword arguments passed to forward().
 
         Returns:
-            The output of the module's forward() method. For batch execution
-            (list input), returns a list of outputs.
+            For single input: The output of the module's forward() method.
+            For batch input (list): Returns a list of outputs.
+            For streaming batch: Returns an async iterator of BatchResult.
 
         Example:
             >>> pipeline = MyPipeline().bind(resources=config)
@@ -582,6 +694,11 @@ class InferenceModule:
 
         Example with batch execution:
             >>> results = await pipeline(["input1", "input2", "input3"])
+
+        Example with streaming:
+            >>> async with ExecutionSettings(streaming=True):
+            ...     async for result in pipeline(["a", "b", "c"]):
+            ...         print(result.output)
 
         Note:
             This method is called internally by __call__ when resources
@@ -622,25 +739,60 @@ class InferenceModule:
         if resources is None and settings is not None:
             resources = settings.resources
 
+        # Get streaming configuration from settings
+        streaming = settings.get_streaming() if settings is not None else False
+        preserve_order = (
+            settings.get_preserve_order() if settings is not None else False
+        )
+        on_progress = settings.get_on_progress() if settings is not None else None
+
         # Handle batch execution - run all inputs concurrently
         if args and isinstance(args[0], list):
             inputs = args[0]
             if not inputs:
+                if streaming:
+                    # Return an empty async iterator
+                    async def empty_iterator() -> AsyncIterator[BatchResult[Any]]:
+                        return
+                        yield  # type: ignore[misc]  # Make this a generator
+
+                    return empty_iterator()
                 return []
-            # Create tasks for concurrent execution
-            tasks = [
-                asyncio.create_task(
-                    run(
-                        self,
-                        inp,
-                        *args[1:],
-                        resources=resources,
-                        **forward_kwargs,
-                        **effective_config,
-                    )
+
+            # Check if streaming mode is enabled
+            if streaming:
+                return self._stream_batch(
+                    inputs=inputs,
+                    extra_args=args[1:],
+                    resources=resources,
+                    forward_kwargs=forward_kwargs,
+                    effective_config=effective_config,
+                    preserve_order=preserve_order,
+                    on_progress=on_progress,
                 )
-                for inp in inputs
-            ]
+
+            # Non-streaming batch execution with optional progress callback
+            total = len(inputs)
+            completed = 0
+
+            async def run_with_progress(inp: Any) -> Any:
+                """Run a single input and update progress."""
+                nonlocal completed
+                result = await run(
+                    self,
+                    inp,
+                    *args[1:],
+                    resources=resources,
+                    **forward_kwargs,
+                    **effective_config,
+                )
+                completed += 1
+                if on_progress is not None:
+                    on_progress(completed, total)
+                return result
+
+            # Create tasks for concurrent execution
+            tasks = [asyncio.create_task(run_with_progress(inp)) for inp in inputs]
             return await asyncio.gather(*tasks)
 
         return await run(

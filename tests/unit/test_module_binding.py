@@ -677,3 +677,360 @@ class TestRunSync:
 
             assert result == []
             mock_run.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Streaming Execution Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestStreamingExecution:
+    """Tests for streaming batch execution."""
+
+    @pytest.mark.asyncio
+    async def test_streaming_returns_async_iterator(self) -> None:
+        """Streaming mode returns an async iterator."""
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            return f"RESULT_{args[1]}"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(resources=mock_resources, streaming=True):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                # Result should be an async iterator
+                from collections.abc import AsyncIterator
+
+                assert isinstance(result, AsyncIterator)
+
+    @pytest.mark.asyncio
+    async def test_streaming_yields_batch_results(self) -> None:
+        """Streaming mode yields BatchResult objects."""
+        from inf_engine.execution.types import BatchResult
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            return f"RESULT_{args[1]}"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(resources=mock_resources, streaming=True):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                results = []
+                async for batch_result in result:
+                    results.append(batch_result)
+
+                assert len(results) == 3
+                for r in results:
+                    assert isinstance(r, BatchResult)
+                    assert r.ok is True
+
+    @pytest.mark.asyncio
+    async def test_streaming_results_have_correct_fields(self) -> None:
+        """Streaming BatchResults have correct index, input, output, error."""
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            inp = args[1]
+            return inp.upper()
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(resources=mock_resources, streaming=True):
+                result = await module._execute_bound(["hello", "world"])
+
+                results = []
+                async for batch_result in result:
+                    results.append(batch_result)
+
+                # Sort by index to check correctness regardless of order
+                results.sort(key=lambda r: r.index)
+
+                assert results[0].index == 0
+                assert results[0].input == "hello"
+                assert results[0].output == "HELLO"
+                assert results[0].error is None
+
+                assert results[1].index == 1
+                assert results[1].input == "world"
+                assert results[1].output == "WORLD"
+                assert results[1].error is None
+
+    @pytest.mark.asyncio
+    async def test_streaming_handles_errors(self) -> None:
+        """Streaming captures errors in BatchResult."""
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        call_count = 0
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise ValueError("Test error")
+            return f"RESULT_{call_count}"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(resources=mock_resources, streaming=True):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                results = []
+                async for batch_result in result:
+                    results.append(batch_result)
+
+                # Sort by index for predictable checking
+                results.sort(key=lambda r: r.index)
+
+                # Result 0 should be success
+                assert results[0].ok is True
+
+                # Result 1 should be failure
+                assert results[1].ok is False
+                assert results[1].error is not None
+                assert isinstance(results[1].error, ValueError)
+                assert "Test error" in str(results[1].error)
+
+                # Result 2 should be success
+                assert results[2].ok is True
+
+    @pytest.mark.asyncio
+    async def test_streaming_preserve_order_true(self) -> None:
+        """preserve_order=True yields results in input order."""
+        import asyncio
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        # Make later inputs complete faster to test ordering
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            inp = args[1]
+            delays = {"a": 0.05, "b": 0.02, "c": 0.01}
+            await asyncio.sleep(delays.get(inp, 0))
+            return inp.upper()
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(
+                resources=mock_resources, streaming=True, preserve_order=True
+            ):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                indices = []
+                async for batch_result in result:
+                    indices.append(batch_result.index)
+
+                # Should be in input order: 0, 1, 2
+                assert indices == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_streaming_preserve_order_false_fastest_first(self) -> None:
+        """preserve_order=False may yield fastest-completing results first."""
+        import asyncio
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        # Make later inputs complete faster
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            inp = args[1]
+            delays = {"a": 0.08, "b": 0.05, "c": 0.01}
+            await asyncio.sleep(delays.get(inp, 0))
+            return inp.upper()
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(
+                resources=mock_resources, streaming=True, preserve_order=False
+            ):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                indices = []
+                async for batch_result in result:
+                    indices.append(batch_result.index)
+
+                # "c" (index 2) should complete first, then "b" (index 1), then "a" (index 0)
+                # This is probabilistic but with these delays should be consistent
+                assert indices == [2, 1, 0]
+
+    @pytest.mark.asyncio
+    async def test_streaming_empty_list(self) -> None:
+        """Streaming with empty list yields no results."""
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        with ExecutionSettings(resources=mock_resources, streaming=True):
+            result = await module._execute_bound([])
+
+            results = []
+            async for batch_result in result:
+                results.append(batch_result)
+
+            assert results == []
+
+    @pytest.mark.asyncio
+    async def test_streaming_cancellation_on_break(self) -> None:
+        """Breaking from streaming loop cancels pending tasks."""
+        import asyncio
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        completed = []
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            inp = args[1]
+            # First completes quickly, others take longer
+            delays = {"a": 0.01, "b": 0.5, "c": 0.5}
+            await asyncio.sleep(delays.get(inp, 0))
+            completed.append(inp)
+            return inp.upper()
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(
+                resources=mock_resources, streaming=True, preserve_order=False
+            ):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                # Only consume first result, then break
+                async for _batch_result in result:
+                    break  # Stop after first result
+
+                # Give some time for cancellation to propagate
+                await asyncio.sleep(0.1)
+
+                # Only the first (fastest) should have completed
+                assert len(completed) == 1
+
+    @pytest.mark.asyncio
+    async def test_on_progress_callback_streaming(self) -> None:
+        """on_progress callback is called during streaming."""
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        progress_calls: list[tuple[int, int]] = []
+
+        def on_progress(done: int, total: int) -> None:
+            progress_calls.append((done, total))
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            return "RESULT"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(
+                resources=mock_resources, streaming=True, on_progress=on_progress
+            ):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                async for _ in result:
+                    pass
+
+        # Progress should be called 3 times
+        assert len(progress_calls) == 3
+        # All calls should have total=3
+        for _done, total in progress_calls:
+            assert total == 3
+        # Done counts should range from 1 to 3 (order may vary)
+        done_values = [d for d, t in progress_calls]
+        assert sorted(done_values) == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_on_progress_callback_non_streaming(self) -> None:
+        """on_progress callback is called in non-streaming batch mode."""
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+
+        progress_calls: list[tuple[int, int]] = []
+
+        def on_progress(done: int, total: int) -> None:
+            progress_calls.append((done, total))
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            return "RESULT"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            with ExecutionSettings(
+                resources=mock_resources, streaming=False, on_progress=on_progress
+            ):
+                results = await module._execute_bound(["a", "b", "c"])
+
+        # Non-streaming returns list
+        assert isinstance(results, list)
+        assert len(results) == 3
+
+        # Progress should be called 3 times
+        assert len(progress_calls) == 3
+        for _done, total in progress_calls:
+            assert total == 3
+
+
+class TestStreamBatchMethod:
+    """Tests for _stream_batch method directly."""
+
+    @pytest.mark.asyncio
+    async def test_stream_batch_yields_all_inputs(self) -> None:
+        """_stream_batch yields a result for each input."""
+        from inf_engine.execution.types import BatchResult
+
+        module = SimpleModule()
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            return f"RESULT_{args[1]}"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            results = []
+            async for r in module._stream_batch(
+                inputs=["x", "y", "z"],
+                extra_args=(),
+                resources=MagicMock(),
+                forward_kwargs={},
+                effective_config={},
+            ):
+                results.append(r)
+
+        assert len(results) == 3
+        for r in results:
+            assert isinstance(r, BatchResult)
+
+    @pytest.mark.asyncio
+    async def test_stream_batch_with_extra_args(self) -> None:
+        """_stream_batch passes extra_args correctly."""
+
+        module = SimpleModule()
+
+        received_args: list[tuple[Any, ...]] = []
+
+        async def async_return(*args: Any, **kwargs: Any) -> str:
+            received_args.append(args)
+            return "RESULT"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+            results = []
+            async for r in module._stream_batch(
+                inputs=["a"],
+                extra_args=("extra1", "extra2"),
+                resources=MagicMock(),
+                forward_kwargs={},
+                effective_config={},
+            ):
+                results.append(r)
+
+        # Check that extra_args were passed
+        assert len(received_args) == 1
+        # args[0] is module, args[1] is input, args[2:] are extra_args
+        assert received_args[0][2] == "extra1"
+        assert received_args[0][3] == "extra2"
