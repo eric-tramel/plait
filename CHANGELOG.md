@@ -134,6 +134,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configuration priority order: call-time kwargs > bound settings > context settings > defaults
   - Add `resources` parameter to `run()` function for passing ResourceConfig/ResourceManager
   - Support batch execution: `await module([input1, input2, ...])` returns list of results
+- Concurrent batch execution: batch inputs now run in parallel using `asyncio.gather()` for maximum throughput
+- Add `run_sync()` method for synchronous blocking execution in scripts and notebooks
+  - Blocks until execution completes and returns the result
+  - Supports both single and batch inputs
+  - Raises `RuntimeError` if called from async context or without bound resources
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

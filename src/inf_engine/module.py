@@ -399,6 +399,72 @@ class InferenceModule:
         )
         return self
 
+    def run_sync(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute synchronously (blocking).
+
+        Convenience method for scripts and notebooks where async isn't needed.
+        Blocks until execution completes and returns the result.
+
+        This method requires that resources are available either through:
+        - Prior `bind()` call on this module, or
+        - An active `ExecutionSettings` context
+
+        Args:
+            *args: Positional arguments passed to forward().
+            **kwargs: Keyword arguments passed to forward().
+
+        Returns:
+            Single result for single input, list for batch input.
+
+        Raises:
+            RuntimeError: If called from within an async context (would block
+                the event loop), or if no resources are available.
+
+        Example:
+            >>> pipeline = MyPipeline().bind(resources=config)
+            >>> result = pipeline.run_sync("Hello")
+            >>> results = pipeline.run_sync(["a", "b", "c"])
+
+        Example with ExecutionSettings:
+            >>> with ExecutionSettings(resources=config):
+            ...     result = pipeline.run_sync("Hello")
+
+        Note:
+            Use `await module(...)` in async code instead. This method is
+            intended for synchronous scripts and REPL environments only.
+        """
+        import asyncio
+
+        from inf_engine.execution.context import get_execution_settings
+
+        # Check if we have resources (bound or from context)
+        settings = get_execution_settings()
+        has_resources = self._bound_resources is not None or (
+            settings is not None and settings.resources is not None
+        )
+
+        if not has_resources:
+            raise RuntimeError(
+                "run_sync() requires bound resources. "
+                "Use module.bind(resources=...) or ExecutionSettings context."
+            )
+
+        # Check if we're already in an async context
+        try:
+            asyncio.get_running_loop()
+            # If we get here, there's a running loop - can't use run_sync()
+            raise RuntimeError(
+                "run_sync() cannot be called from within an async context. "
+                "Use 'await module(...)' instead."
+            )
+        except RuntimeError as e:
+            # Re-raise our error, but catch the "no running loop" error
+            if "cannot be called" in str(e):
+                raise
+            # No running loop - this is what we want, proceed with asyncio.run
+
+        return asyncio.run(self._execute_bound(*args, **kwargs))
+
     # ─────────────────────────────────────────────────────────────
     # Forward and Call (Core Execution Interface)
     # ─────────────────────────────────────────────────────────────
@@ -521,6 +587,8 @@ class InferenceModule:
             This method is called internally by __call__ when resources
             are available. Users should not call it directly.
         """
+        import asyncio
+
         from inf_engine.execution.context import get_execution_settings
         from inf_engine.execution.executor import run
 
@@ -554,21 +622,26 @@ class InferenceModule:
         if resources is None and settings is not None:
             resources = settings.resources
 
-        # Handle batch execution
+        # Handle batch execution - run all inputs concurrently
         if args and isinstance(args[0], list):
             inputs = args[0]
-            results = []
-            for inp in inputs:
-                result = await run(
-                    self,
-                    inp,
-                    *args[1:],
-                    resources=resources,
-                    **forward_kwargs,
-                    **effective_config,
+            if not inputs:
+                return []
+            # Create tasks for concurrent execution
+            tasks = [
+                asyncio.create_task(
+                    run(
+                        self,
+                        inp,
+                        *args[1:],
+                        resources=resources,
+                        **forward_kwargs,
+                        **effective_config,
+                    )
                 )
-                results.append(result)
-            return results
+                for inp in inputs
+            ]
+            return await asyncio.gather(*tasks)
 
         return await run(
             self,

@@ -10,14 +10,14 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (8/12)
+- [ ] **Phase 4: Resources** (10/12)
 - [ ] **Phase 5: Production Features** (10/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
 - [ ] **Phase 6: Optimization** (0/5)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 54/74 PRs completed**
+**Total: 56/74 PRs completed**
 
 ---
 
@@ -559,7 +559,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_scheduler.py` (execute with mocked ResourceManager/client)
 - **CHANGELOG**: "Add ResourceManager integration to Scheduler for LLM execution"
 
-### - [ ] PR-045: Module binding and resources parameter
+### - [x] PR-045: Module binding and resources parameter
 - **Branch**: `feat/module-binding`
 - **Description**: Add `resources` parameter to `run()`, `bind()` method to InferenceModule, and enable `await module(input)` for bound modules
 - **Design Docs**:
@@ -576,7 +576,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_module_binding.py` (bind returns self, stores resources, bound call is async)
 - **CHANGELOG**: "Add module binding and resources parameter to run()"
 
-### - [ ] PR-046: Batch execution and run_sync
+### - [x] PR-046: Batch execution and run_sync
 - **Branch**: `feat/batch-execution`
 - **Description**: Support list inputs for concurrent batch execution (`await module([a, b, c])`) and add `run_sync()` for synchronous blocking execution
 - **Design Docs**:
