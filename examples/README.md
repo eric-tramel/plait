@@ -2,9 +2,7 @@
 
 This directory contains practical examples demonstrating the inf-engine API.
 
-## Current Examples (Phase 1-3)
-
-These examples work with the current implementation:
+## Examples
 
 ### [01_basic_modules.py](01_basic_modules.py)
 Basic module creation and composition. Shows how to:
@@ -29,16 +27,16 @@ uv run python examples/02_parameters.py
 ```
 
 ### [03_llm_pipelines.py](03_llm_pipelines.py)
-LLM pipeline definitions (structure preview). Shows how to:
-- Define `LLMInference` modules
+LLM pipeline definitions. Shows how to:
+- Define `LLMInference` modules with aliases
 - Build sequential pipelines
 - Create parallel (fan-out) analysis
 - Compose fan-in synthesis patterns
 - Use learnable system prompts
 
-**Note:** These pipelines cannot execute with real LLMs yet (requires
-Phase 4 resources). This example demonstrates the API and inspects
-module structure.
+**Note:** To execute these pipelines with real LLMs, configure resources
+using `ResourceConfig` and bind them to modules. See examples 05-07 for
+execution patterns.
 
 ```bash
 uv run python examples/03_llm_pipelines.py
@@ -58,19 +56,85 @@ uv run python examples/04_tracing.py
 ```
 
 ### [05_execution.py](05_execution.py)
-**NEW!** Execution with the `run()` function. Shows how to:
+Execution with `run()`, `bind()`, and `ExecutionSettings`. Shows how to:
 - Execute modules with `run()`
-- Run linear pipelines with dependency ordering
-- Execute parallel (fan-out) patterns concurrently
-- Handle diamond patterns (fan-out + fan-in)
+- Use `bind()` for direct `await module(input)` pattern
+- Share resources with `ExecutionSettings` context
+- Process batches with `await module([a, b, c])`
 - Control concurrency with `max_concurrent`
-- Inspect execution state (PENDING, COMPLETED, FAILED, CANCELLED)
 - Handle errors and failure cascading
-- Work with multiple inputs (positional and keyword)
 
 ```bash
 uv run python examples/05_execution.py
 ```
+
+### [06_checkpointing.py](06_checkpointing.py)
+Progress checkpointing for long-running pipelines. Shows how to:
+- Save execution progress to disk
+- Resume from checkpoints after interruption
+- Use `CheckpointManager` for buffered writes
+- Configure checkpointing via `ExecutionSettings`
+
+```bash
+uv run python examples/06_checkpointing.py
+```
+
+### [07_execution_settings.py](07_execution_settings.py)
+ExecutionSettings and module binding patterns. Shows how to:
+- Use `bind()` for the clean `await module(input)` pattern
+- Share resources across modules with `ExecutionSettings`
+- Understand configuration priority (kwargs > bound > context)
+- Process batches concurrently
+- Use nested contexts and method chaining
+
+```bash
+uv run python examples/07_execution_settings.py
+```
+
+## Best Practices
+
+### Recommended Execution Pattern
+
+For production code, use `bind()` or `ExecutionSettings`:
+
+```python
+from inf_engine.execution.context import ExecutionSettings
+from inf_engine.resources.config import ResourceConfig, EndpointConfig
+
+# Configure resources
+resources = ResourceConfig(
+    endpoints={
+        "fast": EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o-mini",
+            max_concurrent=10,
+        ),
+        "smart": EndpointConfig(
+            provider_api="openai",
+            model="gpt-4o",
+            max_concurrent=5,
+        ),
+    }
+)
+
+# Option 1: bind() for single module
+pipeline = MyPipeline().bind(resources=resources)
+result = await pipeline("input")
+results = await pipeline(["a", "b", "c"])  # Batch
+
+# Option 2: ExecutionSettings for multiple modules
+async with ExecutionSettings(resources=resources, max_concurrent=50):
+    result1 = await pipeline1("input")
+    result2 = await pipeline2("input")
+```
+
+### Configuration Priority
+
+Settings are applied with this priority (highest first):
+1. **Call-time kwargs**: `await module("x", max_concurrent=10)`
+2. **Bound settings**: `module.bind(max_concurrent=50)`
+3. **Context settings**: `ExecutionSettings(max_concurrent=100)`
+4. **Defaults**
 
 ## Running Examples
 
@@ -84,7 +148,7 @@ uv run python examples/01_basic_modules.py
 for f in examples/*.py; do uv run python "$f"; echo; done
 ```
 
-## What's Working Now (Phase 1-3)
+## What's Working Now
 
 | Feature | Status | Example |
 |---------|--------|---------|
@@ -94,18 +158,17 @@ for f in examples/*.py; do uv run python "$f"; echo; done
 | LLMInference definition | ✅ | 03_llm_pipelines.py |
 | Tracing/DAG capture | ✅ | 04_tracing.py |
 | Execution with run() | ✅ | 05_execution.py |
-| Concurrent execution | ✅ | 05_execution.py |
-| Dependency ordering | ✅ | 05_execution.py |
-| Error handling | ✅ | 05_execution.py |
+| bind() and direct execution | ✅ | 05_execution.py, 07_execution_settings.py |
+| ExecutionSettings context | ✅ | 07_execution_settings.py |
+| Batch execution | ✅ | 05_execution.py, 07_execution_settings.py |
+| Streaming batch results | ✅ | 07_execution_settings.py |
+| Checkpointing | ✅ | 06_checkpointing.py |
+| Resource configuration | ✅ | (see Best Practices above) |
+| Rate limiting | ✅ | (automatic with ResourceManager) |
 
 ## Coming Soon
 
-After Phase 4 (Resources):
-- Real LLM execution with OpenAI/compatible endpoints
-- Resource configuration and management
-- Rate limiting and endpoint pooling
-
-After Phase 7 (Optimization):
+After Phase 6 (Optimization):
 - Training loops with `train()`
 - Backward pass and feedback propagation
 - Parameter optimization with LLM-based updates

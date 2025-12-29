@@ -148,6 +148,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `InferenceModule._stream_batch()` method for internal streaming implementation
   - Cancellation support: breaking from streaming loop cancels all pending tasks
   - Progress callbacks work in both streaming and non-streaming batch modes
+- Add resource management integration tests (`tests/integration/test_resources.py`)
+  - Multiple endpoint alias tests with different configurations
+  - Concurrent request handling with semaphore limits
+  - ResourceManager and Scheduler integration tests
+  - ExecutionSettings with resource context tests
+  - Batch execution across multiple endpoints
+  - End-to-end pipeline tests with mocked LLM endpoints
+  - Configuration example validation from design docs
+- Update examples documentation with best practices for resource configuration
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

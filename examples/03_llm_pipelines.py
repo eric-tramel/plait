@@ -5,9 +5,21 @@ This example shows how to define LLM-based inference pipelines using
 LLMInference modules. These pipelines define the structure of LLM calls
 and can be traced to capture their execution graph.
 
-Note: Actual execution of these pipelines requires resource configuration
-(Phase 4) to bind LLM aliases to real endpoints. See 05_execution.py for
-examples using mock modules that demonstrate execution patterns.
+To execute these pipelines with real LLMs, configure resources and bind them:
+
+    from inf_engine.resources.config import ResourceConfig, EndpointConfig
+
+    resources = ResourceConfig(endpoints={
+        "fast_llm": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+        "smart_llm": EndpointConfig(provider_api="openai", model="gpt-4o"),
+        "llm": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
+        "assistant_llm": EndpointConfig(provider_api="openai", model="gpt-4o"),
+    })
+
+    pipeline = DocumentProcessor().bind(resources=resources)
+    result = await pipeline("Your document text here...")
+
+See 05_execution.py and 07_execution_settings.py for more execution patterns.
 
 Run with: python examples/03_llm_pipelines.py
 """
@@ -197,9 +209,9 @@ if __name__ == "__main__":
     print("=" * 60)
     print("inf-engine: LLM Pipelines Example")
     print("=" * 60)
-    print("\nNote: This demo shows pipeline structure and parameters.")
-    print("Actual LLM execution requires resource configuration (Phase 4).")
-    print("See 05_execution.py for execution patterns with mock modules.\n")
+    print("\nThis demo shows pipeline structure and parameters.")
+    print("To execute with real LLMs, configure resources and use bind().")
+    print("See 05_execution.py and 07_execution_settings.py for examples.\n")
 
     # Example 1: Simple module
     print("1. Simple LLM Module (Summarizer)")
@@ -272,5 +284,6 @@ if __name__ == "__main__":
             print(f"{indent}{name.split('.')[-1]}: {type(module).__name__}")
 
     print("\n" + "=" * 60)
-    print("These pipelines can be traced and executed with resource config!")
+    print("These pipelines can be executed with resource configuration!")
+    print("Use bind() or ExecutionSettings to connect to real LLM endpoints.")
     print("=" * 60)

@@ -10,14 +10,14 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 2: Tracing** (11/11)
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
-- [ ] **Phase 4: Resources** (10/12)
+- [ ] **Phase 4: Resources** (11/12)
 - [ ] **Phase 5: Production Features** (10/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
 - [ ] **Phase 6: Optimization** (0/5)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 56/74 PRs completed**
+**Total: 57/74 PRs completed**
 
 ---
 
@@ -590,7 +590,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/integration/test_binding.py` (batch processing runs concurrently)
 - **CHANGELOG**: "Add concurrent batch execution and run_sync()"
 
-### - [ ] PR-047: Streaming execution
+### - [x] PR-047: Streaming execution
 - **Branch**: `feat/streaming-execution`
 - **Description**: Add `BatchResult` type, `streaming` and `preserve_order` flags to ExecutionSettings, `on_progress` callback, and cancellation support for streaming batch execution
 - **Design Docs**:
@@ -608,7 +608,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/integration/test_streaming.py` (full streaming flow, cancellation cleanup)
 - **CHANGELOG**: "Add streaming execution with BatchResult, progress tracking, and cancellation"
 
-### - [ ] PR-048: Resource integration tests
+### - [x] PR-048: Resource integration tests
 - **Branch**: `feat/resource-integration-tests`
 - **Description**: Add integration tests with mocked LLM endpoints
 - **Design Docs**:
