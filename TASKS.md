@@ -11,13 +11,13 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [x] **Phase 3: Execution** (10/10)
 - [x] **Phase 3.5: Hardening** (8/8)
 - [ ] **Phase 4: Resources** (11/12)
-- [ ] **Phase 5: Production Features** (10/13)
+- [ ] **Phase 5: Production Features** (11/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
 - [ ] **Phase 6: Optimization** (0/5)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 57/74 PRs completed**
+**Total: 58/74 PRs completed**
 
 ---
 
@@ -737,7 +737,7 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/integration/test_execution_settings.py`
 - **CHANGELOG**: "Integrate ExecutionSettings with InferenceModule"
 
-### - [ ] PR-060: Resource metrics
+### - [x] PR-060: Resource metrics
 - **Branch**: `feat/resource-metrics`
 - **Description**: Implement `ResourceMetrics` for endpoint observability and integrate with ResourceManager
 - **Design Docs**:
@@ -751,19 +751,20 @@ Fixes, improvements, and consistency updates identified during implementation re
   - `tests/unit/test_resource_manager.py` (metrics recorded)
 - **CHANGELOG**: "Add ResourceMetrics for observability"
 
-### - [ ] PR-061: Error handling and robustness
-- **Branch**: `feat/error-handling`
-- **Description**: Implement task timeout handling, `ErrorPolicy` enum with `FAIL_FAST`, `CONTINUE`, `RETRY_THEN_FAIL` behaviors, and execution cancellation support
+### - [x] PR-061: Task timeout and retry handling
+- **Branch**: `feat/task-timeout-retry`
+- **Description**: Add per-task timeout handling and configurable retry logic for transient failures. Add `TransientError` type for retryable errors. Update Scheduler to use `asyncio.timeout()` and implement exponential backoff retry.
 - **Design Docs**:
-  - `execution.md` → "Execution Config" (timeout_per_task)
-  - `execution.md` → "Error Handling Policies"
-  - `execution.md` → "Execution Manager" (cancellation)
+  - `execution.md` → "Error Handling" (Task Timeout, Task Retry, Scheduler Error Handling)
 - **Files**:
-  - `src/inf_engine/execution/scheduler.py`
-  - `src/inf_engine/execution/state.py`
+  - `src/inf_engine/errors.py` (add TransientError)
+  - `src/inf_engine/execution/scheduler.py` (timeout and retry logic)
+  - `src/inf_engine/execution/context.py` (task_timeout, max_task_retries, task_retry_delay in ExecutionSettings)
 - **Tests**:
-  - `tests/unit/test_scheduler.py` (timeout triggers, each policy behavior, cancellation, cleanup verification)
-- **CHANGELOG**: "Add task timeout, ErrorPolicy, and execution cancellation"
+  - `tests/unit/test_errors.py` (TransientError creation)
+  - `tests/unit/test_scheduler.py` (timeout triggers failure, retry on transient error, exponential backoff, max retries exhausted)
+  - `tests/unit/test_execution_settings.py` (timeout/retry settings)
+- **CHANGELOG**: "Add task timeout and retry handling with TransientError"
 
 ### - [ ] PR-062: Production features integration tests
 - **Branch**: `feat/production-integration-tests`
