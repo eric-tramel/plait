@@ -785,7 +785,7 @@ Fixes, improvements, and consistency updates identified during implementation re
 
 Performance visualization and bottleneck analysis using Chrome Trace Event Format.
 
-### - [ ] PR-063: Profiling infrastructure
+### - [x] PR-063: Profiling infrastructure
 - **Branch**: `feat/profiling`
 - **Description**: Implement `TraceEvent` dataclass, `TraceProfiler` for collecting execution traces, integrate with Scheduler, and add profiling options to ExecutionSettings
 - **Design Docs**:
