@@ -8,6 +8,7 @@ import pytest
 
 from inf_engine.execution.executor import run
 from inf_engine.module import InferenceModule
+from inf_engine.optimization.record import ForwardRecord
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Modules
@@ -861,3 +862,172 @@ class TestRunCheckpointing:
         await run(module, "test", checkpoint_dir=str(tmp_path), execution_id="run_005")
 
         assert (tmp_path / "run_005.json").exists()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ForwardRecord Tests (record=True)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRunWithRecord:
+    """Tests for run() with record=True returning ForwardRecord."""
+
+    @pytest.mark.asyncio
+    async def test_run_with_record_returns_tuple(self) -> None:
+        """run() with record=True returns (output, ForwardRecord)."""
+        module = EchoModule()
+
+        result = await run(module, "hello", record=True)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        output, record = result
+        assert output == "hello"
+        assert isinstance(record, ForwardRecord)
+
+    @pytest.mark.asyncio
+    async def test_run_with_record_false_returns_output(self) -> None:
+        """run() with record=False returns just the output."""
+        module = EchoModule()
+
+        result = await run(module, "hello", record=False)
+
+        assert result == "hello"
+        assert not isinstance(result, tuple)
+
+    @pytest.mark.asyncio
+    async def test_run_default_record_is_false(self) -> None:
+        """run() defaults to record=False."""
+        module = EchoModule()
+
+        result = await run(module, "hello")
+
+        assert result == "hello"
+        assert not isinstance(result, tuple)
+
+    @pytest.mark.asyncio
+    async def test_forward_record_contains_graph(self) -> None:
+        """ForwardRecord contains the execution graph."""
+        module = LinearPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        assert record.graph is not None
+        assert len(record.graph.nodes) > 0
+
+    @pytest.mark.asyncio
+    async def test_forward_record_contains_node_outputs(self) -> None:
+        """ForwardRecord contains output values for all executed nodes."""
+        module = LinearPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        # Should have outputs for all completed nodes
+        assert len(record.node_outputs) > 0
+        # The final output value should be in there
+        assert "test_a_b_c" in record.node_outputs.values()
+
+    @pytest.mark.asyncio
+    async def test_forward_record_contains_execution_order(self) -> None:
+        """ForwardRecord contains execution order."""
+        module = LinearPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        # Should have execution order for all nodes
+        assert len(record.execution_order) > 0
+        # Input should be first in topological order
+        assert any("input" in node_id for node_id in record.execution_order)
+
+    @pytest.mark.asyncio
+    async def test_forward_record_contains_timing(self) -> None:
+        """ForwardRecord contains timing information."""
+        module = LinearPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        # Should have timing for executed nodes
+        assert len(record.timing) > 0
+        # Timing values should be in seconds (small positive numbers)
+        for _node_id, time_s in record.timing.items():
+            assert time_s >= 0
+            assert time_s < 10  # Shouldn't take more than 10 seconds
+
+    @pytest.mark.asyncio
+    async def test_forward_record_contains_module_map(self) -> None:
+        """ForwardRecord contains module instances for inference nodes."""
+        module = LinearPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        # Should have module references for InferenceModule nodes
+        assert len(record.module_map) > 0
+        # All modules should be InferenceModule instances
+        for _node_id, mod in record.module_map.items():
+            assert isinstance(mod, InferenceModule)
+
+    @pytest.mark.asyncio
+    async def test_forward_record_node_inputs_recorded(self) -> None:
+        """ForwardRecord records resolved node inputs."""
+        module = LinearPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        # Should have inputs for nodes that received args
+        assert len(record.node_inputs) > 0
+
+    @pytest.mark.asyncio
+    async def test_run_with_record_multi_output(self) -> None:
+        """run() with record=True works with multiple outputs."""
+        module = ParallelPipeline()
+
+        result = await run(module, "test", record=True)
+
+        output, record = result
+        # Multiple outputs come back as dict
+        assert isinstance(output, dict)
+        assert len(output) == 2
+        assert isinstance(record, ForwardRecord)
+
+    @pytest.mark.asyncio
+    async def test_run_with_record_and_checkpointing(self, tmp_path: Path) -> None:
+        """run() works with both record=True and checkpointing."""
+        module = LinearPipeline()
+
+        output, record = await run(
+            module,
+            "test",
+            record=True,
+            checkpoint_dir=tmp_path,
+            execution_id="record_test",
+        )
+
+        assert output == "test_a_b_c"
+        assert isinstance(record, ForwardRecord)
+        # Checkpoint should also be created
+        assert (tmp_path / "record_test.json").exists()
+
+    @pytest.mark.asyncio
+    async def test_forward_record_get_node_output_method(self) -> None:
+        """ForwardRecord.get_node_output() returns correct value."""
+        module = EchoModule()
+
+        output, record = await run(module, "test_value", record=True)
+
+        # Should be able to retrieve the input node's output
+        # which is the original input value
+        for node_id in record.node_outputs:
+            result = record.get_node_output(node_id)
+            assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_forward_record_with_nested_pipeline(self) -> None:
+        """ForwardRecord works with nested pipelines."""
+        module = NestedPipeline()
+
+        output, record = await run(module, "test", record=True)
+
+        assert output == "test_a_b_c_outer"
+        assert isinstance(record, ForwardRecord)
+        # Should have tracked all the nested modules
+        assert len(record.graph.nodes) > 1

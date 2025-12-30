@@ -25,7 +25,11 @@ class PromptTemplate(InferenceModule):
     def __init__(self, template: str) -> None:
         super().__init__()
         # This parameter can be updated during optimization
-        self.template = Parameter(template, requires_grad=True)
+        self.template = Parameter(
+            template,
+            description="Prompt template that formats user context",
+            requires_grad=True,
+        )
 
     def forward(self, context: str) -> str:
         return self.template.value.format(context=context)
@@ -42,9 +46,13 @@ class Assistant(InferenceModule):
     def __init__(self, name: str, instructions: str) -> None:
         super().__init__()
         # Fixed parameter - won't be optimized
-        self.name = Parameter(name, requires_grad=False)
+        self.name = Parameter(name, description="Assistant name", requires_grad=False)
         # Learnable parameter - will be optimized
-        self.instructions = Parameter(instructions, requires_grad=True)
+        self.instructions = Parameter(
+            instructions,
+            description="Assistant behavior instructions",
+            requires_grad=True,
+        )
 
     def forward(self, user_input: str) -> str:
         return (
@@ -64,7 +72,7 @@ class Tagger(InferenceModule):
 
     def __init__(self, tag: str) -> None:
         super().__init__()
-        self.tag = Parameter(tag, requires_grad=True)
+        self.tag = Parameter(tag, description="Tag to add to text", requires_grad=True)
 
     def forward(self, text: str) -> str:
         return f"[{self.tag.value}] {text}"
@@ -96,8 +104,12 @@ class LearnableGreeter(InferenceModule):
 
     def __init__(self) -> None:
         super().__init__()
-        self.greeting = Parameter("Hello", requires_grad=True)
-        self.punctuation = Parameter("!", requires_grad=True)
+        self.greeting = Parameter(
+            "Hello", description="Greeting word", requires_grad=True
+        )
+        self.punctuation = Parameter(
+            "!", description="Punctuation to use", requires_grad=True
+        )
 
     def forward(self, name: str) -> str:
         return f"{self.greeting.value}, {name}{self.punctuation.value}"
@@ -113,8 +125,14 @@ class OptimizableAssistant(InferenceModule):
 
     def __init__(self) -> None:
         super().__init__()
-        self.system = Parameter("You are a helpful assistant.", requires_grad=True)
-        self.greeting = Parameter("Hello!", requires_grad=True)
+        self.system = Parameter(
+            "You are a helpful assistant.",
+            description="System prompt for the assistant",
+            requires_grad=True,
+        )
+        self.greeting = Parameter(
+            "Hello!", description="Greeting message", requires_grad=True
+        )
 
     def forward(self, user_input: str) -> str:
         return f"[System: {self.system.value}]\n{self.greeting.value} {user_input}"

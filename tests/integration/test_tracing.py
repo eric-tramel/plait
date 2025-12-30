@@ -136,7 +136,7 @@ class TestNestedModuleTracing:
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prefix = Parameter("Outer prefix")
+                self.prefix = Parameter("Outer prefix", description="test")
                 self.inner = Inner()
 
             def forward(self, text: str) -> Proxy:

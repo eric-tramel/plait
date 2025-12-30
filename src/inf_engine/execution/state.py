@@ -287,7 +287,7 @@ class ExecutionState:
         during initialization and added to the pending queue.
     """
 
-    def __init__(self, graph: InferenceGraph) -> None:
+    def __init__(self, graph: InferenceGraph, record: bool = False) -> None:
         """Initialize execution state from an inference graph.
 
         Analyzes the graph to determine initial task states and sets up
@@ -296,11 +296,18 @@ class ExecutionState:
 
         Args:
             graph: The InferenceGraph to execute.
+            record: If True, track additional data (node inputs, execution
+                order) needed for building a ForwardRecord. Default False.
 
         Example:
             >>> state = ExecutionState(graph)
             >>> len(state.status)  # One entry per node
             3
+
+            >>> # Enable recording for backward pass support
+            >>> state = ExecutionState(graph, record=True)
+            >>> state.is_recording
+            True
         """
         self.graph = graph
 
@@ -323,8 +330,24 @@ class ExecutionState:
         # Set when new tasks become ready for execution
         self.task_ready_event: asyncio.Event = asyncio.Event()
 
+        # Recording mode for ForwardRecord support
+        self._record: bool = record
+        # node_id -> dict of argument name to resolved value
+        self.recorded_inputs: dict[str, dict[str, Any]] = {}
+        # Order in which nodes completed execution
+        self.execution_order: list[str] = []
+
         # Initialize state from graph
         self._initialize()
+
+    @property
+    def is_recording(self) -> bool:
+        """Check if this state is tracking data for ForwardRecord.
+
+        Returns:
+            True if recording mode is enabled, False otherwise.
+        """
+        return self._record
 
     def _initialize(self) -> None:
         """Set up initial state from the graph.
@@ -510,6 +533,9 @@ class ExecutionState:
         the task from in_progress. Then checks all dependent nodes to see if
         any have become ready (all their dependencies are now complete).
 
+        If recording mode is enabled, also records the task's resolved inputs
+        and adds the node to the execution order.
+
         Args:
             node_id: The ID of the node that completed.
             result: The TaskResult containing the output value and metadata.
@@ -533,6 +559,20 @@ class ExecutionState:
             >>> print(newly_ready)
             ['LLMInference_1']
         """
+        # Record inputs and execution order if in recording mode
+        if self._record:
+            task = self.in_progress.get(node_id)
+            if task is not None:
+                # Build input dict from args and kwargs
+                inputs: dict[str, Any] = {}
+                # Add positional args by index
+                for i, arg in enumerate(task.args):
+                    inputs[f"arg_{i}"] = arg
+                # Add keyword args
+                inputs.update(task.kwargs)
+                self.recorded_inputs[node_id] = inputs
+            self.execution_order.append(node_id)
+
         self.status[node_id] = TaskStatus.COMPLETED
         self.results[node_id] = result
         self.in_progress.pop(node_id, None)

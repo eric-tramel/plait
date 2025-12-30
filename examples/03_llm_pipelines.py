@@ -151,6 +151,7 @@ class AdaptiveAssistant(InferenceModule):
         # Learnable instruction parameter
         self.instructions = Parameter(
             "You are a helpful assistant. Be concise and accurate.",
+            description="Learnable system instructions for the assistant",
             requires_grad=True,
         )
         self.llm = LLMInference(

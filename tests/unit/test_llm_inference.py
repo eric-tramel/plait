@@ -100,7 +100,7 @@ class TestLLMInferenceSystemPrompt:
 
     def test_system_prompt_parameter_passed_through(self) -> None:
         """Parameter system_prompt is used as-is."""
-        param = Parameter("Learnable prompt", requires_grad=True)
+        param = Parameter("Learnable prompt", description="test", requires_grad=True)
         llm = LLMInference(alias="test_llm", system_prompt=param)
 
         assert llm.system_prompt is param
@@ -109,7 +109,7 @@ class TestLLMInferenceSystemPrompt:
 
     def test_system_prompt_parameter_requires_grad_false(self) -> None:
         """Parameter with requires_grad=False is preserved."""
-        param = Parameter("Fixed prompt", requires_grad=False)
+        param = Parameter("Fixed prompt", description="test", requires_grad=False)
         llm = LLMInference(alias="test_llm", system_prompt=param)
 
         assert llm.system_prompt is param
@@ -117,7 +117,7 @@ class TestLLMInferenceSystemPrompt:
 
     def test_system_prompt_parameter_registered(self) -> None:
         """Parameter system_prompt is registered in _parameters."""
-        param = Parameter("Learnable prompt", requires_grad=True)
+        param = Parameter("Learnable prompt", description="test", requires_grad=True)
         llm = LLMInference(alias="test_llm", system_prompt=param)
 
         assert "system_prompt" in llm._parameters
@@ -258,7 +258,7 @@ class TestLLMInferenceAllParameters:
 
     def test_all_parameters_with_parameter_system_prompt(self) -> None:
         """All parameters work with Parameter system_prompt."""
-        param = Parameter("Learnable", requires_grad=True)
+        param = Parameter("Learnable", description="test", requires_grad=True)
         llm = LLMInference(
             alias="learnable_config",
             system_prompt=param,
@@ -418,7 +418,9 @@ class TestLLMInferenceModuleIntegration:
                 super().__init__()
                 self.llm = LLMInference(
                     alias="test",
-                    system_prompt=Parameter("Learnable", requires_grad=True),
+                    system_prompt=Parameter(
+                        "Learnable", description="test", requires_grad=True
+                    ),
                 )
 
         parent = ParentModule()
@@ -471,7 +473,7 @@ class TestLLMInferenceEdgeCases:
 
     def test_empty_parameter_system_prompt(self) -> None:
         """Parameter with empty string value is still used as-is."""
-        param = Parameter("", requires_grad=True)
+        param = Parameter("", description="test", requires_grad=True)
         llm = LLMInference(alias="test", system_prompt=param)
 
         # Parameter is passed through even if its value is empty
@@ -484,7 +486,7 @@ class TestLLMInferenceEdgeCases:
 
         assert llm.system_prompt is not None
         assert llm.system_prompt.value == "Original"
-        new_param = Parameter("New prompt", requires_grad=True)
+        new_param = Parameter("New prompt", description="test", requires_grad=True)
         llm.system_prompt = new_param
 
         # New parameter is registered (stale entry remains per PyTorch behavior)

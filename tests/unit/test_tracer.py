@@ -1499,7 +1499,7 @@ class TestTraceMethod:
         class ModuleWithParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("test prompt")
+                self.prompt = Parameter("test prompt", description="test")
 
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
@@ -1516,7 +1516,7 @@ class TestTraceMethod:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.inner_param = Parameter("inner value")
+                self.inner_param = Parameter("inner value", description="test")
 
             def forward(self, x: str) -> str:
                 return x
@@ -1524,7 +1524,7 @@ class TestTraceMethod:
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.outer_param = Parameter("outer value")
+                self.outer_param = Parameter("outer value", description="test")
                 self.inner = Inner()
 
             def forward(self, x: str) -> Proxy:

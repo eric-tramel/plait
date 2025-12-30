@@ -18,15 +18,25 @@ class Parameter:
     instructions, etc.) that are optimized via LLM feedback rather
     than gradient descent.
 
+    The description field is REQUIRED and should explain what this parameter
+    represents, enabling the optimizer to understand how to improve it.
+
     Args:
         value: The current string value of the parameter.
+        description: A description of what this parameter does/represents.
+            This is required to enable self-documenting optimization.
         requires_grad: If True, feedback will be accumulated during backward
             passes. If False, the parameter is treated as a constant.
 
     Example:
-        >>> param = Parameter("You are a helpful assistant.")
+        >>> param = Parameter(
+        ...     "You are a helpful assistant.",
+        ...     description="Defines the agent's identity and baseline behavior."
+        ... )
         >>> str(param)
         'You are a helpful assistant.'
+        >>> param.description
+        "Defines the agent's identity and baseline behavior."
         >>> param.accumulate_feedback("Be more concise")
         >>> param.get_accumulated_feedback()
         ['Be more concise']
@@ -36,6 +46,7 @@ class Parameter:
     """
 
     value: str
+    description: str
     requires_grad: bool = True
     _name: str | None = field(default=None, repr=False, compare=False)
     _feedback_buffer: list[str] = field(default_factory=list, repr=False, compare=False)

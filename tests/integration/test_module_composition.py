@@ -40,7 +40,7 @@ class Prefixer(InferenceModule):
 
     def __init__(self, prefix: str, requires_grad: bool = True) -> None:
         super().__init__()
-        self.prefix = Parameter(prefix, requires_grad=requires_grad)
+        self.prefix = Parameter(prefix, description="test", requires_grad=requires_grad)
 
     def forward(self, text: str) -> str:
         return f"{self.prefix.value}: {text}"
@@ -191,7 +191,7 @@ class TestNestedComposition:
         class Level3(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.param = Parameter("deep")
+                self.param = Parameter("deep", description="test")
 
             def forward(self, x: str) -> str:
                 return f"{self.param.value}:{x}"
@@ -596,19 +596,19 @@ class TestParameterDiscovery:
         class Deep(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.param = Parameter("deep_value")
+                self.param = Parameter("deep_value", description="test")
 
         class Middle(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
                 self.deep = Deep()
-                self.param = Parameter("middle_value")
+                self.param = Parameter("middle_value", description="test")
 
         class Top(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
                 self.middle = Middle()
-                self.param = Parameter("top_value")
+                self.param = Parameter("top_value", description="test")
 
         top = Top()
         params = list(top.parameters())
@@ -623,15 +623,15 @@ class TestParameterDiscovery:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.weight = Parameter("w")
-                self.bias = Parameter("b")
+                self.weight = Parameter("w", description="test")
+                self.bias = Parameter("b", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner1 = Inner()
                 self.inner2 = Inner()
-                self.own_param = Parameter("own")
+                self.own_param = Parameter("own", description="test")
 
         outer = Outer()
         named = dict(outer.named_parameters())
@@ -698,7 +698,7 @@ class TestComplexPatterns:
         class Processor(InferenceModule):
             def __init__(self, name: str) -> None:
                 super().__init__()
-                self.prefix = Parameter(name)
+                self.prefix = Parameter(name, description="test")
 
             def forward(self, x: str) -> str:
                 return f"[{self.prefix.value}:{x}]"
@@ -807,8 +807,8 @@ class TestCompositionEdgeCases:
         class ParamsOnly(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.p1 = Parameter("v1")
-                self.p2 = Parameter("v2")
+                self.p1 = Parameter("v1", description="test")
+                self.p2 = Parameter("v2", description="test")
 
             def forward(self) -> str:
                 return f"{self.p1.value},{self.p2.value}"
@@ -826,7 +826,7 @@ class TestCompositionEdgeCases:
         class DeepModule(InferenceModule):
             def __init__(self, depth: int) -> None:
                 super().__init__()
-                self.param = Parameter(f"depth_{depth}")
+                self.param = Parameter(f"depth_{depth}", description="test")
                 if depth > 0:
                     self.child = DeepModule(depth - 1)
 

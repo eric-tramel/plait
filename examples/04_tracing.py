@@ -215,7 +215,11 @@ class DetailedModule(InferenceModule):
 
     def __init__(self) -> None:
         super().__init__()
-        self.prompt = Parameter("Custom instruction", requires_grad=True)
+        self.prompt = Parameter(
+            "Custom instruction",
+            description="Custom instruction parameter",
+            requires_grad=True,
+        )
         self.llm = LLMInference(
             alias="assistant",
             system_prompt=self.prompt,

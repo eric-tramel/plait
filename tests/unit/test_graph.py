@@ -324,8 +324,8 @@ class TestInferenceGraphCreation:
 
     def test_graph_with_parameters(self) -> None:
         """InferenceGraph can store parameters."""
-        param1 = Parameter("value1")
-        param2 = Parameter("value2")
+        param1 = Parameter("value1", description="test")
+        param2 = Parameter("value2", description="test")
 
         graph = InferenceGraph(
             nodes={},

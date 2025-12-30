@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add required `Parameter.description` field for self-documenting optimization
+  - Parameter now requires a `description` argument explaining what it represents
+  - Description is included in repr and used by optimizers to understand the parameter
+- Add `ForwardRecord` dataclass for backward pass support
+  - Captures execution graph, node inputs/outputs, module references, execution order, and timing
+  - Created by `run()` when `record=True` is passed
+  - Provides accessor methods: `get_node_input()`, `get_node_output()`, `get_module()`
+- Add `record` parameter to `run()` function
+  - When `record=False` (default): returns output as before
+  - When `record=True`: returns `(output, ForwardRecord)` tuple for backward propagation
+  - ExecutionState tracks node inputs and execution order when recording is enabled
+- Add `src/inf_engine/optimization/` package with optimization infrastructure
 - Project scaffolding and development tooling
 - Design documentation in `design_docs/`
 - Development plan and task breakdown

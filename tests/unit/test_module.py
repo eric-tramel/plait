@@ -130,7 +130,7 @@ class TestParameterRegistration:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("test prompt")
+                self.prompt = Parameter("test prompt", description="test")
 
         module = MyModule()
         assert "prompt" in module._parameters
@@ -142,7 +142,7 @@ class TestParameterRegistration:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.my_param = Parameter("test")
+                self.my_param = Parameter("test", description="test")
 
         module = MyModule()
         assert module.my_param._name == "my_param"
@@ -153,9 +153,9 @@ class TestParameterRegistration:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.param1 = Parameter("value1")
-                self.param2 = Parameter("value2")
-                self.param3 = Parameter("value3")
+                self.param1 = Parameter("value1", description="test")
+                self.param2 = Parameter("value2", description="test")
+                self.param3 = Parameter("value3", description="test")
 
         module = MyModule()
         assert len(module._parameters) == 3
@@ -169,7 +169,9 @@ class TestParameterRegistration:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.frozen = Parameter("frozen", requires_grad=False)
+                self.frozen = Parameter(
+                    "frozen", description="test", requires_grad=False
+                )
 
         module = MyModule()
         assert "frozen" in module._parameters
@@ -185,7 +187,7 @@ class TestMixedRegistration:
             def __init__(self) -> None:
                 super().__init__()
                 self.child = InferenceModule()
-                self.param = Parameter("test")
+                self.param = Parameter("test", description="test")
 
         module = MyModule()
         assert "child" in module._children
@@ -199,10 +201,10 @@ class TestMixedRegistration:
         class ComplexModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.system_prompt = Parameter("You are helpful.")
+                self.system_prompt = Parameter("You are helpful.", description="test")
                 self.temperature = 0.7  # Regular attribute
                 self.sub_module = InferenceModule()
-                self.response_format = Parameter("json")
+                self.response_format = Parameter("json", description="test")
 
         module = ComplexModule()
 
@@ -263,7 +265,7 @@ class TestEdgeCases:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.thing = Parameter("initial")
+                self.thing = Parameter("initial", description="test")
 
         module = MyModule()
         assert "thing" in module._parameters
@@ -290,7 +292,7 @@ class TestEdgeCases:
         assert "thing" not in module._parameters
 
         # Reassign to a Parameter
-        module.thing = Parameter("now a param")
+        module.thing = Parameter("now a param", description="test")
 
         # Should now be in _parameters, but _children is NOT auto-cleaned
         assert "thing" in module._parameters
@@ -323,7 +325,7 @@ class TestEdgeCases:
 
     def test_parameter_assigned_to_multiple_modules(self) -> None:
         """A parameter assigned to multiple modules gets last module's name."""
-        shared_param = Parameter("shared value")
+        shared_param = Parameter("shared value", description="test")
 
         class Module1(InferenceModule):
             def __init__(self) -> None:
@@ -366,7 +368,7 @@ class TestEdgeCases:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.empty = Parameter("")
+                self.empty = Parameter("", description="test")
 
         module = MyModule()
         assert "empty" in module._parameters
@@ -379,7 +381,7 @@ class TestEdgeCases:
             def __init__(self) -> None:
                 super().__init__()
                 self.child = InferenceModule()
-                self.param = Parameter("test")
+                self.param = Parameter("test", description="test")
                 self.regular = "plain"
 
         module = MyModule()
@@ -485,7 +487,7 @@ class TestChildrenIterator:
             def __init__(self) -> None:
                 super().__init__()
                 self.child = InferenceModule()
-                self.param = Parameter("test")
+                self.param = Parameter("test", description="test")
 
         module = MyModule()
         children_list = list(module.children())
@@ -737,7 +739,7 @@ class TestParametersIterator:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("test")
+                self.prompt = Parameter("test", description="test")
 
         module = MyModule()
         params_list = list(module.parameters())
@@ -751,8 +753,8 @@ class TestParametersIterator:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.param1 = Parameter("value1")
-                self.param2 = Parameter("value2")
+                self.param1 = Parameter("value1", description="test")
+                self.param2 = Parameter("value2", description="test")
 
         module = MyModule()
         params_list = list(module.parameters())
@@ -767,12 +769,12 @@ class TestParametersIterator:
         class Child(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.child_param = Parameter("child value")
+                self.child_param = Parameter("child value", description="test")
 
         class Parent(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.parent_param = Parameter("parent value")
+                self.parent_param = Parameter("parent value", description="test")
                 self.child = Child()
 
         parent = Parent()
@@ -788,7 +790,7 @@ class TestParametersIterator:
         class Level3(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.deep_param = Parameter("deep")
+                self.deep_param = Parameter("deep", description="test")
 
         class Level2(InferenceModule):
             def __init__(self) -> None:
@@ -813,7 +815,7 @@ class TestParametersIterator:
             def __init__(self) -> None:
                 super().__init__()
                 self.child = InferenceModule()
-                self.param = Parameter("test")
+                self.param = Parameter("test", description="test")
 
         module = MyModule()
         params_list = list(module.parameters())
@@ -836,7 +838,7 @@ class TestNamedParametersIterator:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("test")
+                self.prompt = Parameter("test", description="test")
 
         module = MyModule()
         named_list = list(module.named_parameters())
@@ -850,8 +852,8 @@ class TestNamedParametersIterator:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.alpha = Parameter("a")
-                self.beta = Parameter("b")
+                self.alpha = Parameter("a", description="test")
+                self.beta = Parameter("b", description="test")
 
         module = MyModule()
         named_dict = dict(module.named_parameters())
@@ -866,12 +868,12 @@ class TestNamedParametersIterator:
         class Child(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.child_param = Parameter("child")
+                self.child_param = Parameter("child", description="test")
 
         class Parent(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.parent_param = Parameter("parent")
+                self.parent_param = Parameter("parent", description="test")
                 self.child = Child()
 
         parent = Parent()
@@ -888,7 +890,7 @@ class TestNamedParametersIterator:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.param = Parameter("test")
+                self.param = Parameter("test", description="test")
 
         module = MyModule()
         named_dict = dict(module.named_parameters(prefix="base"))
@@ -901,19 +903,19 @@ class TestNamedParametersIterator:
         class Leaf(InferenceModule):
             def __init__(self, name: str) -> None:
                 super().__init__()
-                self.leaf_param = Parameter(name)
+                self.leaf_param = Parameter(name, description="test")
 
         class Branch(InferenceModule):
             def __init__(self, name: str) -> None:
                 super().__init__()
-                self.branch_param = Parameter(name)
+                self.branch_param = Parameter(name, description="test")
                 self.left = Leaf(f"{name}_left")
                 self.right = Leaf(f"{name}_right")
 
         class Root(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.root_param = Parameter("root")
+                self.root_param = Parameter("root", description="test")
                 self.branch = Branch("branch")
 
         root = Root()
@@ -954,7 +956,7 @@ class TestIntrospectionIntegration:
             def __init__(self) -> None:
                 super().__init__()
                 self.child = InferenceModule()
-                self.param = Parameter("test")
+                self.param = Parameter("test", description="test")
 
         module = MyModule()
 
@@ -975,12 +977,12 @@ class TestIntrospectionIntegration:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.inner_param = Parameter("inner")
+                self.inner_param = Parameter("inner", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.outer_param = Parameter("outer")
+                self.outer_param = Parameter("outer", description="test")
                 self.inner = Inner()
 
         outer = Outer()
@@ -1057,7 +1059,7 @@ class TestIntrospectionEdgeCases:
 
     def test_shared_parameter_visited_multiple_times(self) -> None:
         """parameters() visits shared parameter multiple times through different paths."""
-        shared_param = Parameter("shared value")
+        shared_param = Parameter("shared value", description="test")
 
         class Parent(InferenceModule):
             def __init__(self) -> None:
@@ -1138,7 +1140,7 @@ class TestIntrospectionEdgeCases:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.param = Parameter("original")
+                self.param = Parameter("original", description="test")
 
         module = MyModule()
         original_param = module.param
@@ -1242,12 +1244,12 @@ class TestIntrospectionEdgeCases:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.inner_param = Parameter("inner")
+                self.inner_param = Parameter("inner", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.outer_param = Parameter("outer")
+                self.outer_param = Parameter("outer", description="test")
                 self.inner = Inner()
 
         outer = Outer()
@@ -1845,7 +1847,7 @@ class TestForwardCallIntegration:
         class Prefixer(InferenceModule):
             def __init__(self, prefix: str) -> None:
                 super().__init__()
-                self.prefix = Parameter(prefix)
+                self.prefix = Parameter(prefix, description="test")
 
             def forward(self, text: str) -> str:
                 return f"{self.prefix.value}: {text}"
@@ -2316,7 +2318,7 @@ class TestStateDict:
         class SingleParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("hello")
+                self.prompt = Parameter("hello", description="test")
 
         module = SingleParam()
         state = module.state_dict()
@@ -2328,8 +2330,8 @@ class TestStateDict:
         class MultiParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.system = Parameter("You are helpful.")
-                self.template = Parameter("Answer: {}")
+                self.system = Parameter("You are helpful.", description="test")
+                self.template = Parameter("Answer: {}", description="test")
 
         module = MultiParam()
         state = module.state_dict()
@@ -2341,12 +2343,12 @@ class TestStateDict:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.weight = Parameter("w")
+                self.weight = Parameter("w", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.bias = Parameter("b")
+                self.bias = Parameter("b", description="test")
                 self.inner = Inner()
 
         module = Outer()
@@ -2359,7 +2361,7 @@ class TestStateDict:
         class Level3(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.deep = Parameter("level3")
+                self.deep = Parameter("level3", description="test")
 
         class Level2(InferenceModule):
             def __init__(self) -> None:
@@ -2381,14 +2383,14 @@ class TestStateDict:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.c = Parameter("c")
+                self.c = Parameter("c", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = Parameter("a")
+                self.a = Parameter("a", description="test")
                 self.inner = Inner()
-                self.b = Parameter("b")
+                self.b = Parameter("b", description="test")
 
         module = Outer()
         state = module.state_dict()
@@ -2405,7 +2407,7 @@ class TestLoadStateDict:
         class SingleParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("original")
+                self.prompt = Parameter("original", description="test")
 
         module = SingleParam()
         module.load_state_dict({"prompt": "updated"})
@@ -2417,8 +2419,8 @@ class TestLoadStateDict:
         class MultiParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = Parameter("a_original")
-                self.b = Parameter("b_original")
+                self.a = Parameter("a_original", description="test")
+                self.b = Parameter("b_original", description="test")
 
         module = MultiParam()
         module.load_state_dict({"a": "a_updated", "b": "b_updated"})
@@ -2431,12 +2433,12 @@ class TestLoadStateDict:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.weight = Parameter("original_weight")
+                self.weight = Parameter("original_weight", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.bias = Parameter("original_bias")
+                self.bias = Parameter("original_bias", description="test")
                 self.inner = Inner()
 
         module = Outer()
@@ -2450,8 +2452,8 @@ class TestLoadStateDict:
         class MultiParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = Parameter("a_original")
-                self.b = Parameter("b_original")
+                self.a = Parameter("a_original", description="test")
+                self.b = Parameter("b_original", description="test")
 
         module = MultiParam()
         module.load_state_dict({"a": "a_updated"})  # Only update 'a'
@@ -2465,7 +2467,7 @@ class TestLoadStateDict:
         class SingleParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("original")
+                self.prompt = Parameter("original", description="test")
 
         module = SingleParam()
         with pytest.raises(KeyError) as exc_info:
@@ -2479,7 +2481,7 @@ class TestLoadStateDict:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.weight = Parameter("w")
+                self.weight = Parameter("w", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
@@ -2497,7 +2499,7 @@ class TestLoadStateDict:
         class SingleParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("original")
+                self.prompt = Parameter("original", description="test")
 
         module = SingleParam()
         module.load_state_dict({})
@@ -2521,7 +2523,7 @@ class TestStateDictRoundTrip:
         class SingleParam(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("hello world")
+                self.prompt = Parameter("hello world", description="test")
 
         module1 = SingleParam()
         state = module1.state_dict()
@@ -2537,12 +2539,12 @@ class TestStateDictRoundTrip:
         class Inner(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.weight = Parameter("inner_value")
+                self.weight = Parameter("inner_value", description="test")
 
         class Outer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.bias = Parameter("outer_value")
+                self.bias = Parameter("outer_value", description="test")
                 self.inner = Inner()
 
         module1 = Outer()
@@ -2560,7 +2562,7 @@ class TestStateDictRoundTrip:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("default")
+                self.prompt = Parameter("default", description="test")
 
         module1 = MyModule()
         module1.prompt.value = "custom value after modification"
@@ -2587,19 +2589,19 @@ class TestStateDictRoundTrip:
         class Encoder(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.embed = Parameter("encoder_embed")
+                self.embed = Parameter("encoder_embed", description="test")
 
         class Decoder(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.output = Parameter("decoder_output")
+                self.output = Parameter("decoder_output", description="test")
 
         class Transformer(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
                 self.encoder = Encoder()
                 self.decoder = Decoder()
-                self.norm = Parameter("layer_norm")
+                self.norm = Parameter("layer_norm", description="test")
 
         module1 = Transformer()
         module1.encoder.embed.value = "modified_embed"
@@ -2622,8 +2624,8 @@ class TestStateDictRoundTrip:
         class MyModule(InferenceModule):
             def __init__(self) -> None:
                 super().__init__()
-                self.prompt = Parameter("test value")
-                self.template = Parameter("template: {}")
+                self.prompt = Parameter("test value", description="test")
+                self.template = Parameter("template: {}", description="test")
 
         module1 = MyModule()
         state = module1.state_dict()

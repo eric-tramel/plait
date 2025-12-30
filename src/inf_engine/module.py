@@ -888,7 +888,11 @@ class LLMInference(InferenceModule):
         if isinstance(system_prompt, str):
             if system_prompt:
                 # Non-empty string: wrap as non-learnable Parameter
-                self.system_prompt = Parameter(system_prompt, requires_grad=False)
+                self.system_prompt = Parameter(
+                    system_prompt,
+                    description="System prompt for LLM",
+                    requires_grad=False,
+                )
             else:
                 # Empty string: no system prompt
                 self.system_prompt = None

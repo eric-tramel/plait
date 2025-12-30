@@ -32,17 +32,22 @@ Example:
     ...     checkpoint_dir="/data/checkpoints",
     ...     execution_id="run_001",
     ... )
+    >>>
+    >>> # Execute with recording for backward pass support
+    >>> output, record = await run(Pipeline(), "Hello!", resources=resources, record=True)
+    >>> # record is a ForwardRecord containing graph and execution data
 """
 
 from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 from inf_engine.execution.checkpoint import CheckpointManager
 from inf_engine.execution.scheduler import Scheduler
 from inf_engine.execution.state import ExecutionState
+from inf_engine.optimization.record import ForwardRecord
 from inf_engine.tracing.tracer import Tracer
 
 if TYPE_CHECKING:
@@ -52,6 +57,10 @@ if TYPE_CHECKING:
     from inf_engine.resources.manager import ResourceManager
 
 
+from typing import Literal
+
+
+@overload
 async def run(
     module: InferenceModule,
     *args: Any,
@@ -59,8 +68,34 @@ async def run(
     max_concurrent: int = 100,
     checkpoint_dir: Path | str | None = None,
     execution_id: str | None = None,
+    record: Literal[False] = False,
     **kwargs: Any,
-) -> Any:
+) -> Any: ...
+
+
+@overload
+async def run(
+    module: InferenceModule,
+    *args: Any,
+    resources: ResourceConfig | ResourceManager | None = None,
+    max_concurrent: int = 100,
+    checkpoint_dir: Path | str | None = None,
+    execution_id: str | None = None,
+    record: Literal[True] = ...,
+    **kwargs: Any,
+) -> tuple[Any, ForwardRecord]: ...
+
+
+async def run(
+    module: InferenceModule,
+    *args: Any,
+    resources: ResourceConfig | ResourceManager | None = None,
+    max_concurrent: int = 100,
+    checkpoint_dir: Path | str | None = None,
+    execution_id: str | None = None,
+    record: bool = False,
+    **kwargs: Any,
+) -> Any | tuple[Any, ForwardRecord]:
     """Trace and execute an inference module.
 
     This function traces the module's forward() method to capture the
@@ -82,13 +117,20 @@ async def run(
         execution_id: Optional identifier for this execution run. Used as
             the checkpoint filename. If not provided and checkpoint_dir is
             set, a UUID will be generated.
+        record: If True, return a ForwardRecord along with the output for
+            backward pass support. The ForwardRecord contains the execution
+            graph, node inputs/outputs, and module references needed for
+            optimization. Defaults to False.
         **kwargs: Keyword arguments to pass to forward().
 
     Returns:
-        The output of the module's forward() method. If the module
-        produces a single output, returns that value directly. If
-        the module produces multiple outputs, returns a dictionary
-        mapping output node IDs to their values.
+        If record=False (default): The output of the module's forward()
+            method. If the module produces a single output, returns that
+            value directly. If multiple outputs, returns a dictionary
+            mapping output node IDs to their values.
+        If record=True: A tuple of (output, ForwardRecord) where output
+            is as above and ForwardRecord contains execution data for
+            backward propagation.
 
     Raises:
         NotImplementedError: If the module's forward() method raises
@@ -138,6 +180,13 @@ async def run(
         ...     execution_id="batch_001",
         ... )
         >>> # Checkpoint saved to /data/checkpoints/batch_001.json
+
+    Example with recording for backward pass:
+        >>> # Execute with recording enabled for optimization
+        >>> output, record = await run(pipeline, "input", resources=resources, record=True)
+        >>> # record contains graph, inputs, outputs for backward()
+        >>> feedback = await loss_fn(output, target, record=record)
+        >>> await feedback.backward()
     """
     from inf_engine.execution.context import get_execution_settings
 
@@ -146,7 +195,8 @@ async def run(
     graph = tracer.trace(module, *args, **kwargs)
 
     # Create execution state from the graph
-    state = ExecutionState(graph)
+    # Enable recording mode if we need to return a ForwardRecord
+    state = ExecutionState(graph, record=record)
 
     # Create ResourceManager if resources are provided
     resource_manager = None
@@ -201,7 +251,57 @@ async def run(
     if checkpoint_manager is not None:
         await checkpoint_manager.flush_all()
 
-    # Return outputs (unwrap if single output)
+    # Unwrap outputs if single output
     if len(outputs) == 1:
-        return next(iter(outputs.values()))
-    return outputs
+        output = next(iter(outputs.values()))
+    else:
+        output = outputs
+
+    # Build and return ForwardRecord if recording is enabled
+    if record:
+        forward_record = _build_forward_record(graph, state)
+        return output, forward_record
+
+    return output
+
+
+def _build_forward_record(graph: Any, state: ExecutionState) -> ForwardRecord:
+    """Build a ForwardRecord from execution state.
+
+    Constructs a ForwardRecord containing all data needed for backward
+    propagation: the graph structure, node inputs/outputs, module references,
+    execution order, and timing information.
+
+    Args:
+        graph: The InferenceGraph that was executed.
+        state: The ExecutionState with recorded execution data.
+
+    Returns:
+        A ForwardRecord containing execution data for backward pass.
+    """
+    from inf_engine.module import InferenceModule
+
+    # Extract node outputs from state results
+    node_outputs: dict[str, Any] = {
+        node_id: result.value for node_id, result in state.results.items()
+    }
+
+    # Extract timing (convert ms to seconds)
+    timing: dict[str, float] = {
+        node_id: result.duration_ms / 1000 for node_id, result in state.results.items()
+    }
+
+    # Build module map from graph nodes
+    module_map: dict[str, InferenceModule] = {}
+    for node_id, node in graph.nodes.items():
+        if isinstance(node.module, InferenceModule):
+            module_map[node_id] = node.module
+
+    return ForwardRecord(
+        graph=graph,
+        node_inputs=state.recorded_inputs,
+        node_outputs=node_outputs,
+        module_map=module_map,
+        execution_order=state.execution_order,
+        timing=timing,
+    )
