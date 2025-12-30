@@ -15,7 +15,7 @@ import pytest
 
 from inf_engine.clients.base import LLMClient
 from inf_engine.errors import TransientError
-from inf_engine.execution.scheduler import Scheduler
+from inf_engine.execution.scheduler import RateLimiterProtocol, Scheduler
 from inf_engine.execution.state import ExecutionState, TaskStatus
 from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import InferenceModule, LLMInference
@@ -139,7 +139,7 @@ class MockResourceManager:
     def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
         return self.semaphores.get(alias)
 
-    def get_rate_limiter(self, alias: str) -> MockRateLimiter | None:
+    def get_rate_limiter(self, alias: str) -> RateLimiterProtocol | None:
         return self.rate_limiters.get(alias)
 
 

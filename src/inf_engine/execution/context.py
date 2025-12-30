@@ -45,6 +45,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from inf_engine.execution.checkpoint import CheckpointManager
     from inf_engine.execution.scheduler import Scheduler
     from inf_engine.execution.state import TaskResult
+    from inf_engine.profiling import TraceProfiler
     from inf_engine.resources.config import ResourceConfig
     from inf_engine.resources.manager import ResourceManager
 
@@ -121,11 +123,14 @@ class ExecutionSettings:
         on_progress: Optional callback for batch progress updates. Called
             with (completed_count, total_count) after each input completes.
             Works with both streaming and non-streaming batch execution.
-        profile: Whether to enable profiling. Defaults to False.
-            Note: Profiling is not yet implemented (see PR-063).
-        profile_path: Path for saving profile traces. Defaults to auto-generated.
-        profile_counters: Whether to include counter events. Defaults to True.
-        profile_include_args: Whether to include args in trace. Defaults to True.
+        profile: Whether to enable profiling. Defaults to False. When enabled,
+            a TraceProfiler is created and task execution is recorded.
+        profile_path: Path for saving profile traces. If None with profile=True,
+            uses './traces/trace_{timestamp}.json'. Defaults to None.
+        profile_counters: Whether to include counter events in trace. Defaults to True.
+        profile_include_args: Whether to include task args in trace. Defaults to True.
+        profiler: The TraceProfiler instance when profiling is enabled. Access via
+            get_profiler() after entering the context.
 
     Example:
         >>> with ExecutionSettings(
@@ -182,7 +187,7 @@ class ExecutionSettings:
     preserve_order: bool = False
     on_progress: Callable[[int, int], None] | None = None
 
-    # Profiling configuration (reserved for PR-063)
+    # Profiling configuration
     profile: bool = False
     profile_path: Path | str | None = None
     profile_counters: bool = True
@@ -196,6 +201,7 @@ class ExecutionSettings:
         default=None, repr=False, compare=False
     )
     _parent: ExecutionSettings | None = field(default=None, repr=False, compare=False)
+    _profiler: TraceProfiler | None = field(default=None, repr=False, compare=False)
 
     def _get_effective_value(self, field_name: str, default: Any = None) -> Any:
         """Get the effective value for a field, checking parent contexts.
@@ -327,11 +333,51 @@ class ExecutionSettings:
         """
         return self.task_retry_delay
 
+    def get_profiler(self) -> TraceProfiler | None:
+        """Get the profiler for this context.
+
+        The profiler is created automatically when entering a context with
+        profile=True. For nested contexts without their own profile setting,
+        returns the parent's profiler.
+
+        Returns:
+            The TraceProfiler instance, or None if profiling is not enabled.
+
+        Example:
+            >>> async with ExecutionSettings(profile=True) as settings:
+            ...     profiler = settings.get_profiler()
+            ...     if profiler:
+            ...         profiler.add_instant_event("custom_marker")
+        """
+        if self._profiler is not None:
+            return self._profiler
+        if self._parent is not None:
+            return self._parent.get_profiler()
+        return None
+
+    @property
+    def profiler(self) -> TraceProfiler | None:
+        """Get the profiler for this context.
+
+        Shorthand for get_profiler(). The profiler is created automatically
+        when entering a context with profile=True.
+
+        Returns:
+            The TraceProfiler instance, or None if profiling is not enabled.
+
+        Example:
+            >>> async with ExecutionSettings(profile=True) as settings:
+            ...     if settings.profiler:
+            ...         settings.profiler.add_instant_event("custom_marker")
+        """
+        return self.get_profiler()
+
     def _enter(self) -> Self:
         """Common entry logic for both sync and async context managers.
 
         Sets up the context variable, creates CheckpointManager if needed,
-        and links to any parent context.
+        creates TraceProfiler if profiling is enabled, and links to any
+        parent context.
 
         Returns:
             This ExecutionSettings instance.
@@ -352,6 +398,15 @@ class ExecutionSettings:
                 else self.checkpoint_dir
             )
             self._checkpoint_manager = CheckpointManager(checkpoint_path)
+
+        # Create TraceProfiler if profiling is enabled
+        if self.profile:
+            from inf_engine.profiling import TraceProfiler
+
+            self._profiler = TraceProfiler(
+                include_counters=self.profile_counters,
+                include_args=self.profile_include_args,
+            )
 
         return self
 
@@ -393,7 +448,8 @@ class ExecutionSettings:
 
         Resets the context variable to the previous state. If a
         CheckpointManager was created, it is NOT flushed in sync mode
-        (use async context manager for proper cleanup).
+        (use async context manager for proper cleanup). Profiler traces
+        are exported if profiling was enabled.
 
         Args:
             exc_type: Exception type if an exception was raised.
@@ -405,6 +461,11 @@ class ExecutionSettings:
             The sync version is primarily for simple configurations without
             active checkpointing.
         """
+        # Export profiler trace if profiling was enabled
+        if self._profiler is not None:
+            self._export_profiler_trace()
+            self._profiler = None
+
         # In sync mode, we can't properly flush checkpoints since it's async.
         # Clear the checkpoint manager reference - caller should use async
         # context manager if checkpointing is needed.
@@ -436,17 +497,39 @@ class ExecutionSettings:
     ) -> None:
         """Exit the execution settings context (asynchronous).
 
-        Flushes any pending checkpoints and resets the context variable
-        to the previous state.
+        Flushes any pending checkpoints, exports profiler trace, and
+        resets the context variable to the previous state.
 
         Args:
             exc_type: Exception type if an exception was raised.
             exc_val: Exception value if an exception was raised.
             exc_tb: Exception traceback if an exception was raised.
         """
+        # Export profiler trace if profiling was enabled
+        if self._profiler is not None:
+            self._export_profiler_trace()
+            self._profiler = None
+
         # Flush checkpoints before exiting
         if self._checkpoint_manager is not None:
             await self._checkpoint_manager.flush_all()
             self._checkpoint_manager = None
 
         self._exit()
+
+    def _export_profiler_trace(self) -> None:
+        """Export profiler trace to file.
+
+        Determines the output path and writes the trace file. Uses the
+        configured profile_path if set, otherwise generates a timestamped
+        path in ./traces/.
+        """
+        if self._profiler is None:
+            return
+
+        path = self.profile_path
+        if path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = f"./traces/trace_{timestamp}.json"
+
+        self._profiler.export(path)

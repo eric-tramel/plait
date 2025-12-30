@@ -139,6 +139,8 @@ async def run(
         ... )
         >>> # Checkpoint saved to /data/checkpoints/batch_001.json
     """
+    from inf_engine.execution.context import get_execution_settings
+
     # Trace the module to build the execution graph
     tracer = Tracer()
     graph = tracer.trace(module, *args, **kwargs)
@@ -157,6 +159,12 @@ async def run(
         else:
             # Already a ResourceManager
             resource_manager = resources
+
+    # Get profiler from ExecutionSettings context if available
+    profiler = None
+    settings = get_execution_settings()
+    if settings is not None:
+        profiler = settings.get_profiler()
 
     # Set up checkpointing if requested
     checkpoint_manager: CheckpointManager | None = None
@@ -183,6 +191,7 @@ async def run(
     scheduler = Scheduler(
         resource_manager=resource_manager,
         max_concurrent=max_concurrent,
+        profiler=profiler,
     )
     outputs = await scheduler.execute(
         state, on_complete=on_complete if checkpoint_manager else None

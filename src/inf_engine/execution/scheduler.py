@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from inf_engine.clients.base import LLMClient
     from inf_engine.execution.state import ExecutionState, Task, TaskResult
     from inf_engine.module import LLMInference
+    from inf_engine.profiling import TraceProfiler
 
 
 class RateLimiterProtocol(Protocol):
@@ -119,6 +120,7 @@ class Scheduler:
     task_timeout: float | None
     max_task_retries: int
     task_retry_delay: float
+    profiler: TraceProfiler | None
 
     def __init__(
         self,
@@ -127,6 +129,7 @@ class Scheduler:
         task_timeout: float | None = None,
         max_task_retries: int = 0,
         task_retry_delay: float = 1.0,
+        profiler: TraceProfiler | None = None,
     ) -> None:
         """Initialize the scheduler with optional resource manager and concurrency limit.
 
@@ -151,6 +154,9 @@ class Scheduler:
             task_retry_delay: Base delay in seconds between retry attempts.
                 Uses exponential backoff: delay doubles each retry.
                 Defaults to 1.0 second.
+            profiler: Optional TraceProfiler for capturing execution traces.
+                When provided, task start/end/fail events are recorded for
+                visualization in Perfetto or Chrome DevTools.
 
         Raises:
             ValueError: If max_concurrent is less than 1.
@@ -176,6 +182,7 @@ class Scheduler:
         self.task_timeout = task_timeout
         self.max_task_retries = max_task_retries
         self.task_retry_delay = task_retry_delay
+        self.profiler = profiler
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._active_count = 0
 
@@ -394,6 +401,27 @@ class Scheduler:
         """
         start_time = time.time()
 
+        # Get endpoint alias for profiling
+        alias = getattr(task.module, "alias", None)
+        module_name = task.module.__class__.__name__
+
+        # Generate unique profiler task ID (node_id is reused across batch items)
+        # Use id(task) to ensure uniqueness across concurrent executions
+        profiler_task_id = f"{task.node_id}_{id(task):x}"
+
+        # Record task start for profiling
+        if self.profiler and alias:
+            task_args = None
+            if task.args:
+                # Truncate args for trace display
+                task_args = {"input": str(task.args[0])[:100]}
+            self.profiler.task_start(
+                task_id=profiler_task_id,
+                endpoint=alias,
+                module_name=module_name,
+                args=task_args,
+            )
+
         try:
             # Execute with optional timeout
             if self.task_timeout is not None:
@@ -411,6 +439,14 @@ class Scheduler:
                 retry_count=task.retry_count,
             )
 
+            # Record task completion for profiling
+            if self.profiler and alias:
+                self.profiler.task_end(
+                    task_id=profiler_task_id,
+                    endpoint=alias,
+                    duration_ms=duration_ms,
+                )
+
             # Mark complete in state
             state.mark_complete(task.node_id, task_result)
 
@@ -423,11 +459,21 @@ class Scheduler:
             timeout_error = TimeoutError(
                 f"Task '{task.node_id}' timed out after {self.task_timeout}s"
             )
+
+            # Record failure for profiling
+            if self.profiler and alias:
+                self.profiler.task_failed(profiler_task_id, alias, "timeout")
+
             state.mark_failed(task.node_id, timeout_error)
             if on_error:
                 on_error(task.node_id, timeout_error)
 
         except RateLimitError as e:
+            # Record rate limit for profiling
+            if self.profiler and alias:
+                self.profiler.rate_limit_hit(alias, e.retry_after)
+                self.profiler.task_failed(profiler_task_id, alias, "rate_limited")
+
             # Rate limit hit - trigger backoff and requeue
             self._handle_rate_limit(task, e)
             state.requeue(task.node_id)
@@ -435,17 +481,30 @@ class Scheduler:
         except TransientError as e:
             # Transient error - retry with exponential backoff if retries remain
             if task.retry_count < self.max_task_retries:
+                # Record retry for profiling (task will restart with new event)
+                if self.profiler and alias:
+                    self.profiler.task_failed(
+                        profiler_task_id, alias, f"transient_retry_{task.retry_count}"
+                    )
+
                 # Calculate delay with exponential backoff
                 delay = self.task_retry_delay * (2**task.retry_count)
                 await asyncio.sleep(delay)
                 state.requeue(task.node_id)
             else:
                 # Max retries exhausted - mark as failed
+                if self.profiler and alias:
+                    self.profiler.task_failed(profiler_task_id, alias, str(e))
+
                 state.mark_failed(task.node_id, e)
                 if on_error:
                     on_error(task.node_id, e)
 
         except Exception as e:
+            # Record failure for profiling
+            if self.profiler and alias:
+                self.profiler.task_failed(profiler_task_id, alias, str(e))
+
             # Task failed - mark failed and invoke callback
             state.mark_failed(task.node_id, e)
             if on_error:

@@ -6,7 +6,7 @@ import pytest
 
 from inf_engine.clients.base import LLMClient
 from inf_engine.errors import RateLimitError, TransientError
-from inf_engine.execution.scheduler import Scheduler
+from inf_engine.execution.scheduler import RateLimiterProtocol, Scheduler
 from inf_engine.execution.state import ExecutionState, TaskStatus
 from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
 from inf_engine.module import InferenceModule
@@ -1218,7 +1218,7 @@ class MockResourceManager:
         """Get a semaphore by alias."""
         return self.semaphores.get(alias)
 
-    def get_rate_limiter(self, alias: str) -> MockRateLimiter | None:
+    def get_rate_limiter(self, alias: str) -> RateLimiterProtocol | None:
         """Get a rate limiter by alias."""
         return self.rate_limiters.get(alias)
 
@@ -2444,3 +2444,312 @@ class TestSchedulerTransientRetry:
         assert outputs == {"llm_1": "success"}
         # Client was called twice: 1 failure + 1 success
         assert mock_client.call_count == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Scheduler Profiler Integration Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestSchedulerProfiler:
+    """Tests for Scheduler profiler integration."""
+
+    def test_init_without_profiler(self) -> None:
+        """Scheduler can be created without a profiler."""
+        scheduler = Scheduler()
+        assert scheduler.profiler is None
+
+    def test_init_with_profiler(self) -> None:
+        """Scheduler can be created with a profiler."""
+        from inf_engine.profiling import TraceProfiler
+
+        profiler = TraceProfiler()
+        scheduler = Scheduler(profiler=profiler)
+
+        assert scheduler.profiler is profiler
+
+    @pytest.mark.asyncio
+    async def test_profiler_records_task_start(self) -> None:
+        """Profiler task_start is called when task begins."""
+        from inf_engine.module import LLMInference
+        from inf_engine.profiling import TraceProfiler
+
+        class MockLLMClient(LLMClient):
+            async def complete(self, request: LLMRequest) -> LLMResponse:
+                return LLMResponse(
+                    content="response",
+                    input_tokens=10,
+                    output_tokens=5,
+                    finish_reason="stop",
+                    model="mock-model",
+                )
+
+        class MockResourceManager:
+            def get_client(self, alias: str) -> LLMClient:
+                return MockLLMClient()
+
+            def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
+                return None
+
+            def get_rate_limiter(self, alias: str) -> RateLimiterProtocol | None:
+                return None
+
+        profiler = TraceProfiler()
+        scheduler = Scheduler(
+            resource_manager=MockResourceManager(),
+            max_concurrent=10,
+            profiler=profiler,
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        stats = profiler.get_statistics()
+        assert stats.total_tasks == 1
+        assert stats.completed_tasks == 1
+        assert "fast" in stats.endpoints
+
+    @pytest.mark.asyncio
+    async def test_profiler_records_task_failure(self) -> None:
+        """Profiler task_failed is called when task fails."""
+        from inf_engine.module import LLMInference
+        from inf_engine.profiling import TraceProfiler
+
+        class FailingLLMClient(LLMClient):
+            async def complete(self, request: LLMRequest) -> LLMResponse:
+                raise ValueError("Intentional failure")
+
+        class MockResourceManager:
+            def get_client(self, alias: str) -> LLMClient:
+                return FailingLLMClient()
+
+            def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
+                return None
+
+            def get_rate_limiter(self, alias: str) -> RateLimiterProtocol | None:
+                return None
+
+        profiler = TraceProfiler()
+        scheduler = Scheduler(
+            resource_manager=MockResourceManager(),
+            max_concurrent=10,
+            profiler=profiler,
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        stats = profiler.get_statistics()
+        assert stats.total_tasks == 1
+        assert stats.failed_tasks == 1
+
+    @pytest.mark.asyncio
+    async def test_profiler_records_rate_limit(self) -> None:
+        """Profiler records rate limit events."""
+        from inf_engine.module import LLMInference
+        from inf_engine.profiling import TraceProfiler
+
+        call_count = 0
+
+        class RateLimitLLMClient(LLMClient):
+            async def complete(self, request: LLMRequest) -> LLMResponse:
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise RateLimitError("Rate limited", retry_after=0.001)
+                return LLMResponse(
+                    content="response",
+                    input_tokens=10,
+                    output_tokens=5,
+                    finish_reason="stop",
+                    model="mock-model",
+                )
+
+        class MockRateLimiter:
+            def backoff(self, retry_after: float | None = None) -> None:
+                pass
+
+        client = RateLimitLLMClient()
+
+        class MockResourceManager:
+            def get_client(self, alias: str) -> LLMClient:
+                return client
+
+            def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
+                return None
+
+            def get_rate_limiter(self, alias: str) -> MockRateLimiter:
+                return MockRateLimiter()
+
+        profiler = TraceProfiler()
+        scheduler = Scheduler(
+            resource_manager=MockResourceManager(),
+            max_concurrent=10,
+            profiler=profiler,
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        stats = profiler.get_statistics()
+        assert stats.endpoints["fast"].rate_limit_events == 1
+
+    @pytest.mark.asyncio
+    async def test_profiler_records_timeout(self) -> None:
+        """Profiler records timeout failures."""
+        from inf_engine.module import LLMInference
+        from inf_engine.profiling import TraceProfiler
+
+        class SlowLLMClient(LLMClient):
+            async def complete(self, request: LLMRequest) -> LLMResponse:
+                await asyncio.sleep(1.0)  # Longer than timeout
+                return LLMResponse(
+                    content="response",
+                    input_tokens=10,
+                    output_tokens=5,
+                    finish_reason="stop",
+                    model="mock-model",
+                )
+
+        class MockResourceManager:
+            def get_client(self, alias: str) -> LLMClient:
+                return SlowLLMClient()
+
+            def get_semaphore(self, alias: str) -> asyncio.Semaphore | None:
+                return None
+
+            def get_rate_limiter(self, alias: str) -> RateLimiterProtocol | None:
+                return None
+
+        profiler = TraceProfiler()
+        scheduler = Scheduler(
+            resource_manager=MockResourceManager(),
+            max_concurrent=10,
+            task_timeout=0.01,
+            profiler=profiler,
+        )
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        llm_node = GraphNode(
+            id="llm_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "llm_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["llm_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        stats = profiler.get_statistics()
+        assert stats.failed_tasks == 1
+
+    @pytest.mark.asyncio
+    async def test_no_profiling_without_alias(self) -> None:
+        """Tasks without alias are not profiled."""
+        from inf_engine.profiling import TraceProfiler
+
+        class NoAliasModule(InferenceModule):
+            def forward(self, x: str) -> str:
+                return f"processed: {x}"
+
+        profiler = TraceProfiler()
+        scheduler = Scheduler(max_concurrent=10, profiler=profiler)
+
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode(value="Hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        process_node = GraphNode(
+            id="process_1",
+            module=NoAliasModule(),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0"],
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "process_1": process_node},
+            input_ids=["input:input_0"],
+            output_ids=["process_1"],
+        )
+        state = ExecutionState(graph)
+
+        await scheduler.execute(state)
+
+        # Profiler should not have recorded any tasks (no alias on module)
+        stats = profiler.get_statistics()
+        assert stats.total_tasks == 0

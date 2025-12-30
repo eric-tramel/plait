@@ -524,7 +524,7 @@ class TestCallbacks:
 
 
 class TestProfileConfiguration:
-    """Tests for profiling configuration (reserved for PR-067)."""
+    """Tests for profiling configuration."""
 
     def test_profile_defaults(self) -> None:
         """Profiling is disabled by default."""
@@ -546,6 +546,180 @@ class TestProfileConfiguration:
         assert settings.profile_path == "/traces/run.json"
         assert settings.profile_counters is False
         assert settings.profile_include_args is False
+
+    def test_profiler_not_created_when_disabled(self) -> None:
+        """Profiler is not created when profile=False."""
+        settings = ExecutionSettings(profile=False)
+
+        with settings:
+            assert settings.get_profiler() is None
+            assert settings.profiler is None
+
+    def test_profiler_created_when_enabled(self) -> None:
+        """Profiler is created when profile=True."""
+        settings = ExecutionSettings(profile=True)
+
+        with settings:
+            profiler = settings.get_profiler()
+            assert profiler is not None
+            # Verify it's the right type
+            from inf_engine.profiling import TraceProfiler
+
+            assert isinstance(profiler, TraceProfiler)
+
+    def test_profiler_property_shorthand(self) -> None:
+        """profiler property is shorthand for get_profiler()."""
+        settings = ExecutionSettings(profile=True)
+
+        with settings:
+            assert settings.profiler is settings.get_profiler()
+            assert settings.profiler is not None
+
+    def test_profiler_inherits_settings(self) -> None:
+        """Profiler is created with correct settings."""
+        settings = ExecutionSettings(
+            profile=True,
+            profile_counters=False,
+            profile_include_args=False,
+        )
+
+        with settings:
+            profiler = settings.get_profiler()
+            assert profiler is not None
+            assert profiler.include_counters is False
+            assert profiler.include_args is False
+
+    def test_profiler_default_settings(self) -> None:
+        """Profiler uses default settings when not specified."""
+        settings = ExecutionSettings(profile=True)
+
+        with settings:
+            profiler = settings.get_profiler()
+            assert profiler is not None
+            assert profiler.include_counters is True
+            assert profiler.include_args is True
+
+    @pytest.mark.asyncio
+    async def test_profiler_created_async_context(self) -> None:
+        """Profiler is created in async context."""
+        settings = ExecutionSettings(profile=True)
+
+        async with settings:
+            assert settings.profiler is not None
+
+    def test_nested_context_inherits_profiler(self) -> None:
+        """Inner context without profile setting inherits outer's profiler."""
+        outer = ExecutionSettings(profile=True)
+        inner = ExecutionSettings(max_concurrent=10)
+
+        with outer:
+            outer_profiler = outer.get_profiler()
+            assert outer_profiler is not None
+
+            with inner:
+                # Inner should inherit outer's profiler
+                inner_profiler = inner.get_profiler()
+                assert inner_profiler is outer_profiler
+
+    def test_nested_context_with_own_profiler(self) -> None:
+        """Inner context with profile=True gets its own profiler."""
+        outer = ExecutionSettings(profile=True)
+        inner = ExecutionSettings(profile=True)
+
+        with outer:
+            outer_profiler = outer.get_profiler()
+            assert outer_profiler is not None
+
+            with inner:
+                # Inner has its own profiler
+                inner_profiler = inner.get_profiler()
+                assert inner_profiler is not None
+                assert inner_profiler is not outer_profiler
+
+    def test_profiler_export_on_sync_exit(self, tmp_path: Path) -> None:
+        """Profiler trace is exported on sync context exit."""
+        output_path = tmp_path / "trace.json"
+        settings = ExecutionSettings(profile=True, profile_path=output_path)
+
+        with settings:
+            profiler = settings.profiler
+            assert profiler is not None
+            # Record some events
+            profiler.add_instant_event("test")
+
+        # Trace should be exported after exit
+        assert output_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_profiler_export_on_async_exit(self, tmp_path: Path) -> None:
+        """Profiler trace is exported on async context exit."""
+        output_path = tmp_path / "trace.json"
+        settings = ExecutionSettings(profile=True, profile_path=output_path)
+
+        async with settings:
+            profiler = settings.profiler
+            assert profiler is not None
+            # Record some events
+            profiler.add_instant_event("test")
+
+        # Trace should be exported after exit
+        assert output_path.exists()
+
+    def test_profiler_export_auto_path(self, tmp_path: Path) -> None:
+        """Profiler generates timestamped path when none specified."""
+        import os
+
+        # Change to tmp_path so the auto-generated traces dir is there
+        orig_dir = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            settings = ExecutionSettings(profile=True)
+
+            with settings:
+                profiler = settings.profiler
+                assert profiler is not None
+                profiler.add_instant_event("test")
+
+            # Trace should be exported to traces directory
+            traces_dir = tmp_path / "traces"
+            assert traces_dir.exists()
+            trace_files = list(traces_dir.glob("trace_*.json"))
+            assert len(trace_files) == 1
+        finally:
+            os.chdir(orig_dir)
+
+    def test_profiler_export_creates_parent_dirs(self, tmp_path: Path) -> None:
+        """Profiler export creates parent directories."""
+        output_path = tmp_path / "nested" / "dirs" / "trace.json"
+        settings = ExecutionSettings(profile=True, profile_path=output_path)
+
+        with settings:
+            pass  # Just enter and exit
+
+        assert output_path.exists()
+
+    def test_profiler_cleared_after_exit(self, tmp_path: Path) -> None:
+        """Profiler reference is cleared after context exit."""
+        output_path = tmp_path / "trace.json"
+        settings = ExecutionSettings(profile=True, profile_path=output_path)
+
+        with settings:
+            assert settings._profiler is not None
+
+        # Internal profiler should be cleared
+        assert settings._profiler is None
+
+    @pytest.mark.asyncio
+    async def test_profiler_cleared_after_async_exit(self, tmp_path: Path) -> None:
+        """Profiler reference is cleared after async context exit."""
+        output_path = tmp_path / "trace.json"
+        settings = ExecutionSettings(profile=True, profile_path=output_path)
+
+        async with settings:
+            assert settings._profiler is not None
+
+        # Internal profiler should be cleared
+        assert settings._profiler is None
 
 
 class TestIntegration:

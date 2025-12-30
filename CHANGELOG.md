@@ -181,6 +181,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `test_checkpointing.py`: Checkpoint creation, persistence, compatibility, multiple pipelines
   - `test_reliability.py`: Task timeout, transient error retry, exponential backoff, cancellation cascade
   - `test_execution_settings.py`: Extended with timeout/retry settings, multiple pipeline sharing
+- Add profiling infrastructure with TraceProfiler and ExecutionSettings integration
+  - `TraceEvent` dataclass representing Chrome Trace Event Format events
+  - `TraceProfiler` class for collecting execution traces with task lifecycle methods
+  - `ProfilerStatistics` and `EndpointStats` for execution metrics and per-endpoint breakdowns
+  - Task lifecycle events: `task_start()`, `task_end()`, `task_failed()` for duration tracking
+  - Rate limiting events: `rate_limit_hit()`, `rate_limit_wait_start/end()` for backpressure visualization
+  - Queue events: `task_queued()`, `task_dequeued()` for queue depth tracking
+  - Counter events for real-time metrics (queue depth, per-endpoint concurrency)
+  - Custom instant events via `add_instant_event()` for user-defined markers
+  - `export()` method generates Chrome Trace Format JSON for Perfetto/Chrome DevTools
+  - `get_statistics()` computes aggregate metrics including completed/failed counts, latency stats
+  - Thread-safe implementation for concurrent task profiling
+  - Scheduler integration: automatic task start/end/fail profiling when profiler is provided
+  - ExecutionSettings integration: `profile`, `profile_path`, `profile_counters`, `profile_include_args` options
+  - Automatic profiler creation on context entry and trace export on context exit
+  - `profiler` property and `get_profiler()` method for accessing the profiler instance
+  - `test_profiling.py` integration tests for trace generation, event correctness, multi-endpoint traces
+  - Add profiling example in `examples/08_profiling.py`
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications
