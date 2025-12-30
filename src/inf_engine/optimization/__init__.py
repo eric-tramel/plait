@@ -13,14 +13,25 @@ The core workflow mirrors PyTorch:
 
 Example:
     >>> from inf_engine import run
-    >>> from inf_engine.optimization import ForwardRecord
+    >>> from inf_engine.optimization import ForwardRecord, Feedback, FeedbackType
     >>>
     >>> # Execute with recording to enable backward pass
     >>> output, record = await run(module, "input text", record=True)
     >>> isinstance(record, ForwardRecord)
     True
+    >>>
+    >>> # Feedback represents evaluation results
+    >>> feedback = Feedback(
+    ...     content="Response was helpful",
+    ...     score=0.9,
+    ...     feedback_type=FeedbackType.LLM_JUDGE,
+    ... )
+    >>> str(feedback)
+    '[0.90] Response was helpful'
 """
 
+from inf_engine.optimization.feedback import Feedback, FeedbackType
+from inf_engine.optimization.loss import Loss
 from inf_engine.optimization.record import ForwardRecord
 
-__all__ = ["ForwardRecord"]
+__all__ = ["Feedback", "FeedbackType", "ForwardRecord", "Loss"]

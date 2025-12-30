@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `FeedbackType` enum for classifying feedback sources
+  - `HUMAN`: Feedback from human evaluators
+  - `LLM_JUDGE`: Feedback from LLM-based evaluation
+  - `VERIFIER`: Feedback from programmatic verification
+  - `COMPOSITE`: Aggregated feedback from multiple sources
+- Add `Feedback` dataclass for representing evaluation results
+  - `content`: The feedback text with improvement suggestions
+  - `score`: Optional numeric score normalized to 0-1 range
+  - `feedback_type`: Classification of the feedback source
+  - `metadata`: Optional dictionary for additional evaluation context
+  - `backward()`: Async method to propagate feedback through computation graph
+  - String representation shows score in brackets when present: `[0.85] Feedback text`
+- Add abstract `Loss` base class for loss functions
+  - Defines `__call__` interface for evaluating outputs and returning Feedback
+  - `_attach_record()` helper to enable `feedback.backward()` propagation
+  - Supports optional `target`, `record`, and `context` parameters
+- Add `_propagate_backward()` stub for future backward pass implementation
 - Add required `Parameter.description` field for self-documenting optimization
   - Parameter now requires a `description` argument explaining what it represents
   - Description is included in repr and used by optimizers to understand the parameter
