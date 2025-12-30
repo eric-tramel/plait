@@ -13,11 +13,11 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 4: Resources** (11/12)
 - [ ] **Phase 5: Production Features** (12/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
-- [ ] **Phase 6: Optimization** (3/7)
+- [ ] **Phase 6: Optimization** (4/7)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 62/76 PRs completed**
+**Total: 63/76 PRs completed**
 
 ---
 
@@ -852,7 +852,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (VerifierLoss pass/fail, LLMJudge mocked responses and parsing, CompositeLoss aggregation and weighting, record attachment)
 - **CHANGELOG**: "Add VerifierLoss, LLMJudge, and CompositeLoss"
 
-### - [ ] PR-067: Backward pass infrastructure
+### - [x] PR-067: Backward pass infrastructure
 - **Branch**: `feat/backward-pass`
 - **Description**: Implement `BackwardContext` (with `reason()` method for optimizer-provided LLM), `BackwardResult`, async `InferenceModule.backward()` default implementation, `LLMInference.backward()` that generates parameter feedback using description, and `_propagate_backward()` for graph traversal in reverse topological order.
 - **Design Docs**:
