@@ -2639,3 +2639,135 @@ class TestStateDictRoundTrip:
 
         assert module2.prompt.value == module1.prompt.value
         assert module2.template.value == module1.template.value
+
+
+# ─────────────────────────────────────────────────────────────
+# Backward Pass Tests (PR-067)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestInferenceModuleBackward:
+    """Tests for InferenceModule.backward() default implementation."""
+
+    @staticmethod
+    def _make_context(inputs: dict) -> "BackwardContext":
+        """Create a BackwardContext for testing."""
+        from inf_engine.graph import InferenceGraph
+        from inf_engine.optimization.backward import BackwardContext
+        from inf_engine.optimization.feedback import Feedback
+
+        graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
+        return BackwardContext(
+            node_id="test_node",
+            inputs=inputs,
+            output="test output",
+            graph=graph,
+            all_results={},
+            downstream_feedback=[Feedback(content="test")],
+        )
+
+    @staticmethod
+    async def _run_backward(module: InferenceModule, feedback, ctx) -> "BackwardResult":
+        """Run backward on a module."""
+        return await module.backward(feedback, ctx)
+
+    def test_backward_is_async(self) -> None:
+        """backward() is an async method."""
+        import inspect
+
+        module = InferenceModule()
+        assert inspect.iscoroutinefunction(module.backward)
+
+    def test_backward_default_passes_feedback_to_inputs(self) -> None:
+        """Default backward() passes feedback unchanged to all inputs."""
+        import asyncio
+
+        from inf_engine.optimization.backward import BackwardResult
+        from inf_engine.optimization.feedback import Feedback
+
+        class TestModule(InferenceModule):
+            def forward(self, x: str) -> str:
+                return x.upper()
+
+        module = TestModule()
+        feedback = Feedback(content="Good output", score=0.8)
+        ctx = self._make_context({"arg_0": "hello", "key1": "value1"})
+
+        result = asyncio.run(self._run_backward(module, feedback, ctx))
+
+        assert isinstance(result, BackwardResult)
+        # Should have feedback for each input
+        assert "arg_0" in result.input_feedback
+        assert "key1" in result.input_feedback
+        # Feedback should be the same object passed in
+        assert result.input_feedback["arg_0"] is feedback
+        assert result.input_feedback["key1"] is feedback
+
+    def test_backward_default_no_parameter_feedback(self) -> None:
+        """Default backward() produces no parameter feedback."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        module = InferenceModule()
+        feedback = Feedback(content="Test")
+        ctx = self._make_context({"input": "value"})
+
+        # Can't call backward directly on base class, need subclass
+        class TestModule(InferenceModule):
+            def forward(self, x: str) -> str:
+                return x
+
+        module = TestModule()
+        result = asyncio.run(self._run_backward(module, feedback, ctx))
+
+        assert result.parameter_feedback == {}
+
+    def test_backward_empty_inputs(self) -> None:
+        """Default backward() handles empty inputs dict."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        class TestModule(InferenceModule):
+            def forward(self) -> str:
+                return "result"
+
+        module = TestModule()
+        feedback = Feedback(content="Test")
+        ctx = self._make_context({})
+
+        result = asyncio.run(self._run_backward(module, feedback, ctx))
+
+        assert result.input_feedback == {}
+
+    def test_backward_preserves_feedback_properties(self) -> None:
+        """Default backward() preserves all feedback properties."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback, FeedbackType
+
+        class TestModule(InferenceModule):
+            def forward(self, x: str) -> str:
+                return x
+
+        module = TestModule()
+        feedback = Feedback(
+            content="Detailed feedback",
+            score=0.75,
+            feedback_type=FeedbackType.LLM_JUDGE,
+            metadata={"key": "value"},
+        )
+        ctx = self._make_context({"input": "test"})
+
+        result = asyncio.run(self._run_backward(module, feedback, ctx))
+
+        passed_feedback = result.input_feedback["input"]
+        assert passed_feedback.content == "Detailed feedback"
+        assert passed_feedback.score == 0.75
+        assert passed_feedback.feedback_type == FeedbackType.LLM_JUDGE
+
+
+# Import for type hints
+if True:  # Avoid circular import at runtime
+    from inf_engine.optimization.backward import BackwardContext, BackwardResult

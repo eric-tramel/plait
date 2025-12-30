@@ -506,3 +506,177 @@ class TestLLMInferenceEdgeCases:
         llm = LLMInference(alias="test", temperature=0.123456789)
 
         assert llm.temperature == 0.123456789
+
+
+# ─────────────────────────────────────────────────────────────
+# Backward Pass Tests (PR-067)
+# ─────────────────────────────────────────────────────────────
+
+
+class TestLLMInferenceBackward:
+    """Tests for LLMInference.backward() implementation."""
+
+    @staticmethod
+    def _make_context(inputs: dict, output: str = "LLM response") -> "BackwardContext":
+        """Create a BackwardContext for testing."""
+        from inf_engine.graph import InferenceGraph
+        from inf_engine.optimization.backward import BackwardContext
+        from inf_engine.optimization.feedback import Feedback
+
+        graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
+        return BackwardContext(
+            node_id="LLMInference_1",
+            inputs=inputs,
+            output=output,
+            graph=graph,
+            all_results={},
+            downstream_feedback=[Feedback(content="test")],
+        )
+
+    def test_backward_is_async(self) -> None:
+        """LLMInference.backward() is an async method."""
+        import inspect
+
+        llm = LLMInference(alias="test")
+        assert inspect.iscoroutinefunction(llm.backward)
+
+    def test_backward_produces_input_feedback(self) -> None:
+        """LLMInference.backward() generates feedback for input prompt."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        llm = LLMInference(alias="test")
+        feedback = Feedback(content="Response was too verbose", score=0.6)
+        ctx = self._make_context({"prompt": "What is 2+2?"})
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        assert "prompt" in result.input_feedback
+        prompt_feedback = result.input_feedback["prompt"]
+        assert "too verbose" in prompt_feedback.content
+        assert prompt_feedback.score == 0.6
+
+    def test_backward_no_parameter_feedback_for_non_learnable(self) -> None:
+        """No parameter feedback when system_prompt is not learnable."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        llm = LLMInference(alias="test", system_prompt="Fixed prompt")
+        feedback = Feedback(content="Needs improvement", score=0.5)
+        ctx = self._make_context({"prompt": "Hello"})
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        # system_prompt has requires_grad=False by default for strings
+        assert result.parameter_feedback == {}
+
+    def test_backward_no_parameter_feedback_when_no_system_prompt(self) -> None:
+        """No parameter feedback when system_prompt is None."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        llm = LLMInference(alias="test")  # No system_prompt
+        feedback = Feedback(content="Test", score=0.7)
+        ctx = self._make_context({"prompt": "Hello"})
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        assert result.parameter_feedback == {}
+
+    def test_backward_generates_parameter_feedback_for_learnable(self) -> None:
+        """Parameter feedback generated when system_prompt is learnable."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        learnable_prompt = Parameter(
+            value="You are a helpful assistant.",
+            description="System prompt for the assistant",
+            requires_grad=True,
+        )
+        llm = LLMInference(alias="test", system_prompt=learnable_prompt)
+        feedback = Feedback(content="Response was too casual", score=0.4)
+        ctx = self._make_context(
+            {"prompt": "What's up?"},
+            output="Hey! Not much, just chillin'.",
+        )
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        # Should have parameter feedback
+        assert "system_prompt" in result.parameter_feedback
+        param_fb = result.parameter_feedback["system_prompt"]
+
+        # Parameter feedback should contain useful context
+        assert "You are a helpful assistant" in param_fb
+        assert "System prompt for the assistant" in param_fb
+        assert "too casual" in param_fb
+        assert "What's up?" in param_fb
+        assert "chillin'" in param_fb
+
+    def test_backward_parameter_feedback_includes_score(self) -> None:
+        """Parameter feedback includes score when present."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        llm = LLMInference(
+            alias="test",
+            system_prompt=Parameter("Prompt", description="desc", requires_grad=True),
+        )
+        feedback = Feedback(content="Test", score=0.65)
+        ctx = self._make_context({"prompt": "Input"})
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        assert "0.65" in result.parameter_feedback["system_prompt"]
+
+    def test_backward_truncates_long_inputs(self) -> None:
+        """Parameter feedback truncates very long inputs/outputs."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback
+
+        llm = LLMInference(
+            alias="test",
+            system_prompt=Parameter("Prompt", description="desc", requires_grad=True),
+        )
+        feedback = Feedback(content="Test")
+
+        long_input = "x" * 1000
+        long_output = "y" * 1000
+        ctx = self._make_context({"prompt": long_input}, output=long_output)
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        param_fb = result.parameter_feedback["system_prompt"]
+        # Should be truncated with ellipsis
+        assert "..." in param_fb
+        # Should not contain the full 1000 characters
+        assert "x" * 600 not in param_fb
+
+    def test_backward_preserves_feedback_type(self) -> None:
+        """Input feedback preserves the original feedback type."""
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback, FeedbackType
+
+        llm = LLMInference(alias="test")
+        feedback = Feedback(
+            content="Verifier check failed",
+            score=0.0,
+            feedback_type=FeedbackType.VERIFIER,
+        )
+        ctx = self._make_context({"prompt": "Test"})
+
+        result = asyncio.run(llm.backward(feedback, ctx))
+
+        assert result.input_feedback["prompt"].feedback_type == FeedbackType.VERIFIER
+
+
+# Import for type hints
+if True:  # Avoid circular import at runtime
+    from inf_engine.optimization.backward import BackwardContext

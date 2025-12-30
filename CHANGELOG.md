@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add backward pass infrastructure for feedback propagation
+  - `BackwardContext` dataclass with node execution context and optional reasoning LLM
+  - `BackwardResult` dataclass for collecting input and parameter feedback
+  - `_propagate_backward()` function for reverse topological graph traversal
+  - `_combine_feedback()` helper for aggregating multiple downstream feedback items
+- Add `InferenceModule.backward()` async method with default implementation
+  - Passes feedback unchanged to all inputs
+  - Override for custom backward logic in subclasses
+- Add `LLMInference.backward()` implementation
+  - Generates feedback for input prompt with context from downstream
+  - Generates detailed parameter feedback for learnable system_prompt
+  - Includes parameter description, input/output samples, and improvement suggestions
 - Add `VerifierLoss` for programmatic output verification
   - Takes a verifier function returning `(passed: bool, message: str)`
   - Returns score 1.0 for pass, 0.0 for fail

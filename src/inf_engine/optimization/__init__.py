@@ -30,8 +30,16 @@ Example:
     '[0.90] Response was helpful'
 """
 
+from inf_engine.optimization.backward import BackwardContext, BackwardResult
 from inf_engine.optimization.feedback import Feedback, FeedbackType
 from inf_engine.optimization.loss import Loss
 from inf_engine.optimization.record import ForwardRecord
 
-__all__ = ["Feedback", "FeedbackType", "ForwardRecord", "Loss"]
+__all__ = [
+    "BackwardContext",
+    "BackwardResult",
+    "Feedback",
+    "FeedbackType",
+    "ForwardRecord",
+    "Loss",
+]

@@ -498,6 +498,61 @@ class InferenceModule:
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement forward()")
 
+    async def backward(
+        self,
+        feedback: Any,
+        ctx: Any,
+    ) -> Any:
+        """Propagate feedback backward through this module.
+
+        Default implementation passes feedback unchanged to all inputs.
+        Override for custom backward logic that generates more targeted
+        feedback for specific inputs or parameters.
+
+        This method is called during the backward pass initiated by
+        `feedback.backward()`. The ctx parameter provides access to
+        the forward pass context including inputs, outputs, and the
+        computation graph.
+
+        Args:
+            feedback: Combined feedback from downstream nodes. This is
+                a Feedback object containing content, score, and metadata.
+            ctx: BackwardContext with inputs, output, graph structure,
+                and optional reasoning LLM for generating feedback.
+
+        Returns:
+            BackwardResult with input_feedback and parameter_feedback
+            dictionaries specifying how feedback should be distributed.
+
+        Example:
+            >>> async def backward(self, feedback, ctx):
+            ...     from inf_engine.optimization.backward import BackwardResult
+            ...     result = BackwardResult()
+            ...
+            ...     # Pass feedback to all inputs unchanged
+            ...     for input_name in ctx.inputs:
+            ...         result.input_feedback[input_name] = feedback
+            ...
+            ...     return result
+
+        Note:
+            The default implementation passes feedback unchanged to all
+            inputs. Override this method to implement custom feedback
+            propagation logic, such as:
+            - Generating parameter-specific feedback
+            - Filtering feedback based on input relevance
+            - Using ctx.reason() for LLM-powered feedback generation
+        """
+        from inf_engine.optimization.backward import BackwardResult
+
+        result = BackwardResult()
+
+        # Pass feedback to all inputs unchanged
+        for input_name in ctx.inputs:
+            result.input_feedback[input_name] = feedback
+
+        return result
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the module.
 
@@ -926,3 +981,85 @@ class LLMInference(InferenceModule):
             "LLMInference.forward() should not be called directly. "
             "Use run() to execute the module."
         )
+
+    async def backward(
+        self,
+        feedback: Any,
+        ctx: Any,
+    ) -> Any:
+        """Backward pass for LLM inference.
+
+        Generates feedback for both the input prompt and any learnable
+        parameters (like system_prompt). The parameter feedback includes
+        context about what the LLM received and produced to help the
+        optimizer understand how to improve the parameter.
+
+        Args:
+            feedback: Combined feedback from downstream nodes.
+            ctx: BackwardContext with inputs, output, and graph structure.
+
+        Returns:
+            BackwardResult with:
+            - input_feedback["prompt"]: Feedback for the input prompt
+            - parameter_feedback["system_prompt"]: Feedback for the system
+              prompt if it's a learnable Parameter
+
+        Example:
+            >>> # LLMInference backward is called automatically during
+            >>> # feedback.backward() when the module is in the graph
+            >>> output, record = await run(llm_module, "Hello", record=True)
+            >>> feedback = await loss_fn(output, target, record=record)
+            >>> await feedback.backward()  # Calls llm_module.backward()
+
+        Note:
+            The parameter feedback includes:
+            - The current system prompt value
+            - The parameter description
+            - A sample of the input and output
+            - The feedback received
+            This context helps the optimizer generate targeted improvements.
+        """
+        from inf_engine.optimization.backward import BackwardResult
+        from inf_engine.optimization.feedback import Feedback
+        from inf_engine.parameter import Parameter
+
+        result = BackwardResult()
+
+        # Feedback for the input prompt
+        result.input_feedback["prompt"] = Feedback(
+            content=f"The LLM output received this feedback: {feedback.content}",
+            score=feedback.score,
+            feedback_type=feedback.feedback_type,
+        )
+
+        # Feedback for learnable parameters
+        if (
+            isinstance(self.system_prompt, Parameter)
+            and self.system_prompt.requires_grad
+        ):
+            # Get input and output for context, truncating if too long
+            input_text = str(ctx.inputs.get("prompt", ""))[:500]
+            output_text = str(ctx.output)[:500]
+
+            # Build detailed feedback for the system prompt parameter
+            score_info = (
+                f"Score: {feedback.score}" if feedback.score is not None else ""
+            )
+
+            result.parameter_feedback["system_prompt"] = f"""
+The LLM module with system prompt:
+"{self.system_prompt.value}"
+
+Parameter description: {self.system_prompt.description}
+
+Received input: {input_text}{"..." if len(str(ctx.inputs.get("prompt", ""))) > 500 else ""}
+
+Produced output: {output_text}{"..." if len(str(ctx.output)) > 500 else ""}
+
+Received this feedback: {feedback.content}
+{score_info}
+
+Suggest specific improvements to the system prompt that would address this feedback.
+""".strip()
+
+        return result
