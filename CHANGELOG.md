@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `VerifierLoss` for programmatic output verification
+  - Takes a verifier function returning `(passed: bool, message: str)`
+  - Returns score 1.0 for pass, 0.0 for fail
+  - Configurable success feedback message
+- Add `LLMJudge` for freeform LLM-based evaluation
+  - Internal LLMInference module with critical reviewer system prompt
+  - Optional `criteria` parameter for focused evaluation
+  - `bind()` method for resource configuration
+  - Returns qualitative feedback without structured score
+- Add `CompositeLoss` for weighted multi-objective optimization
+  - Combines multiple loss functions with configurable weights
+  - Computes weighted average of component scores
+  - Simple concatenation or optional LLM aggregator for feedback synthesis
+  - `bind()` method propagates to all components
 - Add `FeedbackType` enum for classifying feedback sources
   - `HUMAN`: Feedback from human evaluators
   - `LLM_JUDGE`: Feedback from LLM-based evaluation
