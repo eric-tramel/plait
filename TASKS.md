@@ -13,11 +13,11 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 4: Resources** (11/12)
 - [ ] **Phase 5: Production Features** (12/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
-- [ ] **Phase 6: Optimization** (1/7)
+- [ ] **Phase 6: Optimization** (2/7)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 60/76 PRs completed**
+**Total: 61/76 PRs completed**
 
 ---
 
@@ -828,7 +828,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_executor.py` (run with record=True returns ForwardRecord)
 - **CHANGELOG**: "Add required Parameter.description and ForwardRecord for backward pass"
 
-### - [ ] PR-065: Feedback and Loss base types
+### - [x] PR-065: Feedback and Loss base types
 - **Branch**: `feat/feedback-loss-types`
 - **Description**: Implement `FeedbackType` enum, `Feedback` dataclass with `backward()` method (mirrors PyTorch's `loss.backward()`), and abstract `Loss` class that attaches ForwardRecord to Feedback.
 - **Design Docs**:
