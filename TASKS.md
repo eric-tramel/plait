@@ -13,11 +13,11 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 4: Resources** (11/12)
 - [ ] **Phase 5: Production Features** (12/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
-- [ ] **Phase 6: Optimization** (2/7)
+- [ ] **Phase 6: Optimization** (3/7)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 61/76 PRs completed**
+**Total: 62/76 PRs completed**
 
 ---
 
@@ -842,7 +842,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (ABC interface, _attach_record helper)
 - **CHANGELOG**: "Add Feedback with backward() method and Loss base class"
 
-### - [ ] PR-066: Loss implementations
+### - [x] PR-066: Loss implementations
 - **Branch**: `feat/loss-implementations`
 - **Description**: Implement `VerifierLoss` for programmatic evaluation, `LLMJudge` for LLM-based evaluation, and `CompositeLoss` for weighted multi-objective optimization. All loss functions accept `record=` parameter and attach it to returned Feedback.
 - **Design Docs**:
