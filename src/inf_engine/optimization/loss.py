@@ -56,6 +56,86 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
+# LLM Wrapper for Loss Functions
+# =============================================================================
+
+
+class _LossLLMWrapper:
+    """Wrapper to make LLMInference callable as a bound module.
+
+    LLMInference modules cannot be traced directly because they are atomic
+    (no child modules). This wrapper creates a minimal composite module
+    that can be traced and executed.
+
+    This is used internally by LLM-based loss functions (LLMJudge,
+    LLMRubricLoss, etc.) to properly execute their internal LLM modules.
+    """
+
+    def __init__(
+        self,
+        alias: str,
+        system_prompt: str,
+        response_format: type | None = None,
+    ) -> None:
+        """Initialize the wrapper with LLM configuration.
+
+        Args:
+            alias: Resource alias for the LLM endpoint.
+            system_prompt: System prompt for the LLM.
+            response_format: Optional structured output format.
+        """
+        from inf_engine.module import InferenceModule, LLMInference
+
+        # Store config for property access
+        self._alias = alias
+        self._system_prompt_value = system_prompt
+
+        # Create a wrapper module class dynamically
+        class _Wrapper(InferenceModule):
+            def __init__(inner_self) -> None:
+                super().__init__()
+                inner_self.llm = LLMInference(
+                    alias=alias,
+                    system_prompt=system_prompt,
+                    response_format=response_format,
+                )
+
+            def forward(inner_self, prompt: str) -> Any:
+                return inner_self.llm(prompt)
+
+        self._module = _Wrapper()
+        self._bound = False
+
+    @property
+    def alias(self) -> str:
+        """Get the resource alias for the internal LLM."""
+        return self._alias
+
+    @property
+    def system_prompt(self) -> Any:
+        """Get the system prompt (for compatibility with tests)."""
+        return self._module.llm.system_prompt
+
+    @property
+    def _bound_resources(self) -> Any:
+        """Get bound resources from internal module (for testing)."""
+        return self._module.llm._bound_resources
+
+    def bind(self, resources: ResourceConfig | ResourceManager) -> None:
+        """Bind the wrapper module to resources."""
+        self._module.bind(resources)
+        # Also bind the inner LLM directly for test compatibility
+        self._module.llm.bind(resources)
+        self._bound = True
+
+    async def __call__(self, prompt: str) -> Any:
+        """Execute the LLM with the given prompt."""
+        if not self._bound:
+            raise RuntimeError("LLM wrapper not bound. Call bind() first.")
+        return await self._module(prompt)
+
+
+# =============================================================================
 # Structured Output Schemas for LLM-based Losses
 # =============================================================================
 
@@ -383,10 +463,8 @@ class LLMJudge(Loss):
             criteria: Optional focus areas for evaluation. If provided,
                 the LLM will focus its feedback on these aspects.
         """
-        from inf_engine.module import LLMInference
-
         self.criteria = criteria
-        self.judge: LLMInference = LLMInference(
+        self.judge = _LossLLMWrapper(
             alias=alias,
             system_prompt=(
                 "You are a critical reviewer. Provide specific, actionable "
@@ -786,15 +864,13 @@ class LLMRubricLoss(Loss):
                 sorted by score automatically.
             alias: Resource alias for the judge LLM endpoint.
         """
-        from inf_engine.module import LLMInference
-
         self.criteria = criteria
         self.rubric = sorted(rubric, key=lambda r: r.score)
         self._max_score = max(r.score for r in rubric)
         self._min_score = min(r.score for r in rubric)
 
-        # Internal LLM module with structured output
-        self.judge: LLMInference = LLMInference(
+        # Internal LLM module with structured output (wrapped for execution)
+        self.judge = _LossLLMWrapper(
             alias=alias,
             system_prompt=self._build_system_prompt(),
             response_format=RubricResponse,
@@ -806,14 +882,17 @@ class LLMRubricLoss(Loss):
             f"  {level.score} - {level.label}: {level.description}"
             for level in self.rubric
         )
-        return f"""You evaluate outputs against a rubric.
+        return f"""You evaluate outputs against a rubric and respond in JSON format.
 
 Criteria: {self.criteria}
 
 Rating Scale:
 {rubric_text}
 
-Always provide a score, justification, and actionable feedback."""
+You must respond with a JSON object containing exactly these fields:
+- "score": integer from the rating scale above
+- "justification": string explaining why you assigned this score
+- "feedback": string with actionable suggestions for improvement"""
 
     def bind(self, resources: ResourceConfig | ResourceManager) -> Self:
         """Bind the internal judge module to resources.
@@ -860,11 +939,16 @@ Always provide a score, justification, and actionable feedback."""
         # Get structured response
         response = await self.judge(prompt)
 
-        # Handle both dict (parsed JSON) and object responses
+        # Handle string (JSON), dict (parsed JSON), and object responses
+        if isinstance(response, str):
+            import json
+
+            response = json.loads(response)
+
         if isinstance(response, dict):
             raw_score = response["score"]
-            justification = response["justification"]
-            feedback_text = response["feedback"]
+            justification = response.get("justification", "No justification provided")
+            feedback_text = response.get("feedback", "No feedback provided")
         else:
             raw_score = response.score
             justification = response.justification
@@ -1107,16 +1191,20 @@ class LLMPreferenceLoss(ContrastiveLoss):
             criteria: What aspect to compare on.
             alias: Resource alias for the judge LLM endpoint.
         """
-        from inf_engine.module import LLMInference
-
         self.criteria = criteria
 
-        # Internal LLM module with structured output
-        self.judge: LLMInference = LLMInference(
+        # Internal LLM module with structured output (wrapped for execution)
+        self.judge = _LossLLMWrapper(
             alias=alias,
             system_prompt=(
                 f"You compare two outputs on: {criteria}. "
-                "Determine which is better and explain why."
+                "Determine which is better and respond in JSON format with these fields:\n"
+                '- "winner": either "A" or "B"\n'
+                '- "reason": string explaining why the winner is better\n'
+                '- "a_strengths": string listing strengths of output A\n'
+                '- "a_weaknesses": string listing weaknesses of output A\n'
+                '- "b_strengths": string listing strengths of output B\n'
+                '- "b_weaknesses": string listing weaknesses of output B'
             ),
             response_format=PreferenceResponse,
         )
@@ -1171,7 +1259,12 @@ class LLMPreferenceLoss(ContrastiveLoss):
         # Get structured response
         response = await self.judge(prompt)
 
-        # Handle both dict and object responses
+        # Handle string (JSON), dict (parsed JSON), and object responses
+        if isinstance(response, str):
+            import json
+
+            response = json.loads(response)
+
         if isinstance(response, dict):
             winner = response["winner"]
             reason = response["reason"]
@@ -1450,18 +1543,18 @@ class LLMRankingLoss(ContrastiveLoss):
             n: Expected number of outputs to compare. Defaults to 4.
             alias: Resource alias for the judge LLM endpoint.
         """
-        from inf_engine.module import LLMInference
-
         self.criteria = criteria
         self.n = n
 
-        # Internal LLM module with structured output
-        self.judge: LLMInference = LLMInference(
+        # Internal LLM module with structured output (wrapped for execution)
+        self.judge = _LossLLMWrapper(
             alias=alias,
             system_prompt=(
                 f"You rank outputs from best to worst on: {criteria}. "
-                "Provide the ranking as a list of indices and explain "
-                "your reasoning."
+                "Respond in JSON format with these fields:\n"
+                '- "ranking": array of indices in order from best to worst (e.g., [2, 0, 1, 3])\n'
+                '- "reasoning": string explaining the ranking decisions\n'
+                '- "per_output_feedback": array of strings with feedback for each output'
             ),
             response_format=RankingResponse,
         )
@@ -1519,7 +1612,12 @@ class LLMRankingLoss(ContrastiveLoss):
         # Get structured response
         response = await self.judge(prompt)
 
-        # Handle both dict and object responses
+        # Handle string (JSON), dict (parsed JSON), and object responses
+        if isinstance(response, str):
+            import json
+
+            response = json.loads(response)
+
         if isinstance(response, dict):
             raw_ranking = response["ranking"]
             best_qualities = response["best_qualities"]
