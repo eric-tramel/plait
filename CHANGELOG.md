@@ -266,6 +266,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `profiler` property and `get_profiler()` method for accessing the profiler instance
   - `test_profiling.py` integration tests for trace generation, event correctness, multi-endpoint traces
   - Add profiling example in `examples/08_profiling.py`
+- Add additional loss functions for comprehensive evaluation strategies
+  - `RubricLevel` dataclass for defining Likert scale rubric levels
+  - `RubricResponse`, `PreferenceResponse`, `RankingResponse` structured output schemas
+  - `HumanFeedbackLoss` for freeform human feedback collection via stdin
+  - `LLMRubricLoss` for LLM evaluation against structured Likert scale rubrics
+  - `HumanRubricLoss` for human evaluation against structured Likert scale rubrics
+  - `ContrastiveLoss` base class for comparison-based loss functions
+  - `LLMPreferenceLoss` for LLM pairwise preference comparison
+  - `HumanPreferenceLoss` for human pairwise preference comparison
+  - `LLMRankingLoss` for LLM n-way ranking of multiple outputs
+  - `HumanRankingLoss` for human n-way ranking of multiple outputs
 
 ### Changed
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling for efficient task-ready notifications

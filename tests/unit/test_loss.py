@@ -1,13 +1,30 @@
 """Tests for Loss abstract base class and concrete implementations."""
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from inf_engine.graph import InferenceGraph
 from inf_engine.optimization.feedback import Feedback, FeedbackType
-from inf_engine.optimization.loss import CompositeLoss, LLMJudge, Loss, VerifierLoss
+from inf_engine.optimization.loss import (
+    CompositeLoss,
+    ContrastiveLoss,
+    HumanFeedbackLoss,
+    HumanPreferenceLoss,
+    HumanRankingLoss,
+    HumanRubricLoss,
+    LLMJudge,
+    LLMPreferenceLoss,
+    LLMRankingLoss,
+    LLMRubricLoss,
+    Loss,
+    PreferenceResponse,
+    RankingResponse,
+    RubricLevel,
+    RubricResponse,
+    VerifierLoss,
+)
 from inf_engine.optimization.record import ForwardRecord
 
 
@@ -787,3 +804,809 @@ class TestCompositeLoss:
         # Check context was passed
         call_args = mock_loss.call_args
         assert call_args[1].get("context") == {"key": "value"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Structured Output Schema Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestStructuredOutputSchemas:
+    """Tests for structured output dataclasses."""
+
+    def test_rubric_level_creation(self) -> None:
+        """RubricLevel can be created with score, label, description."""
+        level = RubricLevel(
+            score=5,
+            label="Excellent",
+            description="Exceptionally clear and complete",
+        )
+
+        assert level.score == 5
+        assert level.label == "Excellent"
+        assert level.description == "Exceptionally clear and complete"
+
+    def test_rubric_response_creation(self) -> None:
+        """RubricResponse can be created with all fields."""
+        response = RubricResponse(
+            score=4,
+            justification="The output was clear",
+            feedback="Consider adding more examples",
+        )
+
+        assert response.score == 4
+        assert response.justification == "The output was clear"
+        assert response.feedback == "Consider adding more examples"
+
+    def test_preference_response_creation(self) -> None:
+        """PreferenceResponse can be created with all fields."""
+        response = PreferenceResponse(
+            winner="A",
+            reason="Output A was more concise",
+            a_strengths="Clear and concise",
+            a_weaknesses="Could use more detail",
+            b_strengths="Very detailed",
+            b_weaknesses="Too verbose",
+        )
+
+        assert response.winner == "A"
+        assert response.reason == "Output A was more concise"
+        assert response.a_strengths == "Clear and concise"
+
+    def test_ranking_response_creation(self) -> None:
+        """RankingResponse can be created with all fields."""
+        response = RankingResponse(
+            ranking=[3, 1, 2],
+            best_qualities="Most accurate and helpful",
+            worst_issues="Too brief and missing context",
+            comparison="Output 3 was best due to accuracy",
+        )
+
+        assert response.ranking == [3, 1, 2]
+        assert response.best_qualities == "Most accurate and helpful"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HumanFeedbackLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestHumanFeedbackLoss:
+    """Tests for HumanFeedbackLoss human-in-the-loop evaluation."""
+
+    def test_human_feedback_loss_creation(self) -> None:
+        """HumanFeedbackLoss can be created with defaults."""
+        loss = HumanFeedbackLoss()
+
+        assert loss.prompt_template is None
+        assert loss.show_context is True
+
+    def test_human_feedback_loss_custom_template(self) -> None:
+        """HumanFeedbackLoss accepts custom prompt template."""
+        loss = HumanFeedbackLoss(
+            prompt_template="Rate this: {output}",
+            show_context=False,
+        )
+
+        assert loss.prompt_template == "Rate this: {output}"
+        assert loss.show_context is False
+
+    @pytest.mark.asyncio
+    async def test_human_feedback_loss_collects_input(self) -> None:
+        """HumanFeedbackLoss collects feedback from stdin."""
+        loss = HumanFeedbackLoss()
+
+        # Mock input() to return feedback then empty line to finish
+        with patch("builtins.input", side_effect=["Great output!", ""]):
+            with patch("builtins.print"):  # Suppress output
+                feedback = await loss("test output")
+
+        assert feedback.content == "Great output!"
+        assert feedback.score is None
+        assert feedback.feedback_type == FeedbackType.HUMAN
+
+    @pytest.mark.asyncio
+    async def test_human_feedback_loss_multiline_input(self) -> None:
+        """HumanFeedbackLoss collects multiline feedback."""
+        loss = HumanFeedbackLoss()
+
+        with patch("builtins.input", side_effect=["Line 1", "Line 2", ""]):
+            with patch("builtins.print"):
+                feedback = await loss("test output")
+
+        assert feedback.content == "Line 1\nLine 2"
+
+    @pytest.mark.asyncio
+    async def test_human_feedback_loss_empty_input(self) -> None:
+        """HumanFeedbackLoss handles empty feedback."""
+        loss = HumanFeedbackLoss()
+
+        with patch("builtins.input", side_effect=[""]):
+            with patch("builtins.print"):
+                feedback = await loss("test output")
+
+        assert feedback.content == "No feedback provided."
+
+    @pytest.mark.asyncio
+    async def test_human_feedback_loss_with_record(self) -> None:
+        """HumanFeedbackLoss attaches record."""
+        loss = HumanFeedbackLoss()
+        record = ForwardRecord(
+            graph=InferenceGraph(nodes={}, input_ids=[], output_ids=[]),
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        with patch("builtins.input", side_effect=["feedback", ""]):
+            with patch("builtins.print"):
+                feedback = await loss("output", record=record)
+
+        assert feedback._record is record
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LLMRubricLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLLMRubricLoss:
+    """Tests for LLMRubricLoss rubric-based evaluation."""
+
+    def _create_rubric(self) -> list[RubricLevel]:
+        """Create a standard 5-point rubric for testing."""
+        return [
+            RubricLevel(1, "Poor", "Fails completely"),
+            RubricLevel(2, "Below Average", "Partially addresses"),
+            RubricLevel(3, "Average", "Adequately addresses"),
+            RubricLevel(4, "Good", "Thoroughly addresses"),
+            RubricLevel(5, "Excellent", "Exceptionally addresses"),
+        ]
+
+    def test_llm_rubric_loss_creation(self) -> None:
+        """LLMRubricLoss can be created with criteria and rubric."""
+        rubric = self._create_rubric()
+        loss = LLMRubricLoss(
+            criteria="helpfulness",
+            rubric=rubric,
+            alias="test-judge",
+        )
+
+        assert loss.criteria == "helpfulness"
+        assert len(loss.rubric) == 5
+        assert loss.judge.alias == "test-judge"
+
+    def test_llm_rubric_loss_sorts_rubric(self) -> None:
+        """LLMRubricLoss sorts rubric by score."""
+        # Create rubric out of order
+        rubric = [
+            RubricLevel(3, "Medium", "Medium"),
+            RubricLevel(1, "Low", "Low"),
+            RubricLevel(5, "High", "High"),
+        ]
+        loss = LLMRubricLoss(criteria="test", rubric=rubric)
+
+        # Should be sorted
+        assert loss.rubric[0].score == 1
+        assert loss.rubric[1].score == 3
+        assert loss.rubric[2].score == 5
+
+    def test_llm_rubric_loss_system_prompt(self) -> None:
+        """LLMRubricLoss generates appropriate system prompt."""
+        rubric = self._create_rubric()
+        loss = LLMRubricLoss(criteria="clarity", rubric=rubric)
+
+        prompt = loss._build_system_prompt()
+        assert "clarity" in prompt
+        assert "Rating Scale:" in prompt
+        assert "1 - Poor" in prompt
+        assert "5 - Excellent" in prompt
+
+    def test_llm_rubric_loss_bind(self) -> None:
+        """LLMRubricLoss.bind() configures resources."""
+        loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
+        mock_resources = MagicMock()
+
+        result = loss.bind(mock_resources)
+
+        assert result is loss
+        assert loss.judge._bound_resources is mock_resources
+
+    @pytest.mark.asyncio
+    async def test_llm_rubric_loss_call_with_dict_response(self) -> None:
+        """LLMRubricLoss handles dict response from LLM."""
+        loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
+
+        # Mock judge to return dict response
+        loss.judge = AsyncMock(
+            return_value={
+                "score": 4,
+                "justification": "Well done",
+                "feedback": "Add more examples",
+            }
+        )
+
+        feedback = await loss("test output")
+
+        # Score 4 on 1-5 scale: (4-1)/(5-1) = 0.75
+        assert feedback.score == pytest.approx(0.75)
+        assert "Well done" in feedback.content
+        assert "Add more examples" in feedback.content
+        assert feedback.feedback_type == FeedbackType.LLM_JUDGE
+        assert feedback.metadata["raw_score"] == 4
+
+    @pytest.mark.asyncio
+    async def test_llm_rubric_loss_call_with_object_response(self) -> None:
+        """LLMRubricLoss handles object response from LLM."""
+        loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
+
+        # Mock judge to return RubricResponse object
+        loss.judge = AsyncMock(
+            return_value=RubricResponse(
+                score=5,
+                justification="Perfect",
+                feedback="No improvements needed",
+            )
+        )
+
+        feedback = await loss("test output")
+
+        # Score 5 on 1-5 scale: (5-1)/(5-1) = 1.0
+        assert feedback.score == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_llm_rubric_loss_with_record(self) -> None:
+        """LLMRubricLoss attaches record."""
+        loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
+        loss.judge = AsyncMock(
+            return_value={"score": 3, "justification": "OK", "feedback": "OK"}
+        )
+        record = ForwardRecord(
+            graph=InferenceGraph(nodes={}, input_ids=[], output_ids=[]),
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        feedback = await loss("output", record=record)
+
+        assert feedback._record is record
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HumanRubricLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestHumanRubricLoss:
+    """Tests for HumanRubricLoss human rubric-based evaluation."""
+
+    def _create_rubric(self) -> list[RubricLevel]:
+        """Create a standard 5-point rubric for testing."""
+        return [
+            RubricLevel(1, "Poor", "Fails completely"),
+            RubricLevel(2, "Below Average", "Partially addresses"),
+            RubricLevel(3, "Average", "Adequately addresses"),
+            RubricLevel(4, "Good", "Thoroughly addresses"),
+            RubricLevel(5, "Excellent", "Exceptionally addresses"),
+        ]
+
+    def test_human_rubric_loss_creation(self) -> None:
+        """HumanRubricLoss can be created with criteria and rubric."""
+        rubric = self._create_rubric()
+        loss = HumanRubricLoss(
+            criteria="helpfulness",
+            rubric=rubric,
+            require_feedback=True,
+        )
+
+        assert loss.criteria == "helpfulness"
+        assert len(loss.rubric) == 5
+        assert loss.require_feedback is True
+
+    @pytest.mark.asyncio
+    async def test_human_rubric_loss_collects_score(self) -> None:
+        """HumanRubricLoss collects score from user."""
+        loss = HumanRubricLoss(
+            criteria="test",
+            rubric=self._create_rubric(),
+            require_feedback=False,
+        )
+
+        with patch("builtins.input", side_effect=["4"]):
+            with patch("builtins.print"):
+                feedback = await loss("test output")
+
+        # Score 4 on 1-5 scale: (4-1)/(5-1) = 0.75
+        assert feedback.score == pytest.approx(0.75)
+        assert feedback.feedback_type == FeedbackType.HUMAN
+        assert feedback.metadata["raw_score"] == 4
+
+    @pytest.mark.asyncio
+    async def test_human_rubric_loss_collects_feedback(self) -> None:
+        """HumanRubricLoss collects written feedback when required."""
+        loss = HumanRubricLoss(
+            criteria="test",
+            rubric=self._create_rubric(),
+            require_feedback=True,
+        )
+
+        # First input is score, then feedback lines, then empty to finish
+        with patch("builtins.input", side_effect=["3", "Could be better", ""]):
+            with patch("builtins.print"):
+                feedback = await loss("test output")
+
+        assert "Could be better" in feedback.content
+
+    @pytest.mark.asyncio
+    async def test_human_rubric_loss_validates_score(self) -> None:
+        """HumanRubricLoss validates score is in range."""
+        loss = HumanRubricLoss(
+            criteria="test",
+            rubric=self._create_rubric(),
+            require_feedback=False,
+        )
+
+        # Invalid scores followed by valid score
+        with patch("builtins.input", side_effect=["0", "6", "invalid", "3"]):
+            with patch("builtins.print"):
+                feedback = await loss("test output")
+
+        assert feedback.score == pytest.approx(0.5)  # Score 3 normalized
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  ContrastiveLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class ConcreteContrastiveLoss(ContrastiveLoss):
+    """Concrete implementation for testing ContrastiveLoss base."""
+
+    async def __call__(
+        self,
+        output: Any,
+        target: Any | None = None,
+        *,
+        record: ForwardRecord | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> Feedback:
+        return Feedback(content="Test", score=0.5)
+
+
+class TestContrastiveLoss:
+    """Tests for ContrastiveLoss base class."""
+
+    def test_contrastive_loss_generate_feedback(self) -> None:
+        """ContrastiveLoss generates contrastive feedback."""
+        loss = ConcreteContrastiveLoss()
+
+        feedback = loss._generate_contrastive_feedback(
+            winner="Great output",
+            loser="Poor output",
+            reason="More concise",
+        )
+
+        assert "More concise" in feedback
+        assert "Preferred output characteristics" in feedback
+        assert "Rejected output weaknesses" in feedback
+
+    def test_contrastive_loss_summarize_output_short(self) -> None:
+        """ContrastiveLoss summarizes short output as-is."""
+        loss = ConcreteContrastiveLoss()
+
+        result = loss._summarize_output("Short text")
+
+        assert result == "Short text"
+
+    def test_contrastive_loss_summarize_output_long(self) -> None:
+        """ContrastiveLoss truncates long output."""
+        loss = ConcreteContrastiveLoss()
+        long_text = "x" * 300
+
+        result = loss._summarize_output(long_text)
+
+        assert len(result) == 203  # 200 + "..."
+        assert result.endswith("...")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LLMPreferenceLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLLMPreferenceLoss:
+    """Tests for LLMPreferenceLoss pairwise comparison."""
+
+    def test_llm_preference_loss_creation(self) -> None:
+        """LLMPreferenceLoss can be created with criteria."""
+        loss = LLMPreferenceLoss(criteria="quality", alias="test-judge")
+
+        assert loss.criteria == "quality"
+        assert loss.judge.alias == "test-judge"
+
+    def test_llm_preference_loss_bind(self) -> None:
+        """LLMPreferenceLoss.bind() configures resources."""
+        loss = LLMPreferenceLoss(criteria="test")
+        mock_resources = MagicMock()
+
+        result = loss.bind(mock_resources)
+
+        assert result is loss
+        assert loss.judge._bound_resources is mock_resources
+
+    @pytest.mark.asyncio
+    async def test_llm_preference_loss_compare_a_wins(self) -> None:
+        """LLMPreferenceLoss returns correct feedback when A wins."""
+        loss = LLMPreferenceLoss(criteria="quality")
+
+        loss.judge = AsyncMock(
+            return_value={
+                "winner": "A",
+                "reason": "More concise",
+                "a_strengths": "Clear and brief",
+                "a_weaknesses": "Could be more detailed",
+                "b_strengths": "Very detailed",
+                "b_weaknesses": "Too verbose",
+            }
+        )
+
+        fb_a, fb_b = await loss.compare("Output A", "Output B")
+
+        assert fb_a.score == 1.0
+        assert "Preferred" in fb_a.content
+        assert fb_b.score == 0.0
+        assert "better because" in fb_b.content
+
+    @pytest.mark.asyncio
+    async def test_llm_preference_loss_compare_b_wins(self) -> None:
+        """LLMPreferenceLoss returns correct feedback when B wins."""
+        loss = LLMPreferenceLoss(criteria="quality")
+
+        loss.judge = AsyncMock(
+            return_value=PreferenceResponse(
+                winner="B",
+                reason="More accurate",
+                a_strengths="Concise",
+                a_weaknesses="Inaccurate",
+                b_strengths="Accurate",
+                b_weaknesses="Verbose",
+            )
+        )
+
+        fb_a, fb_b = await loss.compare("Output A", "Output B")
+
+        assert fb_a.score == 0.0
+        assert fb_b.score == 1.0
+        assert "Preferred" in fb_b.content
+
+    @pytest.mark.asyncio
+    async def test_llm_preference_loss_call_requires_target(self) -> None:
+        """LLMPreferenceLoss.__call__ requires target."""
+        loss = LLMPreferenceLoss(criteria="test")
+
+        with pytest.raises(ValueError) as exc_info:
+            await loss("output")
+
+        assert "requires target" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_llm_preference_loss_call_with_target(self) -> None:
+        """LLMPreferenceLoss.__call__ compares output with target."""
+        loss = LLMPreferenceLoss(criteria="test")
+        loss.judge = AsyncMock(
+            return_value={
+                "winner": "A",
+                "reason": "Better",
+                "a_strengths": "Good",
+                "a_weaknesses": "None",
+                "b_strengths": "OK",
+                "b_weaknesses": "Bad",
+            }
+        )
+
+        feedback = await loss("output", target="baseline")
+
+        assert feedback.score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_llm_preference_loss_attaches_records(self) -> None:
+        """LLMPreferenceLoss attaches records to feedback."""
+        loss = LLMPreferenceLoss(criteria="test")
+        loss.judge = AsyncMock(
+            return_value={
+                "winner": "A",
+                "reason": "Better",
+                "a_strengths": "Good",
+                "a_weaknesses": "None",
+                "b_strengths": "OK",
+                "b_weaknesses": "Bad",
+            }
+        )
+
+        record_a = ForwardRecord(
+            graph=InferenceGraph(nodes={}, input_ids=["a"], output_ids=[]),
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+        record_b = ForwardRecord(
+            graph=InferenceGraph(nodes={}, input_ids=["b"], output_ids=[]),
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        fb_a, fb_b = await loss.compare("A", "B", record_a=record_a, record_b=record_b)
+
+        assert fb_a._record is record_a
+        assert fb_b._record is record_b
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HumanPreferenceLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestHumanPreferenceLoss:
+    """Tests for HumanPreferenceLoss pairwise comparison."""
+
+    def test_human_preference_loss_creation(self) -> None:
+        """HumanPreferenceLoss can be created with criteria."""
+        loss = HumanPreferenceLoss(criteria="quality", require_reason=False)
+
+        assert loss.criteria == "quality"
+        assert loss.require_reason is False
+
+    @pytest.mark.asyncio
+    async def test_human_preference_loss_compare_a_wins(self) -> None:
+        """HumanPreferenceLoss returns correct feedback when user picks A."""
+        loss = HumanPreferenceLoss(criteria="quality", require_reason=True)
+
+        with patch("builtins.input", side_effect=["A", "It's clearer", ""]):
+            with patch("builtins.print"):
+                fb_a, fb_b = await loss.compare("Output A", "Output B")
+
+        assert fb_a.score == 1.0
+        assert "Preferred by human" in fb_a.content
+        assert fb_b.score == 0.0
+        assert fb_a.feedback_type == FeedbackType.HUMAN
+
+    @pytest.mark.asyncio
+    async def test_human_preference_loss_compare_b_wins(self) -> None:
+        """HumanPreferenceLoss returns correct feedback when user picks B."""
+        loss = HumanPreferenceLoss(criteria="quality", require_reason=False)
+
+        with patch("builtins.input", side_effect=["b"]):  # lowercase works
+            with patch("builtins.print"):
+                fb_a, fb_b = await loss.compare("Output A", "Output B")
+
+        assert fb_a.score == 0.0
+        assert fb_b.score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_human_preference_loss_validates_input(self) -> None:
+        """HumanPreferenceLoss validates A/B input."""
+        loss = HumanPreferenceLoss(criteria="test", require_reason=False)
+
+        # Invalid inputs followed by valid
+        with patch("builtins.input", side_effect=["C", "invalid", "A"]):
+            with patch("builtins.print"):
+                fb_a, fb_b = await loss.compare("Output A", "Output B")
+
+        assert fb_a.score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_human_preference_loss_call_requires_target(self) -> None:
+        """HumanPreferenceLoss.__call__ requires target."""
+        loss = HumanPreferenceLoss(criteria="test")
+
+        with pytest.raises(ValueError) as exc_info:
+            await loss("output")
+
+        assert "requires target" in str(exc_info.value)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LLMRankingLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLLMRankingLoss:
+    """Tests for LLMRankingLoss n-way ranking."""
+
+    def test_llm_ranking_loss_creation(self) -> None:
+        """LLMRankingLoss can be created with criteria and n."""
+        loss = LLMRankingLoss(criteria="quality", n=4, alias="test-judge")
+
+        assert loss.criteria == "quality"
+        assert loss.n == 4
+        assert loss.judge.alias == "test-judge"
+
+    def test_llm_ranking_loss_bind(self) -> None:
+        """LLMRankingLoss.bind() configures resources."""
+        loss = LLMRankingLoss(criteria="test")
+        mock_resources = MagicMock()
+
+        result = loss.bind(mock_resources)
+
+        assert result is loss
+        assert loss.judge._bound_resources is mock_resources
+
+    @pytest.mark.asyncio
+    async def test_llm_ranking_loss_rank(self) -> None:
+        """LLMRankingLoss ranks multiple outputs."""
+        loss = LLMRankingLoss(criteria="quality")
+
+        loss.judge = AsyncMock(
+            return_value={
+                "ranking": [2, 3, 1],  # 1-indexed: output 2 is best
+                "best_qualities": "Most accurate",
+                "worst_issues": "Too brief",
+                "comparison": "Output 2 was most helpful",
+            }
+        )
+
+        feedbacks = await loss.rank(["Output 1", "Output 2", "Output 3"])
+
+        assert len(feedbacks) == 3
+        # Output at index 1 (Output 2) is ranked #1
+        assert feedbacks[1].score == 1.0
+        assert "#1 (best)" in feedbacks[1].content
+        # Output at index 2 (Output 3) is ranked #2
+        assert feedbacks[2].score == 0.5
+        # Output at index 0 (Output 1) is ranked #3 (worst)
+        assert feedbacks[0].score == 0.0
+        assert "(worst)" in feedbacks[0].content
+
+    @pytest.mark.asyncio
+    async def test_llm_ranking_loss_rank_with_object_response(self) -> None:
+        """LLMRankingLoss handles RankingResponse object."""
+        loss = LLMRankingLoss(criteria="quality")
+
+        loss.judge = AsyncMock(
+            return_value=RankingResponse(
+                ranking=[1, 2],
+                best_qualities="Clear",
+                worst_issues="Verbose",
+                comparison="First was better",
+            )
+        )
+
+        feedbacks = await loss.rank(["A", "B"])
+
+        assert feedbacks[0].score == 1.0
+        assert feedbacks[1].score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_llm_ranking_loss_requires_two_outputs(self) -> None:
+        """LLMRankingLoss requires at least 2 outputs."""
+        loss = LLMRankingLoss(criteria="test")
+
+        with pytest.raises(ValueError) as exc_info:
+            await loss.rank(["only one"])
+
+        assert "at least 2" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_llm_ranking_loss_call_requires_target(self) -> None:
+        """LLMRankingLoss.__call__ requires target."""
+        loss = LLMRankingLoss(criteria="test")
+
+        with pytest.raises(ValueError) as exc_info:
+            await loss("output")
+
+        assert "requires target" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_llm_ranking_loss_call_with_target(self) -> None:
+        """LLMRankingLoss.__call__ ranks output against target."""
+        loss = LLMRankingLoss(criteria="test")
+        loss.judge = AsyncMock(
+            return_value={
+                "ranking": [1, 2],
+                "best_qualities": "Good",
+                "worst_issues": "Bad",
+                "comparison": "First is better",
+            }
+        )
+
+        feedback = await loss("output", target="baseline")
+
+        assert feedback.score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_llm_ranking_loss_call_with_list_target(self) -> None:
+        """LLMRankingLoss.__call__ handles list of targets."""
+        loss = LLMRankingLoss(criteria="test")
+        loss.judge = AsyncMock(
+            return_value={
+                "ranking": [2, 1, 3],  # Second (first target) is best
+                "best_qualities": "Accurate",
+                "worst_issues": "Brief",
+                "comparison": "Varied quality",
+            }
+        )
+
+        feedback = await loss("output", target=["baseline1", "baseline2"])
+
+        # Output is at index 0, ranked #2
+        assert feedback.score == 0.5
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HumanRankingLoss Tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestHumanRankingLoss:
+    """Tests for HumanRankingLoss n-way ranking."""
+
+    def test_human_ranking_loss_creation(self) -> None:
+        """HumanRankingLoss can be created with criteria and n."""
+        loss = HumanRankingLoss(criteria="quality", n=4, require_feedback=False)
+
+        assert loss.criteria == "quality"
+        assert loss.n == 4
+        assert loss.require_feedback is False
+
+    @pytest.mark.asyncio
+    async def test_human_ranking_loss_rank(self) -> None:
+        """HumanRankingLoss collects ranking from user."""
+        loss = HumanRankingLoss(criteria="quality", require_feedback=False)
+
+        # User ranks: 2 is best, then 3, then 1
+        with patch("builtins.input", side_effect=["2,3,1"]):
+            with patch("builtins.print"):
+                feedbacks = await loss.rank(["Output 1", "Output 2", "Output 3"])
+
+        assert len(feedbacks) == 3
+        # Output 2 (index 1) is ranked #1
+        assert feedbacks[1].score == 1.0
+        assert "#1 (best)" in feedbacks[1].content
+        # Output 1 (index 0) is ranked #3 (worst)
+        assert feedbacks[0].score == 0.0
+        assert "(worst)" in feedbacks[0].content
+
+    @pytest.mark.asyncio
+    async def test_human_ranking_loss_with_feedback(self) -> None:
+        """HumanRankingLoss collects written feedback."""
+        loss = HumanRankingLoss(criteria="test", require_feedback=True)
+
+        with patch("builtins.input", side_effect=["1,2", "First was clearer", ""]):
+            with patch("builtins.print"):
+                feedbacks = await loss.rank(["A", "B"])
+
+        assert "First was clearer" in feedbacks[0].content
+
+    @pytest.mark.asyncio
+    async def test_human_ranking_loss_validates_ranking(self) -> None:
+        """HumanRankingLoss validates ranking input."""
+        loss = HumanRankingLoss(criteria="test", require_feedback=False)
+
+        # Invalid rankings followed by valid
+        with patch("builtins.input", side_effect=["1", "1,1", "invalid", "1,2"]):
+            with patch("builtins.print"):
+                feedbacks = await loss.rank(["A", "B"])
+
+        assert len(feedbacks) == 2
+
+    @pytest.mark.asyncio
+    async def test_human_ranking_loss_requires_two_outputs(self) -> None:
+        """HumanRankingLoss requires at least 2 outputs."""
+        loss = HumanRankingLoss(criteria="test")
+
+        with pytest.raises(ValueError) as exc_info:
+            await loss.rank(["only one"])
+
+        assert "at least 2" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_human_ranking_loss_call_requires_target(self) -> None:
+        """HumanRankingLoss.__call__ requires target."""
+        loss = HumanRankingLoss(criteria="test")
+
+        with pytest.raises(ValueError) as exc_info:
+            await loss("output")
+
+        assert "requires target" in str(exc_info.value)

@@ -32,17 +32,58 @@ Example:
 
 from inf_engine.optimization.backward import BackwardContext, BackwardResult
 from inf_engine.optimization.feedback import Feedback, FeedbackType
-from inf_engine.optimization.loss import Loss
+from inf_engine.optimization.loss import (
+    CompositeLoss,
+    ContrastiveLoss,
+    HumanFeedbackLoss,
+    HumanPreferenceLoss,
+    HumanRankingLoss,
+    HumanRubricLoss,
+    LLMJudge,
+    LLMPreferenceLoss,
+    LLMRankingLoss,
+    LLMRubricLoss,
+    Loss,
+    PreferenceResponse,
+    RankingResponse,
+    RubricLevel,
+    RubricResponse,
+    VerifierLoss,
+)
 from inf_engine.optimization.optimizer import Optimizer, SFAOptimizer
 from inf_engine.optimization.record import ForwardRecord
 
 __all__ = [
+    # Backward pass
     "BackwardContext",
     "BackwardResult",
+    # Feedback
     "Feedback",
     "FeedbackType",
+    # Record
     "ForwardRecord",
+    # Loss base class
     "Loss",
+    # Single-sample losses
+    "VerifierLoss",
+    "LLMJudge",
+    "HumanFeedbackLoss",
+    "LLMRubricLoss",
+    "HumanRubricLoss",
+    # Contrastive losses
+    "ContrastiveLoss",
+    "LLMPreferenceLoss",
+    "HumanPreferenceLoss",
+    "LLMRankingLoss",
+    "HumanRankingLoss",
+    # Composite loss
+    "CompositeLoss",
+    # Structured output schemas
+    "RubricLevel",
+    "RubricResponse",
+    "PreferenceResponse",
+    "RankingResponse",
+    # Optimizers
     "Optimizer",
     "SFAOptimizer",
 ]
