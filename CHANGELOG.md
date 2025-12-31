@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `Optimizer` abstract base class for parameter updates via LLM
+  - Follows torch.optim pattern: initialized with `module.parameters()`
+  - Fixed aliases for internal LLMs: `optimizer/aggregator`, `optimizer/updater`, `optimizer/reasoning`
+  - `bind()` method to configure resources
+  - `zero_feedback()` method to clear parameter feedback buffers (like `zero_grad()`)
+  - Abstract async `step()` method for updating parameters
+  - Optional `reasoning_model` parameter for backward-pass reasoning LLM
+- Add `SFAOptimizer` (Stochastic Feedback Ascent) implementation
+  - Makes small, targeted changes based on accumulated feedback
+  - `conservatism` hyperparameter (0-1) controls how aggressive updates are
+  - Aggregates multiple feedback items using LLM before generating updates
+  - Generates improved parameter values using updater LLM with conservatism guidance
 - Add backward pass infrastructure for feedback propagation
   - `BackwardContext` dataclass with node execution context and optional reasoning LLM
   - `BackwardResult` dataclass for collecting input and parameter feedback

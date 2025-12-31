@@ -33,6 +33,7 @@ Example:
 from inf_engine.optimization.backward import BackwardContext, BackwardResult
 from inf_engine.optimization.feedback import Feedback, FeedbackType
 from inf_engine.optimization.loss import Loss
+from inf_engine.optimization.optimizer import Optimizer, SFAOptimizer
 from inf_engine.optimization.record import ForwardRecord
 
 __all__ = [
@@ -42,4 +43,6 @@ __all__ = [
     "FeedbackType",
     "ForwardRecord",
     "Loss",
+    "Optimizer",
+    "SFAOptimizer",
 ]
