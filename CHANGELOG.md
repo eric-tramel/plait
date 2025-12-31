@@ -293,12 +293,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RateLimiter` now accepts `rpm` parameter instead of `rate`
   - `EndpointConfig.rate_limit` is now documented as requests per minute
   - Aligns with LLM API provider conventions (OpenAI, Anthropic, etc.)
+- Refactor batch loss API to match PyTorch semantics (PR-068c)
+  - `Loss.__call__` now auto-detects list inputs and returns single aggregated `Feedback`
+  - `Feedback._records` replaces `_record` to hold multiple `ForwardRecord` objects
+  - `Feedback.backward()` now propagates to all attached records concurrently
+  - Aggregated feedback includes mean score reduction and all records from batch
+  - Individual scores available in `feedback.metadata["individual_scores"]`
+  - Matches PyTorch pattern: `loss.backward()` on reduced loss propagates to all samples
 
 ### Deprecated
 - N/A
 
 ### Removed
-- N/A
+- `Loss.batch()` method - use `loss(outputs_list)` directly (auto-detects batch)
+- `Feedback.backward_batch()` method - use `feedback.backward()` on aggregated feedback
 
 ### Fixed
 - Standardize priority ordering convention to "lower value = higher precedence" across GraphNode and Task

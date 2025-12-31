@@ -37,8 +37,8 @@ class TestLossABC:
             Loss()  # type: ignore[abstract]
         assert "abstract" in str(exc_info.value).lower()
 
-    def test_loss_requires_call_method(self) -> None:
-        """Subclass must implement __call__ method."""
+    def test_loss_requires_evaluate_single_method(self) -> None:
+        """Subclass must implement _evaluate_single method."""
 
         class IncompleteLoss(Loss):
             pass
@@ -46,7 +46,7 @@ class TestLossABC:
         with pytest.raises(TypeError) as exc_info:
             IncompleteLoss()  # type: ignore[abstract]
         assert (
-            "__call__" in str(exc_info.value)
+            "_evaluate_single" in str(exc_info.value)
             or "abstract" in str(exc_info.value).lower()
         )
 
@@ -57,43 +57,39 @@ class SimpleLoss(Loss):
     def __init__(self, always_score: float = 0.5) -> None:
         self.always_score = always_score
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         score = 1.0 if output == target else self.always_score
         content = f"Output: {output}, Target: {target}"
-        feedback = Feedback(
+        return Feedback(
             content=content,
             score=score,
             feedback_type=FeedbackType.VERIFIER,
         )
-        return self._attach_record(feedback, record)
 
 
 class ContextAwareLoss(Loss):
     """Loss that uses context in evaluation."""
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         context = context or {}
         criteria = context.get("criteria", "default")
-        feedback = Feedback(
+        return Feedback(
             content=f"Evaluated on: {criteria}",
             score=0.8,
             metadata={"criteria": criteria},
         )
-        return self._attach_record(feedback, record)
 
 
 class TestLossSubclass:
@@ -167,31 +163,34 @@ class TestAttachRecord:
         )
 
     @pytest.mark.asyncio
-    async def test_attach_record_sets_record(self) -> None:
-        """_attach_record attaches ForwardRecord to feedback."""
+    async def test_attach_record_appends_record(self) -> None:
+        """_attach_record appends ForwardRecord to feedback._records."""
         loss = SimpleLoss()
         record = self._create_record()
+        feedback = Feedback(content="Test")
 
-        feedback = await loss("output", target="target", record=record)
+        loss._attach_record(feedback, record)
 
-        assert feedback._record is record
+        assert record in feedback._records
+        assert len(feedback._records) == 1
 
     @pytest.mark.asyncio
     async def test_attach_record_none(self) -> None:
         """_attach_record does nothing when record is None."""
         loss = SimpleLoss()
+        feedback = Feedback(content="Test")
 
-        feedback = await loss("output", record=None)
+        loss._attach_record(feedback, None)
 
-        assert feedback._record is None
+        assert feedback._records == []
 
     @pytest.mark.asyncio
     async def test_attach_record_enables_backward(self) -> None:
         """Feedback with attached record can call backward()."""
         loss = SimpleLoss()
         record = self._create_record()
-
-        feedback = await loss("output", record=record)
+        feedback = Feedback(content="Test")
+        loss._attach_record(feedback, record)
 
         # Should not raise since record is attached
         await feedback.backward()
@@ -222,9 +221,20 @@ class TestAttachRecord:
         record = self._create_record()
         feedback = Feedback(content="Test")
 
-        assert feedback._record is None
+        assert feedback._records == []
         loss._attach_record(feedback, record)
-        assert feedback._record is record
+        assert record in feedback._records
+
+    def test_attach_records_appends_multiple(self) -> None:
+        """_attach_records appends multiple records."""
+        loss = SimpleLoss()
+        records = [self._create_record(), self._create_record()]
+        feedback = Feedback(content="Test")
+
+        loss._attach_records(feedback, records)
+
+        assert len(feedback._records) == 2
+        assert all(r in feedback._records for r in records)
 
 
 class TestLossCallSignature:
@@ -245,8 +255,10 @@ class TestLossCallSignature:
         assert feedback.score == 0.5
 
     @pytest.mark.asyncio
-    async def test_call_mixed_args(self) -> None:
-        """Loss can be called with mixed positional and keyword args."""
+    async def test_call_with_traced_output(self) -> None:
+        """Loss extracts value and record from TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = SimpleLoss()
         record = ForwardRecord(
             graph=InferenceGraph(nodes={}, input_ids=[], output_ids=[]),
@@ -254,30 +266,25 @@ class TestLossCallSignature:
             node_outputs={},
             module_map={},
         )
-        feedback = await loss(
-            "output",
-            target="target",
-            record=record,
-            context={"key": "value"},
-        )
-        assert feedback._record is record
+        traced = TracedOutput(value="output", _record=record)
+
+        feedback = await loss(traced, target="target")
+
+        assert feedback.score == 0.5
+        assert record in feedback._records
 
     @pytest.mark.asyncio
-    async def test_record_and_context_are_keyword_only(self) -> None:
-        """record and context must be keyword arguments."""
+    async def test_context_is_keyword_only(self) -> None:
+        """context must be keyword argument."""
         loss = SimpleLoss()
 
         # These should work
         await loss("out")
         await loss("out", "target")
         await loss("out", target="target")
-        await loss("out", record=None)
         await loss("out", context={})
-        await loss("out", record=None, context={})
 
         # The signature enforces keyword-only after target
-        # If someone tries to pass record positionally, it would fail
-        # but we can't easily test this at runtime without introspection
 
 
 class TestMultipleLossInstances:
@@ -297,7 +304,9 @@ class TestMultipleLossInstances:
 
     @pytest.mark.asyncio
     async def test_independent_records(self) -> None:
-        """Each loss call can have independent records."""
+        """Each loss call with TracedOutput has independent records."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = SimpleLoss()
         record1 = ForwardRecord(
             graph=InferenceGraph(nodes={}, input_ids=["a"], output_ids=[]),
@@ -312,12 +321,14 @@ class TestMultipleLossInstances:
             module_map={},
         )
 
-        fb1 = await loss("output1", record=record1)
-        fb2 = await loss("output2", record=record2)
+        traced1 = TracedOutput(value="output1", _record=record1)
+        traced2 = TracedOutput(value="output2", _record=record2)
 
-        assert fb1._record is record1
-        assert fb2._record is record2
-        assert fb1._record is not fb2._record
+        fb1 = await loss(traced1)
+        fb2 = await loss(traced2)
+
+        assert record1 in fb1._records
+        assert record2 in fb2._records
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -379,8 +390,10 @@ class TestVerifierLoss:
         assert feedback.feedback_type == FeedbackType.VERIFIER
 
     @pytest.mark.asyncio
-    async def test_verifier_loss_with_record(self) -> None:
-        """VerifierLoss attaches record when provided."""
+    async def test_verifier_loss_with_traced_output(self) -> None:
+        """VerifierLoss attaches record from TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = VerifierLoss(verifier=lambda x: (True, ""))
         record = ForwardRecord(
             graph=InferenceGraph(nodes={}, input_ids=[], output_ids=[]),
@@ -388,10 +401,11 @@ class TestVerifierLoss:
             node_outputs={},
             module_map={},
         )
+        traced = TracedOutput(value="output", _record=record)
 
-        feedback = await loss("output", record=record)
+        feedback = await loss(traced)
 
-        assert feedback._record is record
+        assert record in feedback._records
 
     @pytest.mark.asyncio
     async def test_verifier_loss_complex_check(self) -> None:
@@ -512,8 +526,10 @@ class TestLLMJudge:
         assert "summarization" in call_prompt
 
     @pytest.mark.asyncio
-    async def test_llm_judge_with_record(self) -> None:
-        """LLMJudge attaches record when provided."""
+    async def test_llm_judge_with_traced_output(self) -> None:
+        """LLMJudge attaches record from TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
         judge = LLMJudge()
         judge.judge = AsyncMock(return_value="Feedback")
         record = ForwardRecord(
@@ -522,10 +538,11 @@ class TestLLMJudge:
             node_outputs={},
             module_map={},
         )
+        traced = TracedOutput(value="output", _record=record)
 
-        feedback = await judge("output", record=record)
+        feedback = await judge(traced)
 
-        assert feedback._record is record
+        assert record in feedback._records
 
     @pytest.mark.asyncio
     async def test_llm_judge_prompt_construction(self) -> None:
@@ -651,8 +668,10 @@ class TestCompositeLoss:
         assert feedback.score == pytest.approx(1.0)
 
     @pytest.mark.asyncio
-    async def test_composite_loss_with_record(self) -> None:
-        """CompositeLoss attaches record to final feedback."""
+    async def test_composite_loss_with_traced_output(self) -> None:
+        """CompositeLoss attaches record from TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = VerifierLoss(verifier=lambda x: (True, ""))
         composite = CompositeLoss([(loss, 1.0)])
         record = ForwardRecord(
@@ -661,17 +680,20 @@ class TestCompositeLoss:
             node_outputs={},
             module_map={},
         )
+        traced = TracedOutput(value="output", _record=record)
 
-        feedback = await composite("output", record=record)
+        feedback = await composite(traced)
 
-        assert feedback._record is record
+        assert record in feedback._records
 
     @pytest.mark.asyncio
     async def test_composite_loss_no_scores(self) -> None:
         """CompositeLoss returns None score when no components have scores."""
         # Create a loss that returns no score
-        mock_loss = AsyncMock()
-        mock_loss.return_value = Feedback(content="No score", score=None)
+        mock_loss = MagicMock(spec=Loss)
+        mock_loss._evaluate_single = AsyncMock(
+            return_value=Feedback(content="No score", score=None)
+        )
 
         composite = CompositeLoss([(mock_loss, 1.0)])
 
@@ -686,8 +708,10 @@ class TestCompositeLoss:
         loss1 = VerifierLoss(verifier=lambda x: (True, ""))  # score 1.0
 
         # Unscored loss (mock)
-        mock_loss = AsyncMock()
-        mock_loss.return_value = Feedback(content="Unscored", score=None)
+        mock_loss = MagicMock(spec=Loss)
+        mock_loss._evaluate_single = AsyncMock(
+            return_value=Feedback(content="Unscored", score=None)
+        )
 
         composite = CompositeLoss(
             [
@@ -786,8 +810,10 @@ class TestCompositeLoss:
     @pytest.mark.asyncio
     async def test_composite_loss_passes_target_and_context(self) -> None:
         """CompositeLoss passes target and context to sub-losses."""
-        mock_loss = AsyncMock()
-        mock_loss.return_value = Feedback(content="Test", score=1.0)
+        mock_loss = MagicMock(spec=Loss)
+        mock_loss._evaluate_single = AsyncMock(
+            return_value=Feedback(content="Test", score=1.0)
+        )
 
         composite = CompositeLoss([(mock_loss, 1.0)])
 
@@ -797,12 +823,13 @@ class TestCompositeLoss:
             context={"key": "value"},
         )
 
-        # Verify target and context were passed
-        mock_loss.assert_called_once()
-        _, kwargs = mock_loss.call_args
-        assert kwargs.get("target") is None or mock_loss.call_args[0][1] == "expected"
+        # Verify _evaluate_single was called with correct args
+        mock_loss._evaluate_single.assert_called_once()
+        call_args = mock_loss._evaluate_single.call_args
+        # Check positional args: output and target
+        assert call_args[0][0] == "output"
+        assert call_args[0][1] == "expected"
         # Check context was passed
-        call_args = mock_loss.call_args
         assert call_args[1].get("context") == {"key": "value"}
 
 
@@ -928,8 +955,10 @@ class TestHumanFeedbackLoss:
         assert feedback.content == "No feedback provided."
 
     @pytest.mark.asyncio
-    async def test_human_feedback_loss_with_record(self) -> None:
-        """HumanFeedbackLoss attaches record."""
+    async def test_human_feedback_loss_with_traced_output(self) -> None:
+        """HumanFeedbackLoss attaches record from TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = HumanFeedbackLoss()
         record = ForwardRecord(
             graph=InferenceGraph(nodes={}, input_ids=[], output_ids=[]),
@@ -937,12 +966,13 @@ class TestHumanFeedbackLoss:
             node_outputs={},
             module_map={},
         )
+        traced = TracedOutput(value="output", _record=record)
 
         with patch("builtins.input", side_effect=["feedback", ""]):
             with patch("builtins.print"):
-                feedback = await loss("output", record=record)
+                feedback = await loss(traced)
 
-        assert feedback._record is record
+        assert record in feedback._records
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1055,8 +1085,10 @@ class TestLLMRubricLoss:
         assert feedback.score == pytest.approx(1.0)
 
     @pytest.mark.asyncio
-    async def test_llm_rubric_loss_with_record(self) -> None:
-        """LLMRubricLoss attaches record."""
+    async def test_llm_rubric_loss_with_traced_output(self) -> None:
+        """LLMRubricLoss attaches record from TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
         loss.judge = AsyncMock(
             return_value={"score": 3, "justification": "OK", "feedback": "OK"}
@@ -1067,10 +1099,11 @@ class TestLLMRubricLoss:
             node_outputs={},
             module_map={},
         )
+        traced = TracedOutput(value="output", _record=record)
 
-        feedback = await loss("output", record=record)
+        feedback = await loss(traced)
 
-        assert feedback._record is record
+        assert record in feedback._records
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1163,12 +1196,11 @@ class TestHumanRubricLoss:
 class ConcreteContrastiveLoss(ContrastiveLoss):
     """Concrete implementation for testing ContrastiveLoss base."""
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         return Feedback(content="Test", score=0.5)
@@ -1339,8 +1371,8 @@ class TestLLMPreferenceLoss:
 
         fb_a, fb_b = await loss.compare("A", "B", record_a=record_a, record_b=record_b)
 
-        assert fb_a._record is record_a
-        assert fb_b._record is record_b
+        assert record_a in fb_a._records
+        assert record_b in fb_b._records
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1613,96 +1645,102 @@ class TestHumanRankingLoss:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  Loss.batch() Tests (PR-068b)
+#  Unified Batch API Tests (PR-068c)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestLossBatch:
-    """Tests for Loss.batch() concurrent batch evaluation."""
+class TestUnifiedBatchAPI:
+    """Tests for unified Loss batch API (auto-detects list input)."""
+
+    def _create_record(self) -> ForwardRecord:
+        """Create a minimal ForwardRecord for testing."""
+        graph = InferenceGraph(
+            nodes={},
+            input_ids=[],
+            output_ids=[],
+        )
+        return ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
 
     @pytest.mark.asyncio
-    async def test_batch_evaluates_all_outputs(self) -> None:
-        """batch() evaluates all outputs and returns list of Feedback."""
+    async def test_batch_returns_single_aggregated_feedback(self) -> None:
+        """Calling loss with list returns single aggregated Feedback."""
         loss = SimpleLoss(always_score=0.5)
 
-        feedbacks = await loss.batch(["out1", "out2", "out3"])
+        feedback = await loss(["out1", "out2", "out3"])
 
-        assert len(feedbacks) == 3
-        for fb in feedbacks:
-            assert isinstance(fb, Feedback)
-            assert fb.score == 0.5
+        # Should return a single Feedback, not a list
+        assert isinstance(feedback, Feedback)
+        # Score is mean of individual scores
+        assert feedback.score == pytest.approx(0.5)
+        # Content contains all individual feedback
+        assert "out1" in feedback.content
+        assert "out2" in feedback.content
+        assert "out3" in feedback.content
 
     @pytest.mark.asyncio
-    async def test_batch_with_targets(self) -> None:
-        """batch() passes targets to each evaluation."""
+    async def test_batch_aggregates_scores(self) -> None:
+        """Batch loss aggregates scores with mean reduction."""
         loss = SimpleLoss()
 
-        # Matching outputs with targets should get score 1.0
-        feedbacks = await loss.batch(
-            outputs=["a", "b", "c"],
-            targets=["a", "b", "wrong"],
-        )
+        # "a" matches target "a" -> 1.0
+        # "b" matches target "b" -> 1.0
+        # "c" doesn't match "wrong" -> 0.5
+        feedback = await loss(["a", "b", "c"], target=["a", "b", "wrong"])
 
-        assert feedbacks[0].score == 1.0  # a == a
-        assert feedbacks[1].score == 1.0  # b == b
-        assert feedbacks[2].score == 0.5  # c != wrong
+        # Mean of [1.0, 1.0, 0.5] = 0.833...
+        assert feedback.score == pytest.approx((1.0 + 1.0 + 0.5) / 3)
 
     @pytest.mark.asyncio
-    async def test_batch_with_records(self) -> None:
-        """batch() attaches records to feedback."""
+    async def test_batch_extracts_and_aggregates_records(self) -> None:
+        """Batch loss extracts records from TracedOutputs and aggregates."""
+        from inf_engine.optimization.record import TracedOutput
+
         loss = SimpleLoss()
-        record1 = ForwardRecord(
-            graph=InferenceGraph(nodes={}, input_ids=["a"], output_ids=[]),
-            node_inputs={},
-            node_outputs={},
-            module_map={},
-        )
-        record2 = ForwardRecord(
-            graph=InferenceGraph(nodes={}, input_ids=["b"], output_ids=[]),
-            node_inputs={},
-            node_outputs={},
-            module_map={},
-        )
 
-        feedbacks = await loss.batch(
-            outputs=["out1", "out2"],
-            records=[record1, record2],
-        )
+        records = [self._create_record() for _ in range(3)]
+        traced_outputs = [
+            TracedOutput(value="v1", _record=records[0]),
+            TracedOutput(value="v2", _record=records[1]),
+            TracedOutput(value="v3", _record=records[2]),
+        ]
 
-        assert feedbacks[0]._record is record1
-        assert feedbacks[1]._record is record2
+        feedback = await loss(traced_outputs)
+
+        # All records should be attached
+        assert len(feedback._records) == 3
+        for rec in records:
+            assert rec in feedback._records
 
     @pytest.mark.asyncio
-    async def test_batch_with_contexts(self) -> None:
-        """batch() passes contexts to each evaluation."""
-        loss = ContextAwareLoss()
+    async def test_batch_metadata_contains_individual_scores(self) -> None:
+        """Aggregated feedback metadata contains individual scores."""
+        loss = SimpleLoss()
 
-        feedbacks = await loss.batch(
-            outputs=["out1", "out2"],
-            contexts=[
-                {"criteria": "helpfulness"},
-                {"criteria": "accuracy"},
-            ],
-        )
+        feedback = await loss(["a", "b", "c"], target=["a", "b", "wrong"])
 
-        assert "helpfulness" in feedbacks[0].content
-        assert "accuracy" in feedbacks[1].content
+        assert "individual_scores" in feedback.metadata
+        assert feedback.metadata["individual_scores"] == [1.0, 1.0, 0.5]
+        assert feedback.metadata["batch_size"] == 3
 
     @pytest.mark.asyncio
     async def test_batch_runs_concurrently(self) -> None:
-        """batch() runs evaluations concurrently."""
+        """Batch evaluation runs concurrently."""
         import asyncio
         import time
 
         call_times: list[float] = []
 
         class SlowLoss(Loss):
-            async def __call__(
+            async def _evaluate_single(
                 self,
                 output: Any,
                 target: Any | None = None,
                 *,
-                record: ForwardRecord | None = None,
                 context: dict[str, Any] | None = None,
             ) -> Feedback:
                 call_times.append(time.monotonic())
@@ -1712,10 +1750,10 @@ class TestLossBatch:
         loss = SlowLoss()
 
         start = time.monotonic()
-        feedbacks = await loss.batch(["a", "b", "c"])
+        feedback = await loss(["a", "b", "c"])
         elapsed = time.monotonic() - start
 
-        assert len(feedbacks) == 3
+        assert isinstance(feedback, Feedback)
 
         # If sequential: 3 * 0.05 = 0.15s
         # If concurrent: ~0.05s
@@ -1727,40 +1765,74 @@ class TestLossBatch:
             assert time_spread < 0.03, "Tasks did not start concurrently"
 
     @pytest.mark.asyncio
-    async def test_batch_empty_list(self) -> None:
-        """batch() with empty list returns empty list."""
-        loss = SimpleLoss()
+    async def test_single_output_not_treated_as_batch(self) -> None:
+        """Single non-list output is not treated as batch."""
+        loss = SimpleLoss(always_score=0.7)
 
-        feedbacks = await loss.batch([])
+        feedback = await loss("single output")
 
-        assert feedbacks == []
+        assert isinstance(feedback, Feedback)
+        assert feedback.score == 0.7
+        # No batch metadata
+        assert "batch_size" not in feedback.metadata
 
     @pytest.mark.asyncio
-    async def test_batch_preserves_order(self) -> None:
-        """batch() returns results in same order as inputs."""
-        import asyncio
+    async def test_traced_output_not_treated_as_batch(self) -> None:
+        """Single TracedOutput is not treated as batch."""
+        from inf_engine.optimization.record import TracedOutput
 
-        class OrderedLoss(Loss):
-            async def __call__(
-                self,
-                output: Any,
-                target: Any | None = None,
-                *,
-                record: ForwardRecord | None = None,
-                context: dict[str, Any] | None = None,
-            ) -> Feedback:
-                # Different delays to ensure order is preserved
-                delays = {"first": 0.05, "second": 0.02, "third": 0.01}
-                await asyncio.sleep(delays.get(output, 0))
-                return Feedback(content=f"Evaluated: {output}", score=1.0)
+        loss = SimpleLoss(always_score=0.7)
+        record = self._create_record()
+        traced = TracedOutput(value="single", _record=record)
 
-        loss = OrderedLoss()
+        feedback = await loss(traced)
 
-        feedbacks = await loss.batch(["first", "second", "third"])
+        assert isinstance(feedback, Feedback)
+        assert feedback.score == 0.7
+        assert record in feedback._records
+        # No batch metadata
+        assert "batch_size" not in feedback.metadata
 
-        assert "first" in feedbacks[0].content
-        assert "second" in feedbacks[1].content
-        assert "third" in feedbacks[2].content
+    @pytest.mark.asyncio
+    async def test_empty_batch_returns_empty_metadata(self) -> None:
+        """Empty list returns feedback with no scores."""
+        loss = SimpleLoss()
+
+        feedback = await loss([])
+
+        assert feedback.score is None
+        assert feedback.metadata.get("batch_size") == 0
+
+    @pytest.mark.asyncio
+    async def test_batch_with_single_target(self) -> None:
+        """Batch with single target applies to all outputs."""
+        loss = SimpleLoss()
+
+        # All outputs compared to same target "a"
+        feedback = await loss(["a", "a", "b"], target="a")
+
+        # [1.0, 1.0, 0.5] -> mean = 0.833...
+        assert feedback.score == pytest.approx((1.0 + 1.0 + 0.5) / 3)
+
+    @pytest.mark.asyncio
+    async def test_backward_propagates_to_all_batch_records(self) -> None:
+        """backward() on aggregated feedback propagates to all records."""
+        from inf_engine.optimization.record import TracedOutput
+
+        loss = SimpleLoss()
+
+        records = [self._create_record() for _ in range(3)]
+        traced_outputs = [
+            TracedOutput(value=f"v{i}", _record=records[i]) for i in range(3)
+        ]
+
+        feedback = await loss(traced_outputs)
+
+        # Should have all records
+        assert len(feedback._records) == 3
+
+        # backward() should not raise
+        await feedback.backward()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1832,129 +1904,3 @@ class TestExtractValueAndRecord:
 
         assert value == "raw"
         assert record is explicit_record
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  Loss.batch() with TracedOutput Tests (PR-068b)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestLossBatchWithTracedOutput:
-    """Tests for Loss.batch() auto-extracting from TracedOutput."""
-
-    def _create_record(self) -> ForwardRecord:
-        """Create a minimal ForwardRecord for testing."""
-        graph = InferenceGraph(
-            nodes={},
-            input_ids=[],
-            output_ids=[],
-        )
-        return ForwardRecord(
-            graph=graph,
-            node_inputs={},
-            node_outputs={},
-            module_map={},
-        )
-
-    @pytest.mark.asyncio
-    async def test_batch_extracts_values_from_traced_outputs(self) -> None:
-        """batch() extracts actual values from TracedOutput wrappers."""
-        from inf_engine.optimization.record import TracedOutput
-
-        loss = SimpleLoss()
-
-        records = [self._create_record() for _ in range(3)]
-        traced_outputs = [
-            TracedOutput(value="value1", _record=records[0]),
-            TracedOutput(value="value2", _record=records[1]),
-            TracedOutput(value="value3", _record=records[2]),
-        ]
-
-        feedbacks = await loss.batch(traced_outputs)
-
-        assert len(feedbacks) == 3
-        # Check that actual values were evaluated
-        assert "value1" in feedbacks[0].content
-        assert "value2" in feedbacks[1].content
-        assert "value3" in feedbacks[2].content
-
-    @pytest.mark.asyncio
-    async def test_batch_extracts_records_from_traced_outputs(self) -> None:
-        """batch() auto-extracts records from TracedOutput and attaches to feedback."""
-        from inf_engine.optimization.record import TracedOutput
-
-        loss = SimpleLoss()
-
-        records = [self._create_record() for _ in range(2)]
-        traced_outputs = [
-            TracedOutput(value="a", _record=records[0]),
-            TracedOutput(value="b", _record=records[1]),
-        ]
-
-        feedbacks = await loss.batch(traced_outputs)
-
-        # Records should be attached from TracedOutput
-        assert feedbacks[0]._record is records[0]
-        assert feedbacks[1]._record is records[1]
-
-    @pytest.mark.asyncio
-    async def test_batch_explicit_records_override_traced_output(self) -> None:
-        """batch() explicit records override TracedOutput's records."""
-        from inf_engine.optimization.record import TracedOutput
-
-        loss = SimpleLoss()
-
-        traced_record = self._create_record()
-        explicit_records = [self._create_record(), self._create_record()]
-
-        traced_outputs = [
-            TracedOutput(value="a", _record=traced_record),
-            TracedOutput(value="b", _record=traced_record),
-        ]
-
-        feedbacks = await loss.batch(traced_outputs, records=explicit_records)
-
-        # Explicit records should take precedence
-        assert feedbacks[0]._record is explicit_records[0]
-        assert feedbacks[1]._record is explicit_records[1]
-        assert feedbacks[0]._record is not traced_record
-
-    @pytest.mark.asyncio
-    async def test_batch_mixed_raw_and_traced_outputs(self) -> None:
-        """batch() handles mix of raw values and TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
-
-        loss = SimpleLoss()
-
-        traced_record = self._create_record()
-        outputs = [
-            "raw value",
-            TracedOutput(value="wrapped value", _record=traced_record),
-        ]
-
-        feedbacks = await loss.batch(outputs)
-
-        # Raw value has no record
-        assert feedbacks[0]._record is None
-        # TracedOutput has its record attached
-        assert feedbacks[1]._record is traced_record
-
-    @pytest.mark.asyncio
-    async def test_batch_traced_outputs_with_targets(self) -> None:
-        """batch() works with TracedOutput and targets."""
-        from inf_engine.optimization.record import TracedOutput
-
-        loss = SimpleLoss()
-
-        records = [self._create_record(), self._create_record()]
-        traced_outputs = [
-            TracedOutput(value="a", _record=records[0]),
-            TracedOutput(value="b", _record=records[1]),
-        ]
-
-        feedbacks = await loss.batch(traced_outputs, targets=["a", "wrong"])
-
-        # "a" matches target "a"
-        assert feedbacks[0].score == 1.0
-        # "b" doesn't match target "wrong"
-        assert feedbacks[1].score == 0.5

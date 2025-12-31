@@ -28,6 +28,10 @@ Pipeline Architecture:
 
 Key features demonstrated:
 - Multi-step pipeline with 3 learnable parameters
+- PyTorch-like train()/eval() mode for implicit record management
+- TracedOutput: forward passes automatically carry ForwardRecord
+- Unified Loss API: auto-detects batch input and returns aggregated Feedback
+- Single feedback.backward() propagates to all batch samples (PyTorch semantics)
 - LLMRubricLoss for structured evaluation with Likert scale
 - Multiple rubrics: quality, human-alignment, and engagement
 - CompositeLoss combining rubric evaluation + programmatic checks
@@ -48,7 +52,6 @@ import sys
 from pathlib import Path
 
 from inf_engine.execution.context import ExecutionSettings
-from inf_engine.execution.executor import run
 from inf_engine.module import InferenceModule, LLMInference
 from inf_engine.optimization import (
     CompositeLoss,
@@ -353,6 +356,9 @@ async def train_research_pipeline() -> None:
         profile=True,
         profile_path=trace_path,
     ) as settings:
+        # Enable training mode - forward passes return TracedOutput
+        pipeline.train()
+
         for epoch in range(num_epochs):
             print(f"{'=' * 70}")
             print(f"EPOCH {epoch + 1}/{num_epochs}")
@@ -360,34 +366,38 @@ async def train_research_pipeline() -> None:
 
             optimizer.zero_feedback()
 
-            # Run all forward passes in parallel
+            # ─────────────────────────────────────────────────────────────
+            # Batch forward: run all forward passes in parallel
+            # In training mode, outputs are TracedOutput with record attached
+            # ─────────────────────────────────────────────────────────────
             print(f"\nRunning {len(TRAINING_DATA)} forward passes in parallel...")
-            forward_tasks = [
-                run(pipeline, item["query"], resources=resources, record=True)
-                for item in TRAINING_DATA
-            ]
-            forward_results = await asyncio.gather(*forward_tasks)
+            forward_tasks = [pipeline(item["query"]) for item in TRAINING_DATA]
+            outputs = await asyncio.gather(*forward_tasks)  # list[TracedOutput]
 
-            # Run all loss computations in parallel
-            print("Computing losses in parallel...")
-            loss_tasks = [
-                loss_fn(output, record=record, context={"query": item["query"]})
-                for (output, record), item in zip(
-                    forward_results, TRAINING_DATA, strict=True
-                )
-            ]
-            feedbacks = await asyncio.gather(*loss_tasks)
+            # ─────────────────────────────────────────────────────────────
+            # Unified Loss: auto-detects list input and returns single
+            # aggregated Feedback with all records attached (PyTorch semantics)
+            # ─────────────────────────────────────────────────────────────
+            print("Computing aggregated loss (unified batch API)...")
+            feedback = await loss_fn(outputs)  # Single aggregated Feedback
 
-            # Backward passes (accumulate feedback)
-            epoch_scores: list[float] = []
-            for i, feedback in enumerate(feedbacks):
-                score = feedback.score if feedback.score is not None else 0.5
-                epoch_scores.append(score)
-                await feedback.backward(optimizer=optimizer)
-                print(f"  [{i + 1}] Score: {score:.2f}")
+            # ─────────────────────────────────────────────────────────────
+            # Single backward: propagates to all batch samples concurrently
+            # Matches PyTorch: loss.backward() on reduced loss
+            # ─────────────────────────────────────────────────────────────
+            print("Running backward pass (propagates to all samples)...")
+            await feedback.backward(optimizer=optimizer)
 
             # Epoch summary and parameter update
-            avg_score = sum(epoch_scores) / len(epoch_scores)
+            # Get individual scores from metadata
+            epoch_scores = feedback.metadata.get("individual_scores", [])
+            if not epoch_scores:
+                # Fallback if no scores
+                epoch_scores = [feedback.score] if feedback.score else [0.5]
+            for i, score in enumerate(epoch_scores):
+                print(f"  [{i + 1}] Score: {score:.2f}")
+
+            avg_score = sum(epoch_scores) / len(epoch_scores) if epoch_scores else 0.5
             all_scores.append(epoch_scores)
             print(f"\nEpoch {epoch + 1} average: {avg_score:.2f}")
 
@@ -401,6 +411,9 @@ async def train_research_pipeline() -> None:
         # ---------------------------------------------------------------------
         # Evaluation on held-out data
         # ---------------------------------------------------------------------
+        # Switch to eval mode - forward passes return raw values
+        pipeline.eval()
+
         print(f"\n{'=' * 70}")
         print("EVALUATION (Held-Out Query)")
         print(f"{'=' * 70}")
@@ -409,7 +422,7 @@ async def train_research_pipeline() -> None:
             query = item["query"]
             print(f"\nQuery: {query}")
 
-            output = await run(pipeline, query, resources=resources)
+            output = await pipeline(query)  # Raw string in eval mode
             feedback = await loss_fn(output, context={"query": query})
             score = feedback.score if feedback.score is not None else 0.5
 

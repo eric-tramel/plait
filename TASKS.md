@@ -13,11 +13,11 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 4: Resources** (11/12)
 - [ ] **Phase 5: Production Features** (12/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
-- [ ] **Phase 6: Optimization** (5/8)
+- [ ] **Phase 6: Optimization** (6/9)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 64/77 PRs completed**
+**Total: 65/78 PRs completed**
 
 ---
 
@@ -881,7 +881,7 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_optimizer.py` (init with parameters, zero_feedback clears buffers, bind required before step, step aggregates and updates, conservatism affects prompts)
 - **CHANGELOG**: "Add Optimizer base class and SFAOptimizer with torch.optim-style API"
 
-### - [ ] PR-068b: TracedOutput and batch training API
+### - [x] PR-068b: TracedOutput and batch training API
 - **Branch**: `feat/batch-training-api`
 - **Description**: Add `TracedOutput` wrapper that carries `ForwardRecord` implicitly, enabling PyTorch-like training mode. When `module.train()` is called, forward passes return `TracedOutput` instead of raw values. Loss functions auto-extract records from `TracedOutput`. Add `Loss.batch()` method with default concurrent implementation. Add `Feedback.backward_batch()` static method for concurrent backward passes. This eliminates manual record management and provides a clean, PyTorch-like training API.
 - **Design Docs**:
@@ -900,6 +900,22 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_loss.py` (Loss.batch concurrent execution, TracedOutput extraction)
   - `tests/unit/test_feedback.py` (backward_batch concurrent execution)
 - **CHANGELOG**: "Add TracedOutput for implicit record flow and batch training API"
+
+### - [ ] PR-068c: Aggregated batch loss API (PyTorch semantics)
+- **Branch**: `feat/aggregated-batch-loss`
+- **Description**: Refactor batch loss to return a **single aggregated Feedback** instead of a list. This matches PyTorch semantics where `loss.backward()` on a reduced loss propagates gradients to all batch samples. `Feedback` holds `_records: list[ForwardRecord]` instead of single `_record`. `Loss.__call__` auto-detects list input and aggregates. `Feedback.backward()` iterates through all attached records. Removes explicit `Loss.batch()` and `Feedback.backward_batch()` in favor of unified API.
+- **Design Docs**:
+  - `optimization.md` → "Batch Loss Computation (Aggregated)"
+  - `optimization.md` → "Mini-Batch Training"
+- **Files**:
+  - `src/inf_engine/optimization/feedback.py` (change `_record` to `_records: list`, update `backward()` to iterate)
+  - `src/inf_engine/optimization/loss.py` (auto-detect list in `__call__`, return single aggregated Feedback, remove `batch()`)
+  - `examples/09_optimization.py` (update to use new unified API)
+- **Tests**:
+  - `tests/unit/test_feedback.py` (backward iterates through multiple records)
+  - `tests/unit/test_loss.py` (list input returns single Feedback, score is mean, records attached)
+  - Update existing tests that use `Loss.batch()` and `Feedback.backward_batch()`
+- **CHANGELOG**: "Refactor batch loss to return single aggregated Feedback (PyTorch semantics)"
 
 ### - [ ] PR-069: Parameter freezing
 - **Branch**: `feat/parameter-freezing`
@@ -1038,10 +1054,10 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 | Resources | 12 | PR-037 to PR-048 |
 | Production | 13 | PR-050 to PR-062 |
 | Profiling | 1 | PR-063 |
-| Optimization | 8 | PR-064 to PR-070 (includes PR-068b) |
+| Optimization | 9 | PR-064 to PR-070 (includes PR-068b, PR-068c) |
 | Branching | 4 | PR-071 to PR-074 |
 | Post-Implementation | 3 | PR-075 to PR-077 |
-| **Total** | **77** | |
+| **Total** | **78** | |
 
 ---
 

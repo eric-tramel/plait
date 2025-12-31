@@ -100,9 +100,9 @@ class Feedback:
         >>> asyncio.run(feedback.backward())  # Raises RuntimeError
 
     Note:
-        The `_record` and `_optimizer` fields are internal and should not
+        The `_records` and `_optimizer` fields are internal and should not
         be set directly. They are populated by loss functions when computing
-        feedback with `record=record` parameter.
+        feedback. For batch inputs, all records from the batch are attached.
     """
 
     content: str
@@ -110,8 +110,11 @@ class Feedback:
     feedback_type: FeedbackType = FeedbackType.HUMAN
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    # Internal: reference to forward pass for backward()
-    _record: ForwardRecord | None = field(default=None, repr=False, compare=False)
+    # Internal: references to forward passes for backward()
+    # For aggregated batch loss, holds records from all samples in the batch
+    _records: list[ForwardRecord] = field(
+        default_factory=list, repr=False, compare=False
+    )
     _optimizer: Any = field(
         default=None, repr=False, compare=False
     )  # Optimizer type hint avoided for circular import
@@ -123,38 +126,48 @@ class Feedback:
         in PyTorch. Feedback accumulates into Parameter._feedback_buffer for
         later aggregation by the optimizer.
 
+        For aggregated batch loss (when Loss is called with a list of outputs),
+        this method iterates through all attached records and propagates
+        feedback to each one concurrently. This matches PyTorch semantics
+        where loss.backward() on a reduced loss propagates gradients to all
+        batch samples.
+
         Args:
             optimizer: Optional optimizer providing reasoning LLM for
                 custom backward implementations. If not provided, uses
                 self._optimizer if set.
 
         Raises:
-            RuntimeError: If no ForwardRecord is attached. This happens when
-                feedback was computed without passing `record=record` to the
-                loss function.
+            RuntimeError: If no ForwardRecords are attached. This happens when
+                feedback was computed without training mode or without passing
+                TracedOutput to the loss function.
 
         Example:
-            >>> # Correct usage with record
-            >>> output, record = await run(module, input, record=True)
-            >>> feedback = await loss_fn(output, target, record=record)
-            >>> await feedback.backward()  # Works!
+            >>> # Single sample
+            >>> module.train()
+            >>> output = await module("Hello")
+            >>> feedback = await loss_fn(output, target)
+            >>> await feedback.backward()  # Propagates to one record
             >>>
-            >>> # Incorrect usage without record
-            >>> feedback = Feedback(content="test")
-            >>> await feedback.backward()  # RuntimeError!
+            >>> # Batch training (aggregated loss)
+            >>> outputs = [await module(inp) for inp in batch]
+            >>> feedback = await loss_fn(outputs, targets)  # Single aggregated feedback
+            >>> await feedback.backward()  # Propagates to all records
 
         Note:
             The actual backward propagation is implemented in the backward
             module's `_propagate_backward()` function. This method validates
-            the record is present and then delegates to that function.
+            records are present and then delegates to that function for each.
         """
-        if self._record is None:
+        if not self._records:
             raise RuntimeError(
-                "Cannot call backward() without a ForwardRecord. "
-                "Pass record=record when computing feedback."
+                "Cannot call backward() without ForwardRecords. "
+                "Use training mode (module.train()) or pass TracedOutput to loss."
             )
 
         # Import here to avoid circular imports
+        import asyncio
+
         from inf_engine.optimization.backward import _propagate_backward
 
         opt = optimizer or self._optimizer
@@ -162,69 +175,15 @@ class Feedback:
             opt.reasoning_llm if opt and hasattr(opt, "reasoning_llm") else None
         )
 
-        await _propagate_backward(
-            feedback=self,
-            record=self._record,
-            reasoning_llm=reasoning_llm,
-        )
+        # Propagate feedback through all attached records concurrently
+        async def propagate_one(record: ForwardRecord) -> None:
+            await _propagate_backward(
+                feedback=self,
+                record=record,
+                reasoning_llm=reasoning_llm,
+            )
 
-    @staticmethod
-    async def backward_batch(
-        feedbacks: list[Feedback],
-        optimizer: Any = None,
-    ) -> None:
-        """Run backward passes for multiple feedbacks concurrently.
-
-        This method enables efficient batch training by running all backward
-        passes in parallel. Since feedback accumulation into Parameters is
-        append-only (thread-safe), concurrent backward passes are safe.
-
-        This is the batch equivalent of calling `await fb.backward()` on each
-        feedback, but runs them concurrently for better performance.
-
-        Args:
-            feedbacks: List of Feedback objects to propagate backward.
-                Each must have a ForwardRecord attached (from training mode
-                or explicit record passing).
-            optimizer: Optional optimizer providing reasoning LLM. If provided,
-                passed to all backward() calls.
-
-        Raises:
-            RuntimeError: If any feedback in the list lacks a ForwardRecord.
-                The error is raised before any backward passes are started.
-
-        Example:
-            >>> # Training loop with batch backward
-            >>> module.train()
-            >>> outputs = await module(["in1", "in2", "in3", "in4"])
-            >>> feedbacks = await loss_fn.batch(outputs, targets=targets)
-            >>> await Feedback.backward_batch(feedbacks, optimizer=optimizer)
-            >>> await optimizer.step()
-
-        Example with explicit optimizer:
-            >>> feedbacks = [await loss(out, rec=rec) for out, rec in zip(outs, recs)]
-            >>> await Feedback.backward_batch(feedbacks, optimizer=my_optimizer)
-
-        Note:
-            For very large batches, consider chunking to avoid overwhelming
-            the optimizer's reasoning LLM (if present). The concurrent backward
-            passes all share the same optimizer's LLM for reasoning calls.
-        """
-        import asyncio
-
-        # Validate all feedbacks have records before starting
-        for i, fb in enumerate(feedbacks):
-            if fb._record is None:
-                raise RuntimeError(
-                    f"Feedback at index {i} has no ForwardRecord. "
-                    "Pass record=record when computing feedback."
-                )
-
-        # Run all backward passes concurrently
-        async def backward_one(fb: Feedback) -> None:
-            await fb.backward(optimizer=optimizer)
-
-        await asyncio.gather(*[backward_one(fb) for fb in feedbacks])
+        await asyncio.gather(*[propagate_one(rec) for rec in self._records])
 
     def __str__(self) -> str:
         """Return string representation of the feedback.

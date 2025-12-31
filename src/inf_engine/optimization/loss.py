@@ -262,47 +262,179 @@ class Loss(ABC):
         modules are called through the normal __call__ interface.
     """
 
-    @abstractmethod
     async def __call__(
+        self,
+        output: Any | list[Any],
+        target: Any | list[Any] | None = None,
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> Feedback:
+        """Compute feedback for an output or batch of outputs.
+
+        This method auto-detects batch inputs (lists) and returns a single
+        aggregated Feedback. For batch inputs, all samples are evaluated
+        concurrently and results are aggregated with mean reduction for
+        scores. This matches PyTorch semantics where loss.backward() on a
+        reduced loss propagates gradients to all batch samples.
+
+        When outputs are TracedOutput wrappers (from training mode), records
+        are automatically extracted and attached to the returned Feedback.
+
+        Args:
+            output: The module output to evaluate. Can be:
+                - A single value (evaluated individually)
+                - A TracedOutput wrapper (record extracted automatically)
+                - A list of values or TracedOutputs (batch evaluation)
+            target: Optional target/expected output for comparison. For batch
+                inputs, can be a single target (applied to all) or a list
+                of targets (one per output).
+            context: Optional additional context for evaluation.
+
+        Returns:
+            Feedback object containing evaluation results. For batch inputs,
+            returns a single aggregated Feedback with:
+                - score: Mean of all sample scores
+                - content: Concatenated feedback from all samples
+                - _records: All ForwardRecords from the batch
+
+        Example:
+            >>> # Single sample
+            >>> module.train()
+            >>> output = await module("Hello")
+            >>> feedback = await loss_fn(output, target)
+            >>> await feedback.backward()
+            >>>
+            >>> # Batch training (auto-detected)
+            >>> outputs = [await module(inp) for inp in batch]
+            >>> feedback = await loss_fn(outputs, targets)  # Single feedback
+            >>> await feedback.backward()  # Propagates to all records
+
+        Note:
+            Subclasses should implement _evaluate_single() for the actual
+            evaluation logic. The batch detection and aggregation are
+            handled by this base class method.
+        """
+        # Check for batch input (list that isn't a TracedOutput)
+        from inf_engine.optimization.record import TracedOutput
+
+        is_batch = isinstance(output, list) and not isinstance(output, TracedOutput)
+
+        if is_batch:
+            return await self._evaluate_batch(output, target, context)
+
+        # Single sample: extract value and record, then evaluate
+        actual_output, record = self._extract_value_and_record(output)
+        feedback = await self._evaluate_single(actual_output, target, context=context)
+        return self._attach_record(feedback, record)
+
+    @abstractmethod
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
-        """Compute feedback for an output.
+        """Evaluate a single output (without record attachment).
 
         This method must be implemented by all loss function subclasses.
         It evaluates the output and produces Feedback that describes
         what was good or bad about the output.
 
+        Note: This method should NOT call _attach_record(). Record attachment
+        is handled by __call__ after batch detection and aggregation.
+
         Args:
-            output: The module output to evaluate. Can be any type depending
-                on what the module produces.
-            target: Optional target/expected output for comparison. Some loss
-                functions (like VerifierLoss) may not need this, while others
-                (like contrastive losses) require it.
-            record: ForwardRecord from run(..., record=True). Required for
-                feedback.backward() to work. If provided, it will be attached
-                to the returned Feedback via _attach_record().
-            context: Optional additional context for evaluation. Can include
-                things like the original input, metadata about the task, or
-                any other information needed by the loss function.
+            output: The module output to evaluate (raw value, not TracedOutput).
+            target: Optional target/expected output for comparison.
+            context: Optional additional context for evaluation.
 
         Returns:
-            Feedback object containing evaluation results. If record was
-            provided, feedback.backward() can be called to propagate the
-            feedback through the computation graph.
-
-        Example:
-            >>> loss_fn = MyLoss()
-            >>> feedback = await loss_fn(output, target=expected, record=record)
-            >>> print(feedback.score)
-            0.85
-            >>> await feedback.backward()  # Propagates to Parameters
+            Feedback object without records attached. Records are attached
+            by the caller (__call__ or _evaluate_batch).
         """
         pass
+
+    async def _evaluate_batch(
+        self,
+        outputs: list[Any],
+        targets: Any | list[Any] | None,
+        context: dict[str, Any] | None,
+    ) -> Feedback:
+        """Evaluate a batch of outputs and return aggregated feedback.
+
+        Evaluates all outputs concurrently, then aggregates results into
+        a single Feedback with mean score reduction. All ForwardRecords
+        from TracedOutput wrappers are attached to the aggregated Feedback.
+
+        Args:
+            outputs: List of outputs (raw values or TracedOutputs).
+            targets: Single target (applied to all) or list of targets.
+            context: Optional context for evaluation.
+
+        Returns:
+            Single aggregated Feedback with mean score and all records.
+        """
+        import asyncio
+
+        from inf_engine.optimization.feedback import Feedback, FeedbackType
+
+        n = len(outputs)
+
+        # Normalize targets to list
+        if targets is None:
+            targets_list: list[Any] = [None] * n
+        elif not isinstance(targets, list):
+            targets_list = [targets] * n
+        else:
+            targets_list = targets
+
+        # Extract values and records from TracedOutputs
+        actual_outputs: list[Any] = []
+        records: list[ForwardRecord] = []
+
+        for out in outputs:
+            actual, rec = self._extract_value_and_record(out)
+            actual_outputs.append(actual)
+            if rec is not None:
+                records.append(rec)
+
+        # Evaluate all samples concurrently
+        async def eval_one(out: Any, tgt: Any) -> Feedback:
+            return await self._evaluate_single(out, tgt, context=context)
+
+        feedbacks = await asyncio.gather(
+            *[
+                eval_one(out, tgt)
+                for out, tgt in zip(actual_outputs, targets_list, strict=True)
+            ]
+        )
+
+        # Aggregate scores (mean reduction)
+        scores = [f.score for f in feedbacks if f.score is not None]
+        mean_score = sum(scores) / len(scores) if scores else None
+
+        # Aggregate content
+        contents = [f.content for f in feedbacks]
+        aggregated_content = "\n---\n".join(contents)
+
+        # Determine feedback type (use first non-None, or COMPOSITE if mixed)
+        types = {f.feedback_type for f in feedbacks}
+        if len(types) == 1:
+            fb_type = types.pop()
+        else:
+            fb_type = FeedbackType.COMPOSITE
+
+        # Create aggregated feedback with all records attached
+        aggregated = Feedback(
+            content=aggregated_content,
+            score=mean_score,
+            feedback_type=fb_type,
+            metadata={"batch_size": n, "individual_scores": scores},
+        )
+        self._attach_records(aggregated, records)
+
+        return aggregated
 
     def _attach_record(
         self,
@@ -312,8 +444,11 @@ class Loss(ABC):
         """Attach ForwardRecord to feedback for backward propagation.
 
         This helper method should be called by all loss implementations
-        before returning feedback. It attaches the ForwardRecord to the
-        feedback object, enabling feedback.backward() to work.
+        before returning feedback. It appends the ForwardRecord to the
+        feedback's _records list, enabling feedback.backward() to work.
+
+        For aggregated batch loss, multiple records can be attached by
+        calling this method multiple times or using _attach_records().
 
         Args:
             feedback: The Feedback object to attach the record to.
@@ -321,7 +456,8 @@ class Loss(ABC):
                 not recording.
 
         Returns:
-            The same Feedback object with _record set (if record was provided).
+            The same Feedback object with record appended to _records
+            (if record was provided).
 
         Example:
             >>> async def __call__(self, output, target=None, *, record=None, context=None):
@@ -333,7 +469,31 @@ class Loss(ABC):
             is returned for convenience in chaining.
         """
         if record is not None:
-            feedback._record = record
+            feedback._records.append(record)
+        return feedback
+
+    def _attach_records(
+        self,
+        feedback: Feedback,
+        records: list[ForwardRecord],
+    ) -> Feedback:
+        """Attach multiple ForwardRecords to feedback for batch backward.
+
+        Used by aggregated batch loss to attach all records from the batch
+        to a single aggregated Feedback. This enables backward() to
+        propagate feedback to all samples in the batch.
+
+        Args:
+            feedback: The Feedback object to attach records to.
+            records: List of ForwardRecords from the batch.
+
+        Returns:
+            The same Feedback object with records appended to _records.
+
+        Note:
+            This method mutates the feedback object in place.
+        """
+        feedback._records.extend(records)
         return feedback
 
     def _extract_value_and_record(
@@ -387,107 +547,6 @@ class Loss(ABC):
         else:
             return output, record
 
-    async def batch(
-        self,
-        outputs: list[Any],
-        targets: list[Any] | None = None,
-        *,
-        records: list[ForwardRecord | None] | None = None,
-        contexts: list[dict[str, Any] | None] | None = None,
-    ) -> list[Feedback]:
-        """Evaluate a batch of outputs concurrently.
-
-        This method provides efficient batch evaluation by running all
-        loss computations concurrently. It automatically extracts records
-        from TracedOutput wrappers when training mode is used.
-
-        The default implementation runs multiple __call__ invocations
-        concurrently. Subclasses can override this for more efficient
-        batch processing (e.g., batched LLM calls).
-
-        Args:
-            outputs: List of outputs to evaluate. Can be raw values or
-                TracedOutput wrappers (from training mode).
-            targets: Optional list of targets (same length as outputs).
-                If None, target=None is passed to each call.
-            records: Optional list of explicit ForwardRecords. If None and
-                outputs are TracedOutput wrappers, records are extracted
-                automatically.
-            contexts: Optional list of context dicts (same length as outputs).
-                If None, context=None is passed to each call.
-
-        Returns:
-            List of Feedback objects in the same order as inputs.
-
-        Example:
-            >>> # With raw outputs and explicit records
-            >>> feedbacks = await loss.batch(
-            ...     outputs=[out1, out2, out3],
-            ...     targets=[t1, t2, t3],
-            ...     records=[rec1, rec2, rec3],
-            ... )
-            >>>
-            >>> # With TracedOutput (training mode) - records extracted automatically
-            >>> module.train()
-            >>> traced_outputs = await module(["in1", "in2", "in3"])
-            >>> feedbacks = await loss.batch(traced_outputs, targets=[t1, t2, t3])
-            >>> # Records are extracted from TracedOutput, no need to pass explicitly
-
-        Note:
-            This method runs all evaluations concurrently using asyncio.gather.
-            For rate-limited LLM-based losses, consider implementing a custom
-            batch method with appropriate throttling.
-        """
-        import asyncio
-
-        n = len(outputs)
-
-        # Normalize targets to list
-        if targets is None:
-            targets_list: list[Any] = [None] * n
-        else:
-            targets_list = targets
-
-        # Normalize records to list
-        if records is None:
-            records_list: list[ForwardRecord | None] = [None] * n
-        else:
-            records_list = records
-
-        # Normalize contexts to list
-        if contexts is None:
-            contexts_list: list[dict[str, Any] | None] = [None] * n
-        else:
-            contexts_list = contexts
-
-        # Run all evaluations concurrently
-        async def evaluate_one(
-            output: Any,
-            target: Any,
-            record: ForwardRecord | None,
-            context: dict[str, Any] | None,
-        ) -> Feedback:
-            """Evaluate a single output with TracedOutput extraction."""
-            # Extract value and record from TracedOutput if needed
-            actual_output, effective_record = self._extract_value_and_record(
-                output, record
-            )
-            return await self(
-                actual_output,
-                target,
-                record=effective_record,
-                context=context,
-            )
-
-        tasks = [
-            evaluate_one(out, tgt, rec, ctx)
-            for out, tgt, rec, ctx in zip(
-                outputs, targets_list, records_list, contexts_list, strict=True
-            )
-        ]
-
-        return list(await asyncio.gather(*tasks))
-
 
 class VerifierLoss(Loss):
     """Loss from programmatic verification.
@@ -539,12 +598,11 @@ class VerifierLoss(Loss):
         self.verifier = verifier
         self.success_feedback = success_feedback
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Evaluate output using the verifier function.
@@ -556,7 +614,6 @@ class VerifierLoss(Loss):
             output: The module output to verify.
             target: Ignored for VerifierLoss (programmatic checks don't
                 typically need a target).
-            record: ForwardRecord from run(..., record=True).
             context: Ignored for VerifierLoss.
 
         Returns:
@@ -567,12 +624,11 @@ class VerifierLoss(Loss):
 
         passed, message = self.verifier(output)
 
-        feedback = Feedback(
+        return Feedback(
             content=self.success_feedback if passed else message,
             score=1.0 if passed else 0.0,
             feedback_type=FeedbackType.VERIFIER,
         )
-        return self._attach_record(feedback, record)
 
 
 class LLMJudge(Loss):
@@ -645,12 +701,11 @@ class LLMJudge(Loss):
         self.judge.bind(resources)
         return self
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Evaluate output using the LLM judge.
@@ -661,7 +716,6 @@ class LLMJudge(Loss):
         Args:
             output: The module output to evaluate.
             target: Optional target/expected output for comparison.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context for evaluation.
 
         Returns:
@@ -689,12 +743,11 @@ class LLMJudge(Loss):
         # Get LLM feedback
         response = await self.judge(prompt)
 
-        feedback = Feedback(
+        return Feedback(
             content=response,
             score=None,  # Freeform feedback has no structured score
             feedback_type=FeedbackType.LLM_JUDGE,
         )
-        return self._attach_record(feedback, record)
 
 
 class CompositeLoss(Loss):
@@ -769,12 +822,11 @@ class CompositeLoss(Loss):
             self.aggregator.bind(resources)
         return self
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Evaluate output using all component losses.
@@ -785,9 +837,6 @@ class CompositeLoss(Loss):
         Args:
             output: The module output to evaluate.
             target: Optional target/expected output for comparison.
-            record: ForwardRecord from run(..., record=True). Note that
-                the record is attached to the composite feedback, not
-                passed to sub-losses.
             context: Optional additional context for evaluation.
 
         Returns:
@@ -795,13 +844,14 @@ class CompositeLoss(Loss):
         """
         from inf_engine.optimization.feedback import Feedback, FeedbackType
 
-        # Gather all feedback (don't pass record to sub-losses)
+        # Gather all feedback (call _evaluate_single on sub-losses to avoid
+        # double record handling)
         feedbacks: list[tuple[Feedback, float]] = []
         weighted_score = 0.0
         total_weight = 0.0
 
         for loss, weight in self.losses:
-            fb = await loss(output, target, context=context)
+            fb = await loss._evaluate_single(output, target, context=context)
             feedbacks.append((fb, weight))
             if fb.score is not None:
                 weighted_score += fb.score * weight
@@ -813,12 +863,11 @@ class CompositeLoss(Loss):
         else:
             combined = self._simple_aggregate(feedbacks)
 
-        feedback = Feedback(
+        return Feedback(
             content=combined,
             score=weighted_score / total_weight if total_weight > 0 else None,
             feedback_type=FeedbackType.COMPOSITE,
         )
-        return self._attach_record(feedback, record)
 
     def _simple_aggregate(self, feedbacks: list[tuple[Feedback, float]]) -> str:
         """Concatenate feedback with weights shown.
@@ -897,12 +946,11 @@ class HumanFeedbackLoss(Loss):
         self.prompt_template = prompt_template
         self.show_context = show_context
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Collect human feedback on the output.
@@ -913,7 +961,6 @@ class HumanFeedbackLoss(Loss):
         Args:
             output: The module output to evaluate.
             target: Optional target/expected output for comparison.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context for evaluation.
 
         Returns:
@@ -956,12 +1003,11 @@ class HumanFeedbackLoss(Loss):
 
         content = "\n".join(lines) if lines else "No feedback provided."
 
-        feedback = Feedback(
+        return Feedback(
             content=content,
             score=None,
             feedback_type=FeedbackType.HUMAN,
         )
-        return self._attach_record(feedback, record)
 
 
 # =============================================================================
@@ -1061,12 +1107,11 @@ You must respond with a JSON object containing exactly these fields:
         self.judge.bind(resources)
         return self
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Evaluate output using the rubric.
@@ -1074,7 +1119,6 @@ You must respond with a JSON object containing exactly these fields:
         Args:
             output: The module output to evaluate.
             target: Optional target/expected output for comparison.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context for evaluation.
 
         Returns:
@@ -1113,13 +1157,12 @@ You must respond with a JSON object containing exactly these fields:
 
         content = f"Justification: {justification}\n\nFeedback: {feedback_text}"
 
-        feedback = Feedback(
+        return Feedback(
             content=content,
             score=normalized_score,
             feedback_type=FeedbackType.LLM_JUDGE,
             metadata={"raw_score": raw_score, "criteria": self.criteria},
         )
-        return self._attach_record(feedback, record)
 
 
 class HumanRubricLoss(Loss):
@@ -1169,12 +1212,11 @@ class HumanRubricLoss(Loss):
         self._max_score = max(r.score for r in rubric)
         self._min_score = min(r.score for r in rubric)
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Collect human score and feedback against the rubric.
@@ -1185,7 +1227,6 @@ class HumanRubricLoss(Loss):
         Args:
             output: The module output to evaluate.
             target: Optional target/expected output for comparison.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context for evaluation.
 
         Returns:
@@ -1242,13 +1283,12 @@ class HumanRubricLoss(Loss):
             self._max_score - self._min_score
         )
 
-        feedback = Feedback(
+        return Feedback(
             content=feedback_text or f"Score: {score}/{self._max_score}",
             score=normalized_score,
             feedback_type=FeedbackType.HUMAN,
             metadata={"raw_score": score},
         )
-        return self._attach_record(feedback, record)
 
 
 # =============================================================================
@@ -1466,18 +1506,17 @@ class LLMPreferenceLoss(ContrastiveLoss):
 
         # Attach records
         if record_a:
-            fb_a._record = record_a
+            fb_a._records.append(record_a)
         if record_b:
-            fb_b._record = record_b
+            fb_b._records.append(record_b)
 
         return fb_a, fb_b
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Single-output interface using target as comparison baseline.
@@ -1485,7 +1524,6 @@ class LLMPreferenceLoss(ContrastiveLoss):
         Args:
             output: The output to evaluate.
             target: Required baseline output to compare against.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context.
 
         Returns:
@@ -1496,9 +1534,7 @@ class LLMPreferenceLoss(ContrastiveLoss):
         """
         if target is None:
             raise ValueError("LLMPreferenceLoss requires target for comparison")
-        fb_output, _ = await self.compare(
-            output, target, record_a=record, context=context
-        )
+        fb_output, _ = await self.compare(output, target, context=context)
         return fb_output
 
 
@@ -1623,18 +1659,17 @@ class HumanPreferenceLoss(ContrastiveLoss):
             )
 
         if record_a:
-            fb_a._record = record_a
+            fb_a._records.append(record_a)
         if record_b:
-            fb_b._record = record_b
+            fb_b._records.append(record_b)
 
         return fb_a, fb_b
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Single-output interface using target as comparison baseline.
@@ -1642,7 +1677,6 @@ class HumanPreferenceLoss(ContrastiveLoss):
         Args:
             output: The output to evaluate.
             target: Required baseline output to compare against.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context.
 
         Returns:
@@ -1653,9 +1687,7 @@ class HumanPreferenceLoss(ContrastiveLoss):
         """
         if target is None:
             raise ValueError("HumanPreferenceLoss requires target for comparison")
-        fb_output, _ = await self.compare(
-            output, target, record_a=record, context=context
-        )
+        fb_output, _ = await self.compare(output, target, context=context)
         return fb_output
 
 
@@ -1813,18 +1845,17 @@ class LLMRankingLoss(ContrastiveLoss):
             )
 
             if records and i < len(records) and records[i]:
-                fb._record = records[i]
+                fb._records.append(records[i])
 
             feedbacks.append(fb)
 
         return feedbacks
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Single-output interface that ranks output against target(s).
@@ -1833,7 +1864,6 @@ class LLMRankingLoss(ContrastiveLoss):
             output: The output to evaluate.
             target: Required baseline(s) to compare against. Can be a single
                 output or a list of outputs.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context.
 
         Returns:
@@ -1846,8 +1876,7 @@ class LLMRankingLoss(ContrastiveLoss):
             raise ValueError("LLMRankingLoss requires target for comparison")
         targets = target if isinstance(target, list) else [target]
         outputs = [output] + targets
-        records_list: list[ForwardRecord | None] = [record] + [None] * len(targets)
-        feedbacks = await self.rank(outputs, records=records_list, context=context)
+        feedbacks = await self.rank(outputs, context=context)
         return feedbacks[0]
 
 
@@ -1980,18 +2009,17 @@ class HumanRankingLoss(ContrastiveLoss):
             )
 
             if records and i < len(records) and records[i]:
-                fb._record = records[i]
+                fb._records.append(records[i])
 
             feedbacks.append(fb)
 
         return feedbacks
 
-    async def __call__(
+    async def _evaluate_single(
         self,
         output: Any,
         target: Any | None = None,
         *,
-        record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
         """Single-output interface that ranks output against target(s).
@@ -2000,7 +2028,6 @@ class HumanRankingLoss(ContrastiveLoss):
             output: The output to evaluate.
             target: Required baseline(s) to compare against. Can be a single
                 output or a list of outputs.
-            record: ForwardRecord from run(..., record=True).
             context: Optional additional context.
 
         Returns:
@@ -2013,6 +2040,5 @@ class HumanRankingLoss(ContrastiveLoss):
             raise ValueError("HumanRankingLoss requires target for comparison")
         targets = target if isinstance(target, list) else [target]
         outputs = [output] + targets
-        records_list: list[ForwardRecord | None] = [record] + [None] * len(targets)
-        feedbacks = await self.rank(outputs, records=records_list, context=context)
+        feedbacks = await self.rank(outputs, context=context)
         return feedbacks[0]

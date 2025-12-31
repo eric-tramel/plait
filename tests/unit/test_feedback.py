@@ -43,7 +43,7 @@ class TestFeedbackCreation:
         assert feedback.score is None
         assert feedback.feedback_type == FeedbackType.HUMAN
         assert feedback.metadata == {}
-        assert feedback._record is None
+        assert feedback._records == []
         assert feedback._optimizer is None
 
     def test_feedback_with_score(self) -> None:
@@ -153,10 +153,10 @@ class TestFeedbackRepr:
     """Tests for Feedback repr representation."""
 
     def test_repr_excludes_private_fields(self) -> None:
-        """Repr should not include _record and _optimizer."""
+        """Repr should not include _records and _optimizer."""
         feedback = Feedback(content="Test", score=0.5)
         repr_str = repr(feedback)
-        assert "_record" not in repr_str
+        assert "_records" not in repr_str
         assert "_optimizer" not in repr_str
 
     def test_repr_includes_public_fields(self) -> None:
@@ -176,13 +176,13 @@ class TestFeedbackBackward:
     """Tests for Feedback.backward() method."""
 
     @pytest.mark.asyncio
-    async def test_backward_raises_without_record(self) -> None:
-        """backward() raises RuntimeError when no record is attached."""
+    async def test_backward_raises_without_records(self) -> None:
+        """backward() raises RuntimeError when no records are attached."""
         feedback = Feedback(content="Test feedback")
         with pytest.raises(RuntimeError) as exc_info:
             await feedback.backward()
-        assert "Cannot call backward() without a ForwardRecord" in str(exc_info.value)
-        assert "Pass record=record when computing feedback" in str(exc_info.value)
+        assert "Cannot call backward() without ForwardRecords" in str(exc_info.value)
+        assert "training mode" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_backward_raises_even_with_score(self) -> None:
@@ -195,11 +195,11 @@ class TestFeedbackBackward:
         )
         with pytest.raises(RuntimeError) as exc_info:
             await feedback.backward()
-        assert "ForwardRecord" in str(exc_info.value)
+        assert "ForwardRecords" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_backward_raises_with_optimizer_but_no_record(self) -> None:
-        """backward() raises even if optimizer is passed without record."""
+    async def test_backward_raises_with_optimizer_but_no_records(self) -> None:
+        """backward() raises even if optimizer is passed without records."""
         feedback = Feedback(content="Test")
         with pytest.raises(RuntimeError):
             await feedback.backward(optimizer=object())
@@ -224,7 +224,7 @@ class TestFeedbackBackward:
         )
 
         feedback = Feedback(content="Test feedback", score=0.8)
-        feedback._record = record
+        feedback._records.append(record)
 
         # Should not raise - stub implementation just passes
         await feedback.backward()
@@ -244,7 +244,7 @@ class TestFeedbackBackward:
         )
 
         feedback = Feedback(content="Test")
-        feedback._record = record
+        feedback._records.append(record)
 
         # Create a mock optimizer with reasoning_llm attribute
         class MockOptimizer:
@@ -252,6 +252,27 @@ class TestFeedbackBackward:
 
         # Should not raise
         await feedback.backward(optimizer=MockOptimizer())
+
+    @pytest.mark.asyncio
+    async def test_backward_with_multiple_records(self) -> None:
+        """backward() propagates to all attached records."""
+        from inf_engine.graph import InferenceGraph
+        from inf_engine.optimization.record import ForwardRecord
+
+        graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
+
+        # Create multiple records
+        records = [
+            ForwardRecord(graph=graph, node_inputs={}, node_outputs={}, module_map={})
+            for _ in range(3)
+        ]
+
+        feedback = Feedback(content="Batch feedback", score=0.8)
+        for rec in records:
+            feedback._records.append(rec)
+
+        # Should not raise - propagates to all records
+        await feedback.backward()
 
 
 class TestFeedbackEquality:
@@ -276,7 +297,7 @@ class TestFeedbackEquality:
         assert fb1 != fb2
 
     def test_private_fields_not_compared(self) -> None:
-        """Private fields (_record, _optimizer) are not included in equality."""
+        """Private fields (_records, _optimizer) are not included in equality."""
         from inf_engine.graph import InferenceGraph
         from inf_engine.optimization.record import ForwardRecord
 
@@ -290,14 +311,14 @@ class TestFeedbackEquality:
 
         fb1 = Feedback(content="Test", score=0.5)
         fb2 = Feedback(content="Test", score=0.5)
-        fb2._record = record
+        fb2._records.append(record)
 
-        # Should still be equal since _record is excluded from comparison
+        # Should still be equal since _records is excluded from comparison
         assert fb1 == fb2
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  Feedback.backward_batch() Tests (PR-068b)
+#  Feedback with Aggregated Records Tests (PR-068c)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -318,106 +339,26 @@ def _create_record() -> ForwardRecord:
     )
 
 
-class TestFeedbackBackwardBatch:
-    """Tests for Feedback.backward_batch() static method."""
+class TestFeedbackAggregatedRecords:
+    """Tests for Feedback with multiple aggregated records (batch training)."""
 
     @pytest.mark.asyncio
-    async def test_backward_batch_runs_all_backwards(self) -> None:
-        """backward_batch() runs backward for all feedbacks."""
+    async def test_backward_propagates_to_all_records(self) -> None:
+        """backward() propagates to all attached records."""
         records = [_create_record() for _ in range(3)]
-        feedbacks = [
-            Feedback(content=f"Feedback {i}", score=0.5 + i * 0.1) for i in range(3)
-        ]
-        for fb, rec in zip(feedbacks, records, strict=True):
-            fb._record = rec
 
-        # Should not raise
-        await Feedback.backward_batch(feedbacks)
+        feedback = Feedback(content="Batch feedback", score=0.7)
+        for rec in records:
+            feedback._records.append(rec)
 
-    @pytest.mark.asyncio
-    async def test_backward_batch_empty_list(self) -> None:
-        """backward_batch() with empty list does nothing."""
-        # Should not raise
-        await Feedback.backward_batch([])
+        assert len(feedback._records) == 3
+
+        # Should not raise - propagates to all records concurrently
+        await feedback.backward()
 
     @pytest.mark.asyncio
-    async def test_backward_batch_raises_on_missing_record(self) -> None:
-        """backward_batch() raises if any feedback lacks record."""
-        record = _create_record()
-        feedbacks = [
-            Feedback(content="Has record"),
-            Feedback(content="No record"),
-            Feedback(content="Also has record"),
-        ]
-        feedbacks[0]._record = record
-        feedbacks[2]._record = record
-        # feedbacks[1] has no record
-
-        with pytest.raises(RuntimeError) as exc_info:
-            await Feedback.backward_batch(feedbacks)
-
-        # Should indicate which feedback is missing record
-        assert "index 1" in str(exc_info.value)
-        assert "ForwardRecord" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_backward_batch_validates_before_starting(self) -> None:
-        """backward_batch() validates all feedbacks before starting any backward."""
-        backward_calls = []
-
-        async def tracking_backward(self: Feedback, optimizer: object = None) -> None:
-            backward_calls.append(self.content)
-            # Original backward implementation
-            if self._record is None:
-                raise RuntimeError("No record")
-            from inf_engine.optimization.backward import _propagate_backward
-
-            await _propagate_backward(
-                feedback=self,
-                record=self._record,
-                reasoning_llm=None,
-            )
-
-        record = _create_record()
-        feedbacks = [
-            Feedback(content="First"),
-            Feedback(content="Second - no record"),
-            Feedback(content="Third"),
-        ]
-        feedbacks[0]._record = record
-        feedbacks[2]._record = record
-        # feedbacks[1] intentionally has no record
-
-        # Should raise before any backward is called
-        with pytest.raises(RuntimeError):
-            await Feedback.backward_batch(feedbacks)
-
-        # No backward should have been called since validation fails first
-        # Note: We can't easily verify this without mocking, but the error
-        # message should indicate the validation was pre-check
-
-    @pytest.mark.asyncio
-    async def test_backward_batch_passes_optimizer(self) -> None:
-        """backward_batch() passes optimizer to each backward call."""
-        records = [_create_record(), _create_record()]
-        feedbacks = [
-            Feedback(content="First"),
-            Feedback(content="Second"),
-        ]
-        for fb, rec in zip(feedbacks, records, strict=True):
-            fb._record = rec
-
-        class MockOptimizer:
-            reasoning_llm = None
-
-        optimizer = MockOptimizer()
-
-        # Should not raise
-        await Feedback.backward_batch(feedbacks, optimizer=optimizer)
-
-    @pytest.mark.asyncio
-    async def test_backward_batch_runs_concurrently(self) -> None:
-        """backward_batch() runs backward passes concurrently."""
+    async def test_backward_runs_concurrently(self) -> None:
+        """backward() runs propagation to all records concurrently."""
         import asyncio
         import time
 
@@ -429,9 +370,9 @@ class TestFeedbackBackwardBatch:
             await asyncio.sleep(0.05)  # 50ms delay
 
         records = [_create_record() for _ in range(3)]
-        feedbacks = [Feedback(content=f"FB {i}") for i in range(3)]
-        for fb, rec in zip(feedbacks, records, strict=True):
-            fb._record = rec
+        feedback = Feedback(content="Batch feedback")
+        for rec in records:
+            feedback._records.append(rec)
 
         # Patch the propagate function
         import inf_engine.optimization.backward as backward_module
@@ -443,13 +384,13 @@ class TestFeedbackBackwardBatch:
             backward_module._propagate_backward = slow_propagate  # type: ignore[assignment]
 
             start = time.monotonic()
-            await Feedback.backward_batch(feedbacks)
+            await feedback.backward()
             elapsed = time.monotonic() - start
 
             # If sequential: 3 * 0.05 = 0.15s
             # If concurrent: ~0.05s
             assert elapsed < 0.12, (
-                f"Took {elapsed:.3f}s - batch not running concurrently"
+                f"Took {elapsed:.3f}s - backward not running concurrently"
             )
 
             # All calls should start nearly simultaneously
@@ -461,11 +402,27 @@ class TestFeedbackBackwardBatch:
             backward_module._propagate_backward = original_propagate  # type: ignore[assignment]
 
     @pytest.mark.asyncio
-    async def test_backward_batch_single_feedback(self) -> None:
-        """backward_batch() works with single feedback."""
+    async def test_backward_with_single_record(self) -> None:
+        """backward() works with single record in list."""
         record = _create_record()
-        feedback = Feedback(content="Single feedback")
-        feedback._record = record
+        feedback = Feedback(content="Single sample feedback")
+        feedback._records.append(record)
 
         # Should not raise
-        await Feedback.backward_batch([feedback])
+        await feedback.backward()
+
+    @pytest.mark.asyncio
+    async def test_backward_with_optimizer(self) -> None:
+        """backward() passes optimizer to all propagations."""
+        records = [_create_record(), _create_record()]
+        feedback = Feedback(content="Feedback")
+        for rec in records:
+            feedback._records.append(rec)
+
+        class MockOptimizer:
+            reasoning_llm = None
+
+        optimizer = MockOptimizer()
+
+        # Should not raise
+        await feedback.backward(optimizer=optimizer)
