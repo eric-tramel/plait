@@ -51,6 +51,7 @@ class InferenceModule:
     _name: str | None
     _bound_resources: ResourceConfig | ResourceManager | None
     _bound_config: dict[str, Any]
+    _training: bool
 
     def __init__(self) -> None:
         """Initialize the module with empty registries.
@@ -64,6 +65,7 @@ class InferenceModule:
         object.__setattr__(self, "_name", None)
         object.__setattr__(self, "_bound_resources", None)
         object.__setattr__(self, "_bound_config", {})
+        object.__setattr__(self, "_training", False)
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Set an attribute with automatic registration of modules and parameters.
@@ -350,6 +352,94 @@ class InferenceModule:
             if name not in params:
                 raise KeyError(f"Unknown parameter: {name}")
             params[name].value = value
+
+    # ─────────────────────────────────────────────────────────────
+    # Training Mode Control (PyTorch-like API)
+    # ─────────────────────────────────────────────────────────────
+
+    @property
+    def training(self) -> bool:
+        """Whether the module is in training mode.
+
+        In training mode, forward passes return TracedOutput objects
+        that carry the ForwardRecord implicitly, enabling automatic
+        record flow through the training pipeline.
+
+        Returns:
+            True if the module is in training mode, False otherwise.
+
+        Example:
+            >>> module = MyModule()
+            >>> module.training
+            False
+            >>> module.train()
+            >>> module.training
+            True
+        """
+        return self._training
+
+    def train(self, mode: bool = True) -> Self:
+        """Set the module to training mode.
+
+        In training mode, forward passes return TracedOutput objects
+        that wrap the actual output with the ForwardRecord, enabling
+        implicit record flow through the training pipeline. This
+        eliminates manual record management.
+
+        This method recursively sets all child modules to the same mode.
+
+        Args:
+            mode: If True, enable training mode. If False, disable it.
+                Defaults to True.
+
+        Returns:
+            Self, for method chaining.
+
+        Example:
+            >>> module = MyModule().bind(resources)
+            >>> module.train()  # Enable training mode
+            >>> output = await module("Hello")
+            >>> isinstance(output, TracedOutput)
+            True
+            >>> output.value  # Access the actual value
+            'Response...'
+
+        Example with chaining:
+            >>> module.train().bind(resources)
+            >>> result = await module("input")
+
+        Note:
+            Use `.eval()` to switch back to evaluation mode where
+            raw values are returned without TracedOutput wrapping.
+        """
+        object.__setattr__(self, "_training", mode)
+        for child in self.children():
+            child.train(mode)
+        return self
+
+    def eval(self) -> Self:
+        """Set the module to evaluation mode.
+
+        In evaluation mode, forward passes return raw values without
+        TracedOutput wrapping. This is the default mode and is used
+        during inference when backward passes are not needed.
+
+        This method recursively sets all child modules to evaluation mode.
+
+        Returns:
+            Self, for method chaining.
+
+        Example:
+            >>> module.train()  # Enable training mode
+            >>> module.eval()   # Disable training mode
+            >>> output = await module("Hello")
+            >>> isinstance(output, str)  # Raw value, not TracedOutput
+            True
+
+        Note:
+            Equivalent to calling `.train(False)`.
+        """
+        return self.train(False)
 
     # ─────────────────────────────────────────────────────────────
     # Resource Binding (Direct Execution API)
@@ -668,14 +758,29 @@ class InferenceModule:
         ) -> tuple[int, Any, Any, Exception | None]:
             """Run a single input and return (index, input, output, error)."""
             try:
-                result = await run(
-                    self,
-                    inp,
-                    *extra_args,
-                    resources=resources,
-                    **forward_kwargs,
-                    **effective_config,
-                )
+                # In training mode, record the forward pass
+                if self._training:
+                    from inf_engine.optimization.record import TracedOutput
+
+                    output, record = await run(
+                        self,
+                        inp,
+                        *extra_args,
+                        resources=resources,
+                        record=True,
+                        **forward_kwargs,
+                        **effective_config,
+                    )
+                    result = TracedOutput(value=output, _record=record)
+                else:
+                    result = await run(
+                        self,
+                        inp,
+                        *extra_args,
+                        resources=resources,
+                        **forward_kwargs,
+                        **effective_config,
+                    )
                 return (idx, inp, result, None)
             except Exception as e:
                 return (idx, inp, None, e)
@@ -833,14 +938,29 @@ class InferenceModule:
             async def run_with_progress(inp: Any) -> Any:
                 """Run a single input and update progress."""
                 nonlocal completed
-                result = await run(
-                    self,
-                    inp,
-                    *args[1:],
-                    resources=resources,
-                    **forward_kwargs,
-                    **effective_config,
-                )
+                # In training mode, record the forward pass
+                if self._training:
+                    from inf_engine.optimization.record import TracedOutput
+
+                    output, record = await run(
+                        self,
+                        inp,
+                        *args[1:],
+                        resources=resources,
+                        record=True,
+                        **forward_kwargs,
+                        **effective_config,
+                    )
+                    result = TracedOutput(value=output, _record=record)
+                else:
+                    result = await run(
+                        self,
+                        inp,
+                        *args[1:],
+                        resources=resources,
+                        **forward_kwargs,
+                        **effective_config,
+                    )
                 completed += 1
                 if on_progress is not None:
                     on_progress(completed, total)
@@ -849,6 +969,20 @@ class InferenceModule:
             # Create tasks for concurrent execution
             tasks = [asyncio.create_task(run_with_progress(inp)) for inp in inputs]
             return await asyncio.gather(*tasks)
+
+        # Single input execution
+        if self._training:
+            from inf_engine.optimization.record import TracedOutput
+
+            output, record = await run(
+                self,
+                *args,
+                resources=resources,
+                record=True,
+                **forward_kwargs,
+                **effective_config,
+            )
+            return TracedOutput(value=output, _record=record)
 
         return await run(
             self,

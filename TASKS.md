@@ -13,11 +13,11 @@ Each PR represents a single, tested, reviewable increment of functionality.
 - [ ] **Phase 4: Resources** (11/12)
 - [ ] **Phase 5: Production Features** (12/13)
 - [ ] **Phase 5.5: Profiling** (0/1)
-- [ ] **Phase 6: Optimization** (5/7)
+- [ ] **Phase 6: Optimization** (5/8)
 - [ ] **Phase 7: Branching** (0/4)
 - [ ] **Post-Implementation** (0/3)
 
-**Total: 64/76 PRs completed**
+**Total: 64/77 PRs completed**
 
 ---
 
@@ -881,20 +881,37 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
   - `tests/unit/test_optimizer.py` (init with parameters, zero_feedback clears buffers, bind required before step, step aggregates and updates, conservatism affects prompts)
 - **CHANGELOG**: "Add Optimizer base class and SFAOptimizer with torch.optim-style API"
 
-### - [ ] PR-069: Training utilities
-- **Branch**: `feat/training-utilities`
-- **Description**: Implement `train()` function with mini-batch support (batch_size parameter), epoch iteration, and shuffle option. Add `TrainingHistory` for tracking losses and parameter snapshots. Add `eval()` and `train()` mode methods to InferenceModule, and `requires_grad_()` for freezing/unfreezing parameters.
+### - [ ] PR-068b: TracedOutput and batch training API
+- **Branch**: `feat/batch-training-api`
+- **Description**: Add `TracedOutput` wrapper that carries `ForwardRecord` implicitly, enabling PyTorch-like training mode. When `module.train()` is called, forward passes return `TracedOutput` instead of raw values. Loss functions auto-extract records from `TracedOutput`. Add `Loss.batch()` method with default concurrent implementation. Add `Feedback.backward_batch()` static method for concurrent backward passes. This eliminates manual record management and provides a clean, PyTorch-like training API.
 - **Design Docs**:
-  - `optimization.md` → "Mini-Batch Training"
-  - `optimization.md` → "Complete Example"
+  - `optimization.md` → "TracedOutput", "Batch Training API"
+  - `execution.md` → "Batch Execution for Training"
+  - `inference_module.md` → "Training Execution"
 - **Files**:
-  - `src/inf_engine/optimization/train.py` (train function, TrainingHistory)
-  - `src/inf_engine/module.py` (eval/train modes, requires_grad_)
+  - `src/inf_engine/optimization/record.py` (add `TracedOutput` dataclass)
+  - `src/inf_engine/module.py` (update `_execute_bound` to wrap output in TracedOutput when training)
+  - `src/inf_engine/execution/executor.py` (update `run()` to return TracedOutput when module.training)
+  - `src/inf_engine/optimization/loss.py` (add `Loss.batch()`, auto-extract from TracedOutput)
+  - `src/inf_engine/optimization/feedback.py` (add `Feedback.backward_batch()`)
 - **Tests**:
-  - `tests/unit/test_train.py` (single epoch, multiple epochs, batch accumulation, shuffle)
-  - `tests/unit/test_training_history.py` (record_step, record_epoch, snapshots)
-  - `tests/unit/test_module.py` (eval/train mode switching, requires_grad_ propagation)
-- **CHANGELOG**: "Add train() function with mini-batch support and training mode utilities"
+  - `tests/unit/test_traced_output.py` (creation, value access, str/repr)
+  - `tests/unit/test_module_binding.py` (train mode returns TracedOutput, eval returns raw)
+  - `tests/unit/test_loss.py` (Loss.batch concurrent execution, TracedOutput extraction)
+  - `tests/unit/test_feedback.py` (backward_batch concurrent execution)
+- **CHANGELOG**: "Add TracedOutput for implicit record flow and batch training API"
+
+### - [ ] PR-069: Parameter freezing
+- **Branch**: `feat/parameter-freezing`
+- **Description**: Add `requires_grad_()` method to InferenceModule for freezing/unfreezing parameters. When `requires_grad=False`, parameters are excluded from optimization. Method propagates recursively to child modules.
+- **Design Docs**:
+  - `optimization.md` → "Parameter Freezing"
+  - `inference_module.md` → "InferenceModule Base Class" (requires_grad_)
+- **Files**:
+  - `src/inf_engine/module.py` (requires_grad_ method)
+- **Tests**:
+  - `tests/unit/test_module.py` (requires_grad_ propagation, frozen parameters excluded from optimization)
+- **CHANGELOG**: "Add requires_grad_() for parameter freezing"
 
 ### - [ ] PR-070: Optimization integration tests
 - **Branch**: `feat/optimization-integration-tests`
@@ -1021,10 +1038,10 @@ Performance visualization and bottleneck analysis using Chrome Trace Event Forma
 | Resources | 12 | PR-037 to PR-048 |
 | Production | 13 | PR-050 to PR-062 |
 | Profiling | 1 | PR-063 |
-| Optimization | 7 | PR-064 to PR-070 |
+| Optimization | 8 | PR-064 to PR-070 (includes PR-068b) |
 | Branching | 4 | PR-071 to PR-074 |
 | Post-Implementation | 3 | PR-075 to PR-077 |
-| **Total** | **76** | |
+| **Total** | **77** | |
 
 ---
 

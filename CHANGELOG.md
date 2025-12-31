@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `TracedOutput` for implicit record flow and batch training API
+  - `TracedOutput[T]` dataclass wrapping output value with `ForwardRecord`
+  - `module.train()` enables training mode where forward passes return `TracedOutput`
+  - `module.eval()` returns raw values (default mode)
+  - Training mode propagates to child modules recursively
+  - `Loss.batch()` method for concurrent batch evaluation with auto-extraction from `TracedOutput`
+  - `Loss._extract_value_and_record()` helper for handling `TracedOutput` wrappers
+  - `Feedback.backward_batch()` static method for concurrent backward passes
+  - Eliminates manual record management in training pipelines
 - Add `Optimizer` abstract base class for parameter updates via LLM
   - Follows torch.optim pattern: initialized with `module.parameters()`
   - Fixed aliases for internal LLMs: `optimizer/aggregator`, `optimizer/updater`, `optimizer/reasoning`

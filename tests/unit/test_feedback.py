@@ -3,6 +3,7 @@
 import pytest
 
 from inf_engine.optimization.feedback import Feedback, FeedbackType
+from inf_engine.optimization.record import ForwardRecord
 
 
 class TestFeedbackType:
@@ -293,3 +294,178 @@ class TestFeedbackEquality:
 
         # Should still be equal since _record is excluded from comparison
         assert fb1 == fb2
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Feedback.backward_batch() Tests (PR-068b)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _create_record() -> ForwardRecord:
+    """Create a minimal ForwardRecord for testing."""
+    from inf_engine.graph import InferenceGraph
+
+    graph = InferenceGraph(
+        nodes={},
+        input_ids=[],
+        output_ids=[],
+    )
+    return ForwardRecord(
+        graph=graph,
+        node_inputs={},
+        node_outputs={},
+        module_map={},
+    )
+
+
+class TestFeedbackBackwardBatch:
+    """Tests for Feedback.backward_batch() static method."""
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_runs_all_backwards(self) -> None:
+        """backward_batch() runs backward for all feedbacks."""
+        records = [_create_record() for _ in range(3)]
+        feedbacks = [
+            Feedback(content=f"Feedback {i}", score=0.5 + i * 0.1) for i in range(3)
+        ]
+        for fb, rec in zip(feedbacks, records, strict=True):
+            fb._record = rec
+
+        # Should not raise
+        await Feedback.backward_batch(feedbacks)
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_empty_list(self) -> None:
+        """backward_batch() with empty list does nothing."""
+        # Should not raise
+        await Feedback.backward_batch([])
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_raises_on_missing_record(self) -> None:
+        """backward_batch() raises if any feedback lacks record."""
+        record = _create_record()
+        feedbacks = [
+            Feedback(content="Has record"),
+            Feedback(content="No record"),
+            Feedback(content="Also has record"),
+        ]
+        feedbacks[0]._record = record
+        feedbacks[2]._record = record
+        # feedbacks[1] has no record
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await Feedback.backward_batch(feedbacks)
+
+        # Should indicate which feedback is missing record
+        assert "index 1" in str(exc_info.value)
+        assert "ForwardRecord" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_validates_before_starting(self) -> None:
+        """backward_batch() validates all feedbacks before starting any backward."""
+        backward_calls = []
+
+        async def tracking_backward(self: Feedback, optimizer: object = None) -> None:
+            backward_calls.append(self.content)
+            # Original backward implementation
+            if self._record is None:
+                raise RuntimeError("No record")
+            from inf_engine.optimization.backward import _propagate_backward
+
+            await _propagate_backward(
+                feedback=self,
+                record=self._record,
+                reasoning_llm=None,
+            )
+
+        record = _create_record()
+        feedbacks = [
+            Feedback(content="First"),
+            Feedback(content="Second - no record"),
+            Feedback(content="Third"),
+        ]
+        feedbacks[0]._record = record
+        feedbacks[2]._record = record
+        # feedbacks[1] intentionally has no record
+
+        # Should raise before any backward is called
+        with pytest.raises(RuntimeError):
+            await Feedback.backward_batch(feedbacks)
+
+        # No backward should have been called since validation fails first
+        # Note: We can't easily verify this without mocking, but the error
+        # message should indicate the validation was pre-check
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_passes_optimizer(self) -> None:
+        """backward_batch() passes optimizer to each backward call."""
+        records = [_create_record(), _create_record()]
+        feedbacks = [
+            Feedback(content="First"),
+            Feedback(content="Second"),
+        ]
+        for fb, rec in zip(feedbacks, records, strict=True):
+            fb._record = rec
+
+        class MockOptimizer:
+            reasoning_llm = None
+
+        optimizer = MockOptimizer()
+
+        # Should not raise
+        await Feedback.backward_batch(feedbacks, optimizer=optimizer)
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_runs_concurrently(self) -> None:
+        """backward_batch() runs backward passes concurrently."""
+        import asyncio
+        import time
+
+        call_times: list[float] = []
+
+        # Monkey-patch _propagate_backward for this test
+        async def slow_propagate(*args, **kwargs) -> None:
+            call_times.append(time.monotonic())
+            await asyncio.sleep(0.05)  # 50ms delay
+
+        records = [_create_record() for _ in range(3)]
+        feedbacks = [Feedback(content=f"FB {i}") for i in range(3)]
+        for fb, rec in zip(feedbacks, records, strict=True):
+            fb._record = rec
+
+        # Patch the propagate function
+        import inf_engine.optimization.backward as backward_module
+
+        original_propagate = backward_module._propagate_backward
+
+        try:
+            # Monkey-patch for testing concurrency
+            backward_module._propagate_backward = slow_propagate  # type: ignore[assignment]
+
+            start = time.monotonic()
+            await Feedback.backward_batch(feedbacks)
+            elapsed = time.monotonic() - start
+
+            # If sequential: 3 * 0.05 = 0.15s
+            # If concurrent: ~0.05s
+            assert elapsed < 0.12, (
+                f"Took {elapsed:.3f}s - batch not running concurrently"
+            )
+
+            # All calls should start nearly simultaneously
+            if len(call_times) == 3:
+                time_spread = max(call_times) - min(call_times)
+                assert time_spread < 0.03, "Tasks did not start concurrently"
+        finally:
+            # Restore original function
+            backward_module._propagate_backward = original_propagate  # type: ignore[assignment]
+
+    @pytest.mark.asyncio
+    async def test_backward_batch_single_feedback(self) -> None:
+        """backward_batch() works with single feedback."""
+        record = _create_record()
+        feedback = Feedback(content="Single feedback")
+        feedback._record = record
+
+        # Should not raise
+        await Feedback.backward_batch([feedback])

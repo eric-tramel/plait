@@ -336,6 +336,158 @@ class Loss(ABC):
             feedback._record = record
         return feedback
 
+    def _extract_value_and_record(
+        self,
+        output: Any,
+        record: ForwardRecord | None = None,
+    ) -> tuple[Any, ForwardRecord | None]:
+        """Extract actual value and record from output, handling TracedOutput.
+
+        When training mode is enabled, modules return TracedOutput wrappers
+        that carry the ForwardRecord implicitly. This helper method extracts
+        the actual value and record, whether the output is a TracedOutput
+        or a raw value.
+
+        Args:
+            output: Either a TracedOutput wrapper or a raw value.
+            record: Optional explicit record (takes precedence if both provided).
+
+        Returns:
+            Tuple of (actual_value, record). The record is from TracedOutput
+            if output is wrapped and no explicit record was provided.
+
+        Example:
+            >>> # With TracedOutput (training mode)
+            >>> value, rec = self._extract_value_and_record(traced_output)
+            >>> isinstance(rec, ForwardRecord)
+            True
+            >>>
+            >>> # With raw value
+            >>> value, rec = self._extract_value_and_record("raw string")
+            >>> rec is None
+            True
+            >>>
+            >>> # Explicit record takes precedence
+            >>> value, rec = self._extract_value_and_record(traced_output, explicit_record)
+            >>> rec is explicit_record
+            True
+
+        Note:
+            This method enables automatic record flow when using training mode.
+            Loss functions can call this to transparently handle both raw
+            values and TracedOutput wrappers.
+        """
+        from inf_engine.optimization.record import TracedOutput
+
+        if isinstance(output, TracedOutput):
+            actual_value = output.value
+            # Use explicit record if provided, otherwise use TracedOutput's record
+            effective_record = record if record is not None else output._record
+            return actual_value, effective_record
+        else:
+            return output, record
+
+    async def batch(
+        self,
+        outputs: list[Any],
+        targets: list[Any] | None = None,
+        *,
+        records: list[ForwardRecord | None] | None = None,
+        contexts: list[dict[str, Any] | None] | None = None,
+    ) -> list[Feedback]:
+        """Evaluate a batch of outputs concurrently.
+
+        This method provides efficient batch evaluation by running all
+        loss computations concurrently. It automatically extracts records
+        from TracedOutput wrappers when training mode is used.
+
+        The default implementation runs multiple __call__ invocations
+        concurrently. Subclasses can override this for more efficient
+        batch processing (e.g., batched LLM calls).
+
+        Args:
+            outputs: List of outputs to evaluate. Can be raw values or
+                TracedOutput wrappers (from training mode).
+            targets: Optional list of targets (same length as outputs).
+                If None, target=None is passed to each call.
+            records: Optional list of explicit ForwardRecords. If None and
+                outputs are TracedOutput wrappers, records are extracted
+                automatically.
+            contexts: Optional list of context dicts (same length as outputs).
+                If None, context=None is passed to each call.
+
+        Returns:
+            List of Feedback objects in the same order as inputs.
+
+        Example:
+            >>> # With raw outputs and explicit records
+            >>> feedbacks = await loss.batch(
+            ...     outputs=[out1, out2, out3],
+            ...     targets=[t1, t2, t3],
+            ...     records=[rec1, rec2, rec3],
+            ... )
+            >>>
+            >>> # With TracedOutput (training mode) - records extracted automatically
+            >>> module.train()
+            >>> traced_outputs = await module(["in1", "in2", "in3"])
+            >>> feedbacks = await loss.batch(traced_outputs, targets=[t1, t2, t3])
+            >>> # Records are extracted from TracedOutput, no need to pass explicitly
+
+        Note:
+            This method runs all evaluations concurrently using asyncio.gather.
+            For rate-limited LLM-based losses, consider implementing a custom
+            batch method with appropriate throttling.
+        """
+        import asyncio
+
+        n = len(outputs)
+
+        # Normalize targets to list
+        if targets is None:
+            targets_list: list[Any] = [None] * n
+        else:
+            targets_list = targets
+
+        # Normalize records to list
+        if records is None:
+            records_list: list[ForwardRecord | None] = [None] * n
+        else:
+            records_list = records
+
+        # Normalize contexts to list
+        if contexts is None:
+            contexts_list: list[dict[str, Any] | None] = [None] * n
+        else:
+            contexts_list = contexts
+
+        # Run all evaluations concurrently
+        async def evaluate_one(
+            output: Any,
+            target: Any,
+            record: ForwardRecord | None,
+            context: dict[str, Any] | None,
+        ) -> Feedback:
+            """Evaluate a single output with TracedOutput extraction."""
+            # Extract value and record from TracedOutput if needed
+            actual_output, effective_record = self._extract_value_and_record(
+                output, record
+            )
+            return await self(
+                actual_output,
+                target,
+                record=effective_record,
+                context=context,
+            )
+
+        tasks = [
+            evaluate_one(out, tgt, rec, ctx)
+            for out, tgt, rec, ctx in zip(
+                outputs, targets_list, records_list, contexts_list, strict=True
+            )
+        ]
+
+        return list(await asyncio.gather(*tasks))
+
 
 class VerifierLoss(Loss):
     """Loss from programmatic verification.

@@ -51,7 +51,7 @@ from inf_engine.optimization.loss import (
     VerifierLoss,
 )
 from inf_engine.optimization.optimizer import Optimizer, SFAOptimizer
-from inf_engine.optimization.record import ForwardRecord
+from inf_engine.optimization.record import ForwardRecord, TracedOutput
 
 __all__ = [
     # Backward pass
@@ -62,6 +62,7 @@ __all__ = [
     "FeedbackType",
     # Record
     "ForwardRecord",
+    "TracedOutput",
     # Loss base class
     "Loss",
     # Single-sample losses

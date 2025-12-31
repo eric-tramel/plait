@@ -123,3 +123,65 @@ class ForwardRecord:
             KeyError: If the node_id is not in the record.
         """
         return self.module_map[node_id]
+
+
+@dataclass
+class TracedOutput[T]:
+    """Wrapper that carries ForwardRecord implicitly with output values.
+
+    TracedOutput enables PyTorch-like training mode where forward passes
+    automatically capture the computation record. When a module is in
+    training mode (via `module.train()`), outputs are wrapped in TracedOutput
+    instead of returning raw values. This eliminates manual record management
+    in training pipelines.
+
+    The wrapper behaves transparently - `str()` and `repr()` delegate to the
+    underlying value, making it easy to inspect outputs during debugging.
+    Loss functions automatically extract the record from TracedOutput.
+
+    Attributes:
+        value: The actual output value from the forward pass.
+        _record: The ForwardRecord capturing the computation for backward().
+
+    Example:
+        >>> # Training mode returns TracedOutput
+        >>> module.train()
+        >>> output = await module("Hello")
+        >>> isinstance(output, TracedOutput)
+        True
+        >>> output.value
+        'Response from LLM...'
+        >>>
+        >>> # Loss functions auto-extract records
+        >>> feedback = await loss_fn(output, target)  # No need to pass record
+        >>> await feedback.backward()  # Record attached automatically
+        >>>
+        >>> # str() and repr() delegate to value for transparency
+        >>> str(output)
+        'Response from LLM...'
+
+    Note:
+        Use `module.train()` to enable training mode and `module.eval()`
+        to disable it. In eval mode, raw values are returned without
+        TracedOutput wrapping.
+    """
+
+    value: T
+    _record: ForwardRecord
+
+    def __str__(self) -> str:
+        """Return string representation of the wrapped value.
+
+        Returns:
+            String representation of the value, making TracedOutput
+            transparent for debugging and logging.
+        """
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        """Return repr of the wrapped value.
+
+        Returns:
+            Repr of the value for debugging purposes.
+        """
+        return f"TracedOutput({self.value!r})"

@@ -1034,3 +1034,248 @@ class TestStreamBatchMethod:
         # args[0] is module, args[1] is input, args[2:] are extra_args
         assert received_args[0][2] == "extra1"
         assert received_args[0][3] == "extra2"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Training Mode Tests (PR-068b)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestTrainingModeProperty:
+    """Tests for training mode property and control methods."""
+
+    def test_training_property_default_false(self) -> None:
+        """New modules have training=False by default."""
+        module = SimpleModule()
+        assert module.training is False
+
+    def test_train_sets_training_true(self) -> None:
+        """train() sets training to True."""
+        module = SimpleModule()
+        module.train()
+        assert module.training is True
+
+    def test_train_with_false_sets_training_false(self) -> None:
+        """train(False) sets training to False."""
+        module = SimpleModule()
+        module.train()  # First enable
+        module.train(False)  # Then disable
+        assert module.training is False
+
+    def test_eval_sets_training_false(self) -> None:
+        """eval() sets training to False."""
+        module = SimpleModule()
+        module.train()  # First enable
+        module.eval()
+        assert module.training is False
+
+    def test_train_returns_self(self) -> None:
+        """train() returns self for method chaining."""
+        module = SimpleModule()
+        result = module.train()
+        assert result is module
+
+    def test_eval_returns_self(self) -> None:
+        """eval() returns self for method chaining."""
+        module = SimpleModule()
+        result = module.eval()
+        assert result is module
+
+    def test_train_propagates_to_children(self) -> None:
+        """train() propagates to child modules."""
+        parent = NestedModule()
+        parent.train()
+        assert parent.training is True
+        assert parent.inner.training is True
+
+    def test_eval_propagates_to_children(self) -> None:
+        """eval() propagates to child modules."""
+        parent = NestedModule()
+        parent.train()  # First enable
+        parent.eval()  # Then disable
+        assert parent.training is False
+        assert parent.inner.training is False
+
+
+class TestTrainingModeExecution:
+    """Tests for training mode affecting execution output."""
+
+    @pytest.mark.asyncio
+    async def test_training_mode_returns_traced_output(self) -> None:
+        """Training mode returns TracedOutput wrapper."""
+        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+        module.train()
+
+        # Create a mock ForwardRecord
+        mock_record = MagicMock(spec=ForwardRecord)
+
+        async def async_run_with_record(*args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("record"):
+                return ("RESULT", mock_record)
+            return "RESULT"
+
+        with patch(
+            "inf_engine.execution.executor.run", side_effect=async_run_with_record
+        ):
+            result = await module("hello")
+
+        # Should be TracedOutput
+        assert isinstance(result, TracedOutput)
+        assert result.value == "RESULT"
+        assert result._record is mock_record
+
+    @pytest.mark.asyncio
+    async def test_eval_mode_returns_raw_value(self) -> None:
+        """Eval mode returns raw value, not TracedOutput."""
+        from inf_engine.optimization.record import TracedOutput
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+        module.train()  # First enable
+        module.eval()  # Then disable
+
+        async def async_run(*args: Any, **kwargs: Any) -> str:
+            return "RESULT"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+            result = await module("hello")
+
+        # Should be raw value, not TracedOutput
+        assert not isinstance(result, TracedOutput)
+        assert result == "RESULT"
+
+    @pytest.mark.asyncio
+    async def test_training_mode_passes_record_true(self) -> None:
+        """Training mode passes record=True to run()."""
+        from inf_engine.optimization.record import ForwardRecord
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+        module.train()
+
+        mock_record = MagicMock(spec=ForwardRecord)
+        calls_kwargs: list[dict[str, Any]] = []
+
+        async def async_run(*args: Any, **kwargs: Any) -> Any:
+            calls_kwargs.append(kwargs)
+            if kwargs.get("record"):
+                return ("RESULT", mock_record)
+            return "RESULT"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+            await module("hello")
+
+        # Should have passed record=True
+        assert len(calls_kwargs) == 1
+        assert calls_kwargs[0]["record"] is True
+
+    @pytest.mark.asyncio
+    async def test_training_mode_batch_returns_traced_outputs(self) -> None:
+        """Training mode with batch input returns list of TracedOutput."""
+        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+        module.train()
+
+        call_count = 0
+
+        async def async_run(*args: Any, **kwargs: Any) -> Any:
+            nonlocal call_count
+            call_count += 1
+            if kwargs.get("record"):
+                mock_record = MagicMock(spec=ForwardRecord)
+                return (f"RESULT_{call_count}", mock_record)
+            return f"RESULT_{call_count}"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+            results = await module(["a", "b", "c"])
+
+        # Should be a list of TracedOutput
+        assert len(results) == 3
+        for i, result in enumerate(results, 1):
+            assert isinstance(result, TracedOutput)
+            assert result.value == f"RESULT_{i}"
+
+    @pytest.mark.asyncio
+    async def test_training_mode_streaming_returns_traced_outputs(self) -> None:
+        """Training mode with streaming returns TracedOutput in BatchResults."""
+        from inf_engine.execution.types import BatchResult
+        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+
+        module = SimpleModule()
+        mock_resources = MagicMock()
+        module.bind(resources=mock_resources)
+        module.train()
+
+        call_count = 0
+
+        async def async_run(*args: Any, **kwargs: Any) -> Any:
+            nonlocal call_count
+            call_count += 1
+            if kwargs.get("record"):
+                mock_record = MagicMock(spec=ForwardRecord)
+                return (f"RESULT_{call_count}", mock_record)
+            return f"RESULT_{call_count}"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+            with ExecutionSettings(resources=mock_resources, streaming=True):
+                result = await module._execute_bound(["a", "b", "c"])
+
+                results = []
+                async for batch_result in result:
+                    results.append(batch_result)
+
+        # Should have 3 results, each with TracedOutput
+        assert len(results) == 3
+        for r in results:
+            assert isinstance(r, BatchResult)
+            assert isinstance(r.output, TracedOutput)
+
+
+class TestTrainingModeMethodChaining:
+    """Tests for method chaining with training mode."""
+
+    def test_train_bind_chain(self) -> None:
+        """Can chain train() with bind()."""
+        mock_resources = MagicMock()
+        module = SimpleModule().train().bind(resources=mock_resources)
+
+        assert module.training is True
+        assert module._bound_resources is mock_resources
+
+    def test_bind_train_chain(self) -> None:
+        """Can chain bind() with train()."""
+        mock_resources = MagicMock()
+        module = SimpleModule().bind(resources=mock_resources).train()
+
+        assert module.training is True
+        assert module._bound_resources is mock_resources
+
+    @pytest.mark.asyncio
+    async def test_fluent_training_workflow(self) -> None:
+        """Test complete fluent API workflow."""
+        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+
+        mock_resources = MagicMock()
+        mock_record = MagicMock(spec=ForwardRecord)
+
+        async def async_run(*args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("record"):
+                return ("TRAINED_RESULT", mock_record)
+            return "EVAL_RESULT"
+
+        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+            # Fluent API: create, bind, train, execute
+            module = SimpleModule().bind(resources=mock_resources).train()
+            result = await module("input")
+
+        assert isinstance(result, TracedOutput)
+        assert result.value == "TRAINED_RESULT"

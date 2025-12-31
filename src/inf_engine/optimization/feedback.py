@@ -168,6 +168,64 @@ class Feedback:
             reasoning_llm=reasoning_llm,
         )
 
+    @staticmethod
+    async def backward_batch(
+        feedbacks: list[Feedback],
+        optimizer: Any = None,
+    ) -> None:
+        """Run backward passes for multiple feedbacks concurrently.
+
+        This method enables efficient batch training by running all backward
+        passes in parallel. Since feedback accumulation into Parameters is
+        append-only (thread-safe), concurrent backward passes are safe.
+
+        This is the batch equivalent of calling `await fb.backward()` on each
+        feedback, but runs them concurrently for better performance.
+
+        Args:
+            feedbacks: List of Feedback objects to propagate backward.
+                Each must have a ForwardRecord attached (from training mode
+                or explicit record passing).
+            optimizer: Optional optimizer providing reasoning LLM. If provided,
+                passed to all backward() calls.
+
+        Raises:
+            RuntimeError: If any feedback in the list lacks a ForwardRecord.
+                The error is raised before any backward passes are started.
+
+        Example:
+            >>> # Training loop with batch backward
+            >>> module.train()
+            >>> outputs = await module(["in1", "in2", "in3", "in4"])
+            >>> feedbacks = await loss_fn.batch(outputs, targets=targets)
+            >>> await Feedback.backward_batch(feedbacks, optimizer=optimizer)
+            >>> await optimizer.step()
+
+        Example with explicit optimizer:
+            >>> feedbacks = [await loss(out, rec=rec) for out, rec in zip(outs, recs)]
+            >>> await Feedback.backward_batch(feedbacks, optimizer=my_optimizer)
+
+        Note:
+            For very large batches, consider chunking to avoid overwhelming
+            the optimizer's reasoning LLM (if present). The concurrent backward
+            passes all share the same optimizer's LLM for reasoning calls.
+        """
+        import asyncio
+
+        # Validate all feedbacks have records before starting
+        for i, fb in enumerate(feedbacks):
+            if fb._record is None:
+                raise RuntimeError(
+                    f"Feedback at index {i} has no ForwardRecord. "
+                    "Pass record=record when computing feedback."
+                )
+
+        # Run all backward passes concurrently
+        async def backward_one(fb: Feedback) -> None:
+            await fb.backward(optimizer=optimizer)
+
+        await asyncio.gather(*[backward_one(fb) for fb in feedbacks])
+
     def __str__(self) -> str:
         """Return string representation of the feedback.
 
