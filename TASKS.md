@@ -54,7 +54,7 @@ Every PR must:
   - `tests/unit/test_parameter_value_refs.py` (ref format, structured param kind inference)
 - **CHANGELOG**: "Lift parameters into Value with stable refs"
 
-### - [ ] PR-061: Functional API (stateless ops)
+### - [x] PR-061: Functional API (stateless ops)
 - **Branch**: `feat/functional-api`
 - **Description**: Implement `inf_engine.functional` ops with Value-based error semantics (no exceptions), including `render`, `select`, `parse_structured`, `concat`, and error propagation rules.
 - **Design Docs**:

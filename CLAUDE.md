@@ -166,30 +166,47 @@ Every feature branch must meet these criteria before GO approval:
 ```
 inf-engine/
 ├── src/
-│   └── inf_engine/          # Main package (to be implemented)
+│   └── inf_engine/          # Main package
+│       ├── __init__.py      # Package exports
 │       ├── module.py        # InferenceModule, LLMInference
 │       ├── parameter.py     # Parameter class
+│       ├── values.py        # Value, ValueRef for semantic values
+│       ├── functional.py    # Functional API (llm_call, structured_llm_call)
 │       ├── graph.py         # InferenceGraph, GraphNode
+│       ├── types.py         # Core type definitions
+│       ├── errors.py        # Exception hierarchy
 │       ├── tracing/         # Tracer, Proxy, context
-│       ├── execution/       # Scheduler, ExecutionState
-│       ├── resources/       # ResourceManager, config
-│       ├── optimization/    # Loss, Optimizer, backward
+│       ├── execution/       # Scheduler, Executor, ExecutionState
+│       ├── resources/       # ResourceManager, config, rate limiting
+│       ├── optimization/    # Loss, Optimizer, backward, feedback
+│       ├── profiling/       # Profiler for execution analysis
 │       └── clients/         # LLM client implementations
 ├── tests/
 │   ├── unit/                # Fast, isolated unit tests
 │   └── integration/         # Component interaction tests
 ├── design_docs/             # Architecture documentation
 │   ├── README.md            # Documentation index
-│   ├── architecture.md      # High-level system design
+│   ├── DESIGN.md            # High-level design overview
+│   ├── REVISIONS.md         # Design revision history
+│   ├── architecture.md      # System architecture
 │   ├── inference_module.md  # Core module system
 │   ├── tracing.md           # DAG capture
 │   ├── execution.md         # Scheduler and state
 │   ├── resources.md         # Endpoint configuration
 │   ├── optimization.md      # Backward pass and learning
+│   ├── profiling.md         # Execution profiling
+│   ├── parameters.md        # Parameter system
+│   ├── values.md            # Values and references
+│   ├── ordered_parameter_updates.md  # Update ordering
+│   └── functional_api.md    # Functional API design
+├── examples/                # Usage examples
+├── cookbooks/               # Tutorials and recipes
 ├── TASKS.md                 # PR-by-PR implementation breakdown
 ├── CHANGELOG.md             # Version history
+├── README.md                # Project overview
 ├── Makefile                 # Build targets
 ├── pyproject.toml           # Project configuration
+├── uv.lock                  # Dependency lock file
 └── main.py                  # Entry point
 ```
 
