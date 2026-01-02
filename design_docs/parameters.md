@@ -62,6 +62,7 @@ valueify(param) -> Value(
     meta={
         "param_name": "module.path.name",
         "param_id": "<stable-id>",
+        "module_state_version": "<int>",
         "requires_grad": param.requires_grad,
     }
 )
@@ -75,6 +76,13 @@ separate optimization state.
 - Parameter refs are stable and hierarchical: `param:<module.path.name>`.
 - `_name` is assigned by `InferenceModule.__setattr__` when a parameter is set.
 - `named_parameters()` yields fully qualified names used in `ref` generation.
+
+## Module State Versioning
+
+Parameters belong to modules. Each module maintains a `module_state_version`
+that increments whenever any parameter in that module updates. This version is
+included in `valueify(param).meta` to attribute outputs to a specific module
+state.
 
 ## Optimization Lifecycle
 

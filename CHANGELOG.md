@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Lift parameters into Value with stable refs
+  - `Parameter.description` is now optional when `requires_grad=False`
+  - `Parameter.description` is required when `requires_grad=True` (raises ValueError)
+  - `Parameter.value` now accepts `Any` type (string, dict, list, int, float, etc.)
+  - `valueify(param)` infers `ValueKind` based on parameter value type
+  - Structured values (dict, list, tuple) infer `ValueKind.STRUCTURED`
+  - Stable refs use `param:<name>` format for named parameters
+  - Stable refs use `param:<id>` format for unnamed parameters
+  - Module state version tracked in Value metadata for optimization attribution
 - Add `Value` container and `ValueRef` helpers for data flow with provenance
   - `ValueKind` enum: TEXT, FSTRING, RESPONSE, STRUCTURED, INT, FLOAT, ERROR, TOOL_RESULT, BINARY, OTHER
   - `Value` dataclass with kind, payload, ref, and meta fields

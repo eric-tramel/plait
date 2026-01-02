@@ -6,9 +6,9 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [x] **Phase 5: Values + Functional + Tracing/Execution** (1/5)
+- [x] **Phase 5: Values + Functional + Tracing/Execution** (2/5)
 
-**Total: 1/5 PRs completed**
+**Total: 2/5 PRs completed**
 
 ---
 
@@ -40,7 +40,7 @@ Every PR must:
   - `tests/unit/test_valueify_parameters.py` (Parameter lifted to Value with stable ref, metadata)
 - **CHANGELOG**: "Add Value container and ValueRef helpers"
 
-### - [ ] PR-060: Parameter lifting + refs
+### - [x] PR-060: Parameter lifting + refs
 - **Branch**: `feat/parameter-lifting`
 - **Description**: Update Parameter usage to lift into `Value` with stable refs and metadata; ensure `Parameter` description requirements are enforced with structured values.
 - **Design Docs**:

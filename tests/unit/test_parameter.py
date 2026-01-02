@@ -14,11 +14,6 @@ class TestParameterCreation:
         assert param.value == "test value"
         assert param.description == "Test description"
 
-    def test_parameter_description_required(self) -> None:
-        """Parameter requires a description field."""
-        with pytest.raises(TypeError, match="missing.*'description'"):
-            Parameter("test value")  # type: ignore[call-arg]
-
     def test_parameter_creation_with_requires_grad_true(self) -> None:
         """Parameter defaults to requires_grad=True."""
         param = Parameter("test value", description="Test description")
@@ -43,6 +38,84 @@ class TestParameterCreation:
         assert param._name is None
 
 
+class TestParameterDescriptionRequirements:
+    """Tests for description requirement based on requires_grad."""
+
+    def test_description_required_when_requires_grad_true(self) -> None:
+        """ValueError raised when requires_grad=True but description is None."""
+        with pytest.raises(ValueError, match="description is required"):
+            Parameter("test value")
+
+    def test_description_required_explicit_requires_grad_true(self) -> None:
+        """ValueError raised when explicitly requires_grad=True and no description."""
+        with pytest.raises(ValueError, match="description is required"):
+            Parameter("test value", requires_grad=True)
+
+    def test_description_optional_when_requires_grad_false(self) -> None:
+        """Description can be None when requires_grad=False."""
+        param = Parameter("test value", requires_grad=False)
+        assert param.description is None
+        assert param.requires_grad is False
+
+    def test_description_can_be_provided_when_requires_grad_false(self) -> None:
+        """Description can still be provided when requires_grad=False."""
+        param = Parameter(
+            "test value",
+            description="Optional description",
+            requires_grad=False,
+        )
+        assert param.description == "Optional description"
+
+    def test_error_message_is_helpful(self) -> None:
+        """Error message explains why description is needed."""
+        with pytest.raises(ValueError, match="optimization feedback"):
+            Parameter("test value")
+
+
+class TestParameterStructuredValues:
+    """Tests for Parameter with structured values (dict, list, etc.)."""
+
+    def test_parameter_dict_value(self) -> None:
+        """Parameter can hold a dict value."""
+        config = {"model": "gpt-4", "temperature": 0.7}
+        param = Parameter(config, description="Model config")
+        assert param.value == config
+        assert param.value["model"] == "gpt-4"
+
+    def test_parameter_list_value(self) -> None:
+        """Parameter can hold a list value."""
+        items = ["one", "two", "three"]
+        param = Parameter(items, description="Items list")
+        assert param.value == items
+        assert len(param.value) == 3
+
+    def test_parameter_nested_structure(self) -> None:
+        """Parameter can hold nested structures."""
+        nested = {
+            "prompts": ["p1", "p2"],
+            "config": {"key": "value"},
+        }
+        param = Parameter(nested, description="Nested config")
+        assert param.value["prompts"] == ["p1", "p2"]
+        assert param.value["config"]["key"] == "value"
+
+    def test_parameter_int_value(self) -> None:
+        """Parameter can hold an integer value."""
+        param = Parameter(42, description="Count")
+        assert param.value == 42
+
+    def test_parameter_float_value(self) -> None:
+        """Parameter can hold a float value."""
+        param = Parameter(3.14, description="Rate")
+        assert param.value == 3.14
+
+    def test_structured_constant_no_description(self) -> None:
+        """Structured constant parameters don't require description."""
+        param = Parameter({"key": "value"}, requires_grad=False)
+        assert param.description is None
+        assert param.value == {"key": "value"}
+
+
 class TestParameterStr:
     """Tests for Parameter string representation."""
 
@@ -61,6 +134,21 @@ class TestParameterStr:
         value = "line 1\nline 2\nline 3"
         param = Parameter(value, description="Multiline test")
         assert str(param) == value
+
+    def test_parameter_str_dict_value(self) -> None:
+        """str(param) returns string representation of dict."""
+        param = Parameter({"key": "value"}, description="Dict")
+        assert str(param) == "{'key': 'value'}"
+
+    def test_parameter_str_list_value(self) -> None:
+        """str(param) returns string representation of list."""
+        param = Parameter([1, 2, 3], description="List")
+        assert str(param) == "[1, 2, 3]"
+
+    def test_parameter_str_int_value(self) -> None:
+        """str(param) returns string representation of int."""
+        param = Parameter(42, description="Count")
+        assert str(param) == "42"
 
 
 class TestParameterAccumulateFeedback:
@@ -86,7 +174,7 @@ class TestParameterAccumulateFeedback:
 
     def test_accumulate_feedback_requires_grad_false(self) -> None:
         """Feedback is not accumulated when requires_grad=False."""
-        param = Parameter("value", description="Test description", requires_grad=False)
+        param = Parameter("value", requires_grad=False)
         param.accumulate_feedback("should be ignored")
         assert param.get_accumulated_feedback() == []
 
@@ -134,9 +222,21 @@ class TestParameterApplyUpdate:
 
     def test_apply_update_does_not_change_requires_grad(self) -> None:
         """apply_update does not affect requires_grad setting."""
-        param = Parameter("value", description="Test description", requires_grad=False)
+        param = Parameter("value", requires_grad=False)
         param.apply_update("new value")
         assert param.requires_grad is False
+
+    def test_apply_update_structured_value(self) -> None:
+        """apply_update works with structured values."""
+        param = Parameter({"old": "value"}, description="Config")
+        param.apply_update({"new": "value"})
+        assert param.value == {"new": "value"}
+
+    def test_apply_update_changes_type(self) -> None:
+        """apply_update can change value type."""
+        param = Parameter("string", description="Flexible")
+        param.apply_update({"now": "dict"})
+        assert param.value == {"now": "dict"}
 
 
 class TestParameterZeroFeedback:
@@ -190,7 +290,20 @@ class TestParameterEquality:
     def test_parameters_not_equal_different_requires_grad(self) -> None:
         """Parameters with different requires_grad are not equal."""
         param1 = Parameter("value", description="Test description", requires_grad=True)
-        param2 = Parameter("value", description="Test description", requires_grad=False)
+        param2 = Parameter("value", requires_grad=False)
+        # Note: description differs too (None vs "Test description")
+        assert param1 != param2
+
+    def test_parameters_equal_both_requires_grad_false(self) -> None:
+        """Parameters with requires_grad=False and same value are equal."""
+        param1 = Parameter("value", requires_grad=False)
+        param2 = Parameter("value", requires_grad=False)
+        assert param1 == param2
+
+    def test_parameters_not_equal_structured_values(self) -> None:
+        """Parameters with different structured values are not equal."""
+        param1 = Parameter({"a": 1}, description="Config")
+        param2 = Parameter({"a": 2}, description="Config")
         assert param1 != param2
 
     def test_parameters_equal_ignores_name(self) -> None:
@@ -224,7 +337,7 @@ class TestParameterRepr:
 
     def test_parameter_repr_includes_requires_grad(self) -> None:
         """repr includes requires_grad status."""
-        param = Parameter("value", description="Test description", requires_grad=False)
+        param = Parameter("value", requires_grad=False)
         assert "requires_grad=False" in repr(param)
 
     def test_parameter_repr_excludes_name(self) -> None:
@@ -239,3 +352,13 @@ class TestParameterRepr:
         param = Parameter("value", description="Test description")
         param.accumulate_feedback("should_not_appear")
         assert "_feedback_buffer" not in repr(param)
+
+    def test_parameter_repr_with_none_description(self) -> None:
+        """repr shows description=None for constant parameters."""
+        param = Parameter("value", requires_grad=False)
+        assert "description=None" in repr(param)
+
+    def test_parameter_repr_structured_value(self) -> None:
+        """repr includes structured values."""
+        param = Parameter({"key": "value"}, description="Config")
+        assert "key" in repr(param) or "value" in repr(param)

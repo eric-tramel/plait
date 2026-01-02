@@ -1,6 +1,6 @@
 """Parameter class for learnable values in inf-engine.
 
-Parameters hold string values that can be optimized via backward passes,
+Parameters hold values that can be optimized via backward passes,
 similar to torch.nn.Parameter but for prompt optimization rather than
 gradient descent.
 """
@@ -8,6 +8,7 @@ gradient descent.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import uuid4
 
 
@@ -15,19 +16,24 @@ from uuid import uuid4
 class Parameter:
     """A learnable value that can be optimized via backward passes.
 
-    Similar to torch.nn.Parameter, but for string values (prompts,
-    instructions, etc.) that are optimized via LLM feedback rather
+    Similar to torch.nn.Parameter, but for values (prompts, instructions,
+    structured configs, etc.) that are optimized via LLM feedback rather
     than gradient descent.
 
-    The description field is REQUIRED and should explain what this parameter
-    represents, enabling the optimizer to understand how to improve it.
+    The description field is required when requires_grad=True to enable
+    the optimizer to understand how to improve the parameter.
 
     Args:
-        value: The current string value of the parameter.
+        value: The current value of the parameter (string, dict, list, etc.).
         description: A description of what this parameter does/represents.
-            This is required to enable self-documenting optimization.
+            Required when requires_grad=True to enable self-documenting
+            optimization. Can be None when requires_grad=False.
         requires_grad: If True, feedback will be accumulated during backward
-            passes. If False, the parameter is treated as a constant.
+            passes and description is required. If False, the parameter is
+            treated as a constant.
+
+    Raises:
+        ValueError: If requires_grad=True but description is None.
 
     Example:
         >>> param = Parameter(
@@ -44,10 +50,15 @@ class Parameter:
         >>> param.apply_update("You are a concise, helpful assistant.")
         >>> str(param)
         'You are a concise, helpful assistant.'
+
+        >>> # Constant parameter (no description required)
+        >>> const = Parameter({"model": "gpt-4"}, requires_grad=False)
+        >>> const.requires_grad
+        False
     """
 
-    value: str
-    description: str
+    value: Any
+    description: str | None = None
     requires_grad: bool = True
     _name: str | None = field(default=None, repr=False, compare=False)
     _id: str = field(
@@ -56,13 +67,26 @@ class Parameter:
     _module_state_version: int = field(default=0, init=False, repr=False, compare=False)
     _feedback_buffer: list[str] = field(default_factory=list, repr=False, compare=False)
 
+    def __post_init__(self) -> None:
+        """Validate that description is provided when requires_grad=True.
+
+        Raises:
+            ValueError: If requires_grad=True but description is None.
+        """
+        if self.requires_grad and self.description is None:
+            raise ValueError(
+                "Parameter description is required when requires_grad=True. "
+                "Provide a description explaining what this parameter represents "
+                "to enable meaningful optimization feedback."
+            )
+
     def __str__(self) -> str:
-        """Return the current value when used as a string.
+        """Return the current value as a string.
 
         Returns:
-            The current string value of the parameter.
+            The string representation of the parameter value.
         """
-        return self.value
+        return str(self.value)
 
     def accumulate_feedback(self, feedback: str) -> None:
         """Collect feedback from backward passes.
@@ -83,13 +107,13 @@ class Parameter:
         """
         return list(self._feedback_buffer)
 
-    def apply_update(self, new_value: str) -> None:
+    def apply_update(self, new_value: Any) -> None:
         """Apply an optimizer-computed update.
 
         Updates the parameter value and clears the feedback buffer.
 
         Args:
-            new_value: The new string value to set.
+            new_value: The new value to set.
         """
         self.value = new_value
         self._module_state_version += 1
