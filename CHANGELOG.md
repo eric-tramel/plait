@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add `Value` container and `ValueRef` helpers for data flow with provenance
+  - `ValueKind` enum: TEXT, FSTRING, RESPONSE, STRUCTURED, INT, FLOAT, ERROR, TOOL_RESULT, BINARY, OTHER
+  - `Value` dataclass with kind, payload, ref, and meta fields
+  - `Value.__getitem__` and `Value.get` for graph-aware structured access
+  - `ValueRef` frozen dataclass as placeholder reference during tracing
+  - `valueify()` helper to wrap raw values into Value with type inference
+  - `unwrap()` helper to extract payload from Value
+  - `collect_refs()` helper to recursively collect refs from nested structures
+  - `replace_values_with_refs()` helper to substitute Values with ValueRef placeholders
+  - Parameter lifting: `valueify(param)` creates Value with stable `param:<name>` ref
 - Add topologically-ordered parameter updates with upstream visibility
   - `Optimizer.capture_record()` method to capture `ForwardRecord` during backward passes
   - `Optimizer._records` list accumulates records for step() graph context

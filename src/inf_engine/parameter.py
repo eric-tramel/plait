@@ -8,6 +8,7 @@ gradient descent.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from uuid import uuid4
 
 
 @dataclass
@@ -49,6 +50,10 @@ class Parameter:
     description: str
     requires_grad: bool = True
     _name: str | None = field(default=None, repr=False, compare=False)
+    _id: str = field(
+        default_factory=lambda: uuid4().hex, init=False, repr=False, compare=False
+    )
+    _module_state_version: int = field(default=0, init=False, repr=False, compare=False)
     _feedback_buffer: list[str] = field(default_factory=list, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -87,6 +92,7 @@ class Parameter:
             new_value: The new string value to set.
         """
         self.value = new_value
+        self._module_state_version += 1
         self._feedback_buffer.clear()
 
     def zero_feedback(self) -> None:

@@ -6,9 +6,9 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [ ] **Phase 5: Values + Functional + Tracing/Execution** (0/5)
+- [x] **Phase 5: Values + Functional + Tracing/Execution** (1/5)
 
-**Total: 0/5 PRs completed**
+**Total: 1/5 PRs completed**
 
 ---
 
@@ -27,7 +27,7 @@ Every PR must:
 
 ## Phase 5: Values + Functional + Tracing/Execution
 
-### - [ ] PR-059: Values core (Value, ValueKind, helpers, ValueRef)
+### - [x] PR-059: Values core (Value, ValueKind, helpers, ValueRef)
 - **Branch**: `feat/values-core`
 - **Description**: Implement `Value`, `ValueKind`, and core helpers (`valueify`, `unwrap`, `collect_refs`, `ValueRef`, `replace_values_with_refs`). Establish stable parameter refs (`param:module.path.name`) and input refs (`input:<name>`).
 - **Design Docs**:
