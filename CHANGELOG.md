@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add topologically-ordered parameter updates with upstream visibility
+  - `Optimizer.capture_record()` method to capture `ForwardRecord` during backward passes
+  - `Optimizer._records` list accumulates records for step() graph context
+  - `Optimizer.zero_feedback()` now also clears accumulated records
+  - `SFAOptimizer.step()` updates parameters in forward topological order
+  - Downstream parameters receive context about upstream changes for consistency
+  - Parameters at the same topological level are updated in parallel
+  - All optimizer prompts use XML tags for content demarcation
+  - `_propagate_backward()` accepts optional optimizer to capture records
 - Add `TracedOutput` for implicit record flow and batch training API
   - `TracedOutput[T]` dataclass wrapping output value with `ForwardRecord`
   - `module.train()` enables training mode where forward passes return `TracedOutput`

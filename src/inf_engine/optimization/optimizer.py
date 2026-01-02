@@ -31,11 +31,15 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
+    from inf_engine.graph import InferenceGraph
+    from inf_engine.module import InferenceModule
+    from inf_engine.optimization.record import ForwardRecord
     from inf_engine.parameter import Parameter
     from inf_engine.resources.config import ResourceConfig
     from inf_engine.resources.manager import ResourceManager
@@ -154,6 +158,7 @@ class Optimizer(ABC):
         """
         self.params = list(params)
         self._step_count = 0
+        self._records: list[ForwardRecord] = []
 
         # Internal LLMs with fixed aliases (wrapped for execution)
         self.aggregator = _OptimizerLLMWrapper(
@@ -206,11 +211,15 @@ class Optimizer(ABC):
         return self
 
     def zero_feedback(self) -> None:
-        """Clear all parameter feedback buffers.
+        """Clear all parameter feedback buffers and accumulated records.
 
         Like torch.optim.Optimizer.zero_grad(), this clears accumulated
-        feedback to prepare for a new mini-batch. Should be called at
-        the beginning of each mini-batch iteration.
+        feedback and ForwardRecords to prepare for a new mini-batch. Should
+        be called at the beginning of each mini-batch iteration.
+
+        This resets all state for a new training batch:
+        - Clears feedback buffers on all parameters
+        - Clears accumulated ForwardRecords captured during backward passes
 
         Example:
             >>> for batch in batches:
@@ -222,6 +231,23 @@ class Optimizer(ABC):
         """
         for param in self.params:
             param.zero_feedback()
+        self._records.clear()
+
+    def capture_record(self, record: ForwardRecord) -> None:
+        """Capture a ForwardRecord during backward pass.
+
+        Called by _propagate_backward() to provide graph context for
+        ordered parameter updates in step(). The captured records are
+        used to determine topological ordering and upstream dependencies.
+
+        Args:
+            record: The ForwardRecord from the forward pass.
+
+        Example:
+            >>> # Called internally by backward propagation
+            >>> optimizer.capture_record(record)
+        """
+        self._records.append(record)
 
     @abstractmethod
     async def step(self) -> dict[str, str]:
@@ -231,12 +257,18 @@ class Optimizer(ABC):
         of examples via feedback.backward(). This method processes all
         accumulated feedback and generates updated parameter values.
 
+        Parameters are updated in forward topological order based on the
+        captured ForwardRecords. This ensures upstream parameters are updated
+        before downstream ones, allowing downstream updates to maintain
+        consistency with upstream changes.
+
         Returns:
             Dictionary mapping parameter names to their new values.
             Only includes parameters that were actually updated.
 
         Raises:
             RuntimeError: If optimizer is not bound to resources.
+            RuntimeError: If no ForwardRecords have been captured.
 
         Example:
             >>> updates = await optimizer.step()
@@ -244,6 +276,17 @@ class Optimizer(ABC):
             ...     print(f"{name}: {new_value[:50]}...")
         """
         pass
+
+    def _param_key(self, param: Parameter) -> str:
+        """Get a consistent key for a parameter.
+
+        Args:
+            param: The parameter to get a key for.
+
+        Returns:
+            A string key identifying this parameter.
+        """
+        return param._name or str(id(param))
 
     def _aggregator_system_prompt(self) -> str:
         """System prompt for the feedback aggregator LLM.
@@ -292,10 +335,10 @@ class SFAOptimizer(Optimizer):
     - 1.0: Very conservative, minimal changes only
 
     The algorithm:
-    1. For each parameter with accumulated feedback:
-       a. Aggregate all feedback items into a coherent summary
-       b. Generate an improved value based on the summary
-       c. Apply the update and clear the feedback buffer
+    1. Capture ForwardRecords during backward passes
+    2. Compute topological levels for parameters
+    3. Process levels sequentially (params within a level in parallel)
+    4. Each update receives context about upstream parameter changes
 
     Attributes:
         conservatism: How conservative updates should be (0-1).
@@ -354,41 +397,248 @@ class SFAOptimizer(Optimizer):
         self.conservatism = conservatism
 
     async def step(self) -> dict[str, str]:
-        """Aggregate accumulated feedback and update parameters.
+        """Update parameters in topological order with upstream visibility.
 
-        For each parameter with accumulated feedback:
-        1. Aggregates all feedback items into a coherent summary
-        2. Generates an improved value based on conservatism level
-        3. Applies the update and clears the feedback buffer
+        The algorithm:
+        1. Build parameter-to-node mapping from captured records
+        2. Compute update levels (topological partitioning)
+        3. Process levels sequentially, parameters within level in parallel
+        4. Each update receives context of upstream parameter changes
 
         Returns:
-            Dictionary mapping parameter names to their new values.
+            Dictionary mapping parameter names to new values.
 
         Raises:
             RuntimeError: If optimizer is not bound to resources.
+            RuntimeError: If no ForwardRecords have been captured.
         """
         if not self._bound:
             raise RuntimeError("Optimizer not bound. Call bind(resources) first.")
 
-        updates: dict[str, str] = {}
+        if not self._records:
+            raise RuntimeError(
+                "No ForwardRecords captured. Ensure module.train() is called "
+                "and backward() is invoked before step()."
+            )
 
-        for param in self.params:
-            if not param.requires_grad:
+        # Snapshot current values before any updates
+        previous_values = {self._param_key(param): param.value for param in self.params}
+
+        # Use first record for graph structure (all should have same structure)
+        graph = self._records[0].graph
+        module_map = self._records[0].module_map
+
+        # Build mappings
+        param_to_nodes = self._build_param_to_node_mapping(module_map)
+        node_to_params = self._build_node_to_param_mapping(module_map)
+
+        # Compute update levels
+        levels = self._compute_update_levels(graph, param_to_nodes)
+
+        # Track applied updates for visibility
+        applied_updates: dict[str, str] = {}
+
+        # Process levels sequentially
+        for level in levels:
+            # Filter to params that need updating
+            params_to_update = [
+                p for p in level if p.requires_grad and p._feedback_buffer
+            ]
+
+            if not params_to_update:
                 continue
-            if not param._feedback_buffer:
-                continue
 
-            # Aggregate all feedback (from fan-out + mini-batch)
-            aggregated = await self._aggregate_feedback(param)
+            # Update all params in this level in parallel
+            level_results = await asyncio.gather(
+                *[
+                    self._update_parameter_with_context(
+                        param=param,
+                        previous_values=previous_values,
+                        applied_updates=applied_updates,
+                        upstream_params=self._get_upstream_params(
+                            param, param_to_nodes, node_to_params, graph
+                        ),
+                    )
+                    for param in params_to_update
+                ]
+            )
 
-            # Generate conservative update
-            new_value = await self._generate_update(param, aggregated)
-
-            param.apply_update(new_value)
-            updates[param._name or str(id(param))] = new_value
+            # Apply updates and record them
+            for param, new_value in level_results:
+                param.apply_update(new_value)
+                key = self._param_key(param)
+                applied_updates[key] = new_value
 
         self._step_count += 1
-        return updates
+        return applied_updates
+
+    def _build_param_to_node_mapping(
+        self,
+        module_map: dict[str, InferenceModule],
+    ) -> dict[str, set[str]]:
+        """Map parameter keys to the nodes containing them.
+
+        Args:
+            module_map: Mapping from node_id to module instance.
+
+        Returns:
+            Dict mapping param key to set of node IDs where it appears.
+        """
+        mapping: dict[str, set[str]] = {}
+
+        for node_id, module in module_map.items():
+            for _name, param in module.named_parameters():
+                key = self._param_key(param)
+                mapping.setdefault(key, set()).add(node_id)
+
+        return mapping
+
+    def _build_node_to_param_mapping(
+        self,
+        module_map: dict[str, InferenceModule],
+    ) -> dict[str, list[Parameter]]:
+        """Map node IDs to parameters in that node's module.
+
+        Args:
+            module_map: Mapping from node_id to module instance.
+
+        Returns:
+            Dict mapping node_id to list of Parameters in that module.
+        """
+        mapping: dict[str, list[Parameter]] = {}
+
+        for node_id, module in module_map.items():
+            params = list(module.parameters())
+            if params:
+                mapping[node_id] = params
+
+        return mapping
+
+    def _compute_update_levels(
+        self,
+        graph: InferenceGraph,
+        param_to_nodes: dict[str, set[str]],
+    ) -> list[list[Parameter]]:
+        """Partition parameters into topological levels.
+
+        Level 0 contains parameters with no upstream parameters.
+        Level N contains parameters whose upstream params are all in levels < N.
+
+        Args:
+            graph: The inference graph.
+            param_to_nodes: Mapping from param key to node IDs containing it.
+
+        Returns:
+            List of levels, where each level is a list of Parameters
+            that can be updated in parallel.
+        """
+        # Get topological order of nodes
+        topo_order = graph.topological_order()
+        node_to_topo_index = {nid: i for i, nid in enumerate(topo_order)}
+
+        # Compute "earliest" topological index for each parameter
+        # (a param might appear in multiple nodes; use the earliest)
+        param_topo_index: dict[str, int] = {}
+        for param in self.params:
+            key = self._param_key(param)
+            nodes = param_to_nodes.get(key, set())
+            if nodes:
+                param_topo_index[key] = min(node_to_topo_index[n] for n in nodes)
+            else:
+                # Parameter not in graph (e.g., not used in this forward pass)
+                param_topo_index[key] = -1
+
+        # Group parameters by their topological index
+        index_to_params: dict[int, list[Parameter]] = {}
+        for param in self.params:
+            key = self._param_key(param)
+            idx = param_topo_index[key]
+            if idx >= 0:  # Skip params not in graph
+                index_to_params.setdefault(idx, []).append(param)
+
+        # Convert to ordered list of levels
+        levels = [index_to_params[idx] for idx in sorted(index_to_params.keys())]
+
+        return levels
+
+    def _get_upstream_params(
+        self,
+        param: Parameter,
+        param_to_nodes: dict[str, set[str]],
+        node_to_params: dict[str, list[Parameter]],
+        graph: InferenceGraph,
+    ) -> list[Parameter]:
+        """Get all parameters upstream of this parameter.
+
+        Args:
+            param: The parameter to find upstream params for.
+            param_to_nodes: Mapping from param key to node IDs.
+            node_to_params: Mapping from node ID to parameters.
+            graph: The inference graph.
+
+        Returns:
+            List of Parameters that are upstream (ancestors) of this param.
+        """
+        key = self._param_key(param)
+        nodes = param_to_nodes.get(key, set())
+
+        if not nodes:
+            return []
+
+        # Get all ancestor nodes
+        ancestor_nodes: set[str] = set()
+        for node_id in nodes:
+            ancestor_nodes.update(graph.ancestors(node_id))
+
+        # Collect parameters from ancestor nodes
+        upstream_params: list[Parameter] = []
+        seen: set[str] = set()
+
+        for node_id in ancestor_nodes:
+            for p in node_to_params.get(node_id, []):
+                p_key = self._param_key(p)
+                if p_key not in seen and p_key != key:
+                    seen.add(p_key)
+                    upstream_params.append(p)
+
+        return upstream_params
+
+    async def _update_parameter_with_context(
+        self,
+        param: Parameter,
+        previous_values: dict[str, str],
+        applied_updates: dict[str, str],
+        upstream_params: list[Parameter],
+    ) -> tuple[Parameter, str]:
+        """Generate an update for a parameter with upstream visibility.
+
+        Args:
+            param: The parameter to update.
+            previous_values: Snapshot of all param values before step().
+            applied_updates: Updates already applied in earlier levels.
+            upstream_params: Parameters upstream of this one.
+
+        Returns:
+            Tuple of (parameter, new_value).
+        """
+        # Aggregate feedback for this parameter
+        aggregated = await self._aggregate_feedback(param)
+
+        # Build upstream context showing what changed
+        upstream_context = self._build_upstream_context(
+            upstream_params,
+            previous_values,
+            applied_updates,
+        )
+
+        # Generate update with context
+        new_value = await self._generate_update_with_context(
+            param,
+            aggregated,
+            upstream_context,
+        )
+
+        return (param, new_value)
 
     async def _aggregate_feedback(self, param: Parameter) -> str:
         """Combine all feedback items into one coherent summary.
@@ -408,62 +658,130 @@ class SFAOptimizer(Optimizer):
         if len(feedbacks) == 1:
             return feedbacks[0]
 
-        prompt = f"""
-Aggregate the following {len(feedbacks)} feedback items about a parameter.
+        feedback_items = "\n".join(
+            f'<feedback index="{i + 1}">{fb}</feedback>'
+            for i, fb in enumerate(feedbacks)
+        )
 
-Parameter: {param._name}
-Description: {param.description}
+        prompt = f"""<task>Aggregate feedback for a parameter</task>
 
-Current value:
-{param.value}
+<parameter name="{param._name}">
+<description>{param.description}</description>
+<current-value>{param.value}</current-value>
+</parameter>
 
-Feedback items:
-{chr(10).join(f"{i + 1}. {fb}" for i, fb in enumerate(feedbacks))}
+<feedback-items count="{len(feedbacks)}">
+{feedback_items}
+</feedback-items>
 
-Synthesize into a single summary that:
-1. Identifies common themes across feedback items
-2. Prioritizes the most impactful suggestions
-3. Notes and resolves any conflicting feedback
-4. Provides specific, actionable recommendations
+<instructions>
+Synthesize the feedback items into a single coherent summary that:
+- Identifies common themes across feedback items
+- Prioritizes the most impactful suggestions
+- Notes and resolves any conflicting feedback
+- Provides specific, actionable recommendations
+</instructions>
 
-Summary:
-""".strip()
+<output-format>
+Provide a single summary paragraph. No bullet points, no numbered lists.
+</output-format>"""
 
         return await self.aggregator(prompt)
 
-    async def _generate_update(self, param: Parameter, aggregated: str) -> str:
-        """Generate improved parameter value.
+    def _build_upstream_context(
+        self,
+        upstream_params: list[Parameter],
+        previous_values: dict[str, str],
+        applied_updates: dict[str, str],
+    ) -> str:
+        """Build context string showing upstream parameter changes.
 
-        Uses the aggregated feedback to generate a new parameter value
-        that addresses the feedback while respecting the conservatism level.
+        Args:
+            upstream_params: Parameters that are upstream in the graph.
+            previous_values: Values before any updates.
+            applied_updates: Updates already applied.
+
+        Returns:
+            Formatted string describing upstream changes, or empty if none.
+        """
+        changed_params = []
+
+        for param in upstream_params:
+            key = self._param_key(param)
+            if key in applied_updates:
+                changed_params.append(
+                    {
+                        "name": param._name or key,
+                        "description": param.description,
+                        "previous": previous_values.get(key, ""),
+                        "updated": applied_updates[key],
+                    }
+                )
+
+        if not changed_params:
+            return ""
+
+        param_blocks = []
+        for p in changed_params:
+            param_blocks.append(
+                f"""<upstream-parameter name="{p["name"]}">
+<description>{p["description"]}</description>
+<previous-value>{p["previous"]}</previous-value>
+<updated-value>{p["updated"]}</updated-value>
+</upstream-parameter>"""
+            )
+
+        return f"""<upstream-updates>
+<note>
+The following parameters appear earlier in the pipeline and have already
+been updated in this optimization step. Your update should maintain
+consistency with these changes.
+</note>
+{chr(10).join(param_blocks)}
+</upstream-updates>"""
+
+    async def _generate_update_with_context(
+        self,
+        param: Parameter,
+        aggregated: str,
+        upstream_context: str,
+    ) -> str:
+        """Generate improved parameter value with upstream context.
 
         Args:
             param: The parameter to update.
-            aggregated: Aggregated feedback summary.
+            aggregated: Aggregated feedback for this parameter.
+            upstream_context: Context about upstream parameter changes.
 
         Returns:
-            The new parameter value as a string.
+            The new parameter value.
         """
-        prompt = f"""
-Update the following parameter based on aggregated feedback.
+        prompt = f"""<task>Update a parameter based on feedback</task>
 
-Parameter: {param._name}
-Description: {param.description}
+<parameter name="{param._name}">
+<description>{param.description}</description>
+<current-value>{param.value}</current-value>
+</parameter>
 
-Current value:
-{param.value}
-
-Aggregated feedback:
+<aggregated-feedback>
 {aggregated}
+</aggregated-feedback>
 
-Conservatism level: {self.conservatism:.1f} (0=aggressive, 1=minimal changes)
+{upstream_context}
 
-Generate an improved version that:
-1. Addresses the key points in the feedback
-2. Preserves aspects that are working well
-3. Makes changes proportional to conservatism level
+<update-guidelines>
+<conservatism>{self.conservatism:.1f}</conservatism>
+<conservatism-scale>0 = aggressive rewrites, 1 = minimal changes</conservatism-scale>
+<instructions>
+- Address the key points in the feedback
+- Preserve aspects that are working well
+- Make changes proportional to the conservatism level
+- Maintain consistency with any upstream parameter changes
+</instructions>
+</update-guidelines>
 
-Return ONLY the new parameter value, nothing else:
-""".strip()
+<output-format>
+Return ONLY the new parameter value. No explanations, no markdown, no quotes.
+</output-format>"""
 
         return await self.updater(prompt)

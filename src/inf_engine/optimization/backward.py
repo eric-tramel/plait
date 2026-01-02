@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from inf_engine.graph import InferenceGraph
     from inf_engine.module import LLMInference
     from inf_engine.optimization.feedback import Feedback
+    from inf_engine.optimization.optimizer import Optimizer
     from inf_engine.optimization.record import ForwardRecord
 
 
@@ -281,6 +282,7 @@ async def _propagate_backward(
     feedback: Feedback,
     record: ForwardRecord,
     reasoning_llm: LLMInference | None = None,
+    optimizer: Optimizer | None = None,
 ) -> None:
     """Propagate feedback backward through a traced graph.
 
@@ -289,8 +291,9 @@ async def _propagate_backward(
     is the core algorithm for LLM-based optimization.
 
     The algorithm:
-    1. Initialize output nodes with the loss feedback
-    2. For each node in reverse topological order:
+    1. Capture the record for topological ordering (if optimizer provided)
+    2. Initialize output nodes with the loss feedback
+    3. For each node in reverse topological order:
        a. Gather feedback from all downstream nodes
        b. Combine feedback if multiple sources
        c. Create BackwardContext with forward pass information
@@ -304,6 +307,8 @@ async def _propagate_backward(
             node inputs/outputs, and module map.
         reasoning_llm: Optional LLM for backward reasoning, typically
             provided by the optimizer.
+        optimizer: Optional optimizer to capture the record for ordered
+            parameter updates in step().
 
     Example:
         >>> # Called internally by Feedback.backward()
@@ -312,6 +317,9 @@ async def _propagate_backward(
         >>> # Or with explicit optimizer
         >>> await feedback.backward(optimizer=my_optimizer)
     """
+    # Capture record for topological ordering in step()
+    if optimizer is not None:
+        optimizer.capture_record(record)
     graph = record.graph
     feedback_map: dict[str, Feedback] = {}
 

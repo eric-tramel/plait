@@ -181,6 +181,7 @@ class Feedback:
                 feedback=self,
                 record=record,
                 reasoning_llm=reasoning_llm,
+                optimizer=opt,
             )
 
         await asyncio.gather(*[propagate_one(rec) for rec in self._records])

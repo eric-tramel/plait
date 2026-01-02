@@ -250,6 +250,9 @@ class TestFeedbackBackward:
         class MockOptimizer:
             reasoning_llm = None
 
+            def capture_record(self, record):  # noqa: ARG002
+                pass
+
         # Should not raise
         await feedback.backward(optimizer=MockOptimizer())
 
@@ -421,6 +424,9 @@ class TestFeedbackAggregatedRecords:
 
         class MockOptimizer:
             reasoning_llm = None
+
+            def capture_record(self, record):  # noqa: ARG002
+                pass
 
         optimizer = MockOptimizer()
 

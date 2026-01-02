@@ -4,8 +4,70 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from inf_engine.graph import GraphNode, InferenceGraph
+from inf_engine.module import InferenceModule, LLMInference
 from inf_engine.optimization.optimizer import Optimizer, SFAOptimizer
+from inf_engine.optimization.record import ForwardRecord
 from inf_engine.parameter import Parameter
+
+
+def create_mock_record(
+    params: list[Parameter] | None = None,
+    node_ids: list[str] | None = None,
+) -> ForwardRecord:
+    """Create a mock ForwardRecord for testing.
+
+    Args:
+        params: Parameters to include in the module_map.
+        node_ids: Node IDs to create. Defaults to ["node_0", "node_1"].
+
+    Returns:
+        A mock ForwardRecord with proper structure.
+    """
+    if node_ids is None:
+        node_ids = ["node_0", "node_1"]
+
+    # Create mock modules for each node
+    module_map: dict[str, InferenceModule] = {}
+    for _i, node_id in enumerate(node_ids):
+        mock_module = MagicMock(spec=LLMInference)
+        mock_module.named_parameters.return_value = []
+        mock_module.parameters.return_value = []
+        module_map[node_id] = mock_module
+
+    # If params provided, attach them to the first module
+    if params and node_ids:
+        first_mock = module_map[node_ids[0]]
+        first_mock.named_parameters.return_value = [  # type: ignore[attr-defined]
+            (p._name or f"param_{i}", p) for i, p in enumerate(params)
+        ]
+        first_mock.parameters.return_value = params  # type: ignore[attr-defined]
+
+    # Create nodes with proper dependencies
+    nodes: dict[str, GraphNode] = {}
+    for i, node_id in enumerate(node_ids):
+        deps = [node_ids[i - 1]] if i > 0 else []
+        nodes[node_id] = GraphNode(
+            id=node_id,
+            module=module_map[node_id],
+            args=(),
+            kwargs={},
+            dependencies=deps,
+            module_name=f"Module_{i}",
+        )
+
+    graph = InferenceGraph(
+        nodes=nodes,
+        input_ids=[node_ids[0]] if node_ids else [],
+        output_ids=[node_ids[-1]] if node_ids else [],
+    )
+
+    return ForwardRecord(
+        graph=graph,
+        node_inputs={nid: {} for nid in node_ids},
+        node_outputs={nid: f"output_{i}" for i, nid in enumerate(node_ids)},
+        module_map=module_map,
+    )
 
 
 class TestOptimizerABC:
@@ -126,6 +188,13 @@ class TestOptimizerInit:
 
         assert optimizer._step_count == 0
 
+    def test_optimizer_init_records_empty(self) -> None:
+        """Optimizer starts with empty records list."""
+        params = [Parameter("test", description="test")]
+        optimizer = SimpleOptimizer(params)
+
+        assert optimizer._records == []
+
 
 class TestOptimizerAliases:
     """Tests for optimizer's fixed aliases."""
@@ -210,6 +279,39 @@ class TestOptimizerBind:
         assert optimizer.reasoning_llm is None
 
 
+class TestOptimizerCaptureRecord:
+    """Tests for Optimizer.capture_record() method."""
+
+    def test_capture_record_stores_record(self) -> None:
+        """capture_record() stores ForwardRecord in _records list."""
+        params = [Parameter("test", description="test")]
+        optimizer = SimpleOptimizer(params)
+
+        record = create_mock_record(params)
+        optimizer.capture_record(record)
+
+        assert len(optimizer._records) == 1
+        assert optimizer._records[0] is record
+
+    def test_capture_record_accumulates_multiple(self) -> None:
+        """capture_record() accumulates multiple records."""
+        params = [Parameter("test", description="test")]
+        optimizer = SimpleOptimizer(params)
+
+        record1 = create_mock_record(params)
+        record2 = create_mock_record(params)
+        record3 = create_mock_record(params)
+
+        optimizer.capture_record(record1)
+        optimizer.capture_record(record2)
+        optimizer.capture_record(record3)
+
+        assert len(optimizer._records) == 3
+        assert optimizer._records[0] is record1
+        assert optimizer._records[1] is record2
+        assert optimizer._records[2] is record3
+
+
 class TestOptimizerZeroFeedback:
     """Tests for Optimizer.zero_feedback() method."""
 
@@ -255,6 +357,23 @@ class TestOptimizerZeroFeedback:
 
         assert len(param1._feedback_buffer) == 0
         assert len(param2._feedback_buffer) == 1  # Unchanged
+
+    def test_zero_feedback_clears_records(self) -> None:
+        """zero_feedback() clears accumulated ForwardRecords."""
+        param = Parameter("test", description="test")
+        optimizer = SimpleOptimizer([param])
+
+        # Capture some records
+        record1 = create_mock_record([param])
+        record2 = create_mock_record([param])
+        optimizer.capture_record(record1)
+        optimizer.capture_record(record2)
+
+        assert len(optimizer._records) == 2
+
+        optimizer.zero_feedback()
+
+        assert len(optimizer._records) == 0
 
 
 class TestOptimizerStep:
@@ -414,15 +533,36 @@ class TestSFAOptimizerStep:
         assert "not bound" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
+    async def test_step_requires_records(self) -> None:
+        """step() raises RuntimeError if no records captured."""
+        param = Parameter("test", description="test")
+        param._name = "param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param])
+        optimizer._bound = True
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await optimizer.step()
+
+        assert "No ForwardRecords captured" in str(exc_info.value)
+
+    @pytest.mark.asyncio
     async def test_step_skips_params_without_feedback(self) -> None:
         """step() skips parameters with empty feedback buffer."""
         param1 = Parameter("value1", description="Has feedback")
+        param1._name = "param1"
         param2 = Parameter("value2", description="No feedback")
+        param2._name = "param2"
 
         param1.accumulate_feedback("some feedback")
         # param2 has no feedback
 
         optimizer = SFAOptimizer([param1, param2])
+
+        # Provide a mock record
+        record = create_mock_record([param1, param2])
+        optimizer.capture_record(record)
 
         # Mock the internal LLMs
         optimizer.aggregator = AsyncMock(return_value="aggregated feedback")
@@ -433,15 +573,18 @@ class TestSFAOptimizerStep:
 
         # Only param1 should be updated
         assert len(updates) == 1
-        assert param1._name in updates or "value1" in str(updates)
+        assert "param1" in updates
 
     @pytest.mark.asyncio
     async def test_step_skips_non_grad_params(self) -> None:
         """step() skips parameters with requires_grad=False."""
         param = Parameter("test", description="Frozen param", requires_grad=False)
+        param._name = "param"
         param._feedback_buffer = ["feedback"]  # Bypass accumulate_feedback check
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer._bound = True
 
         updates = await optimizer.step()
@@ -459,6 +602,8 @@ class TestSFAOptimizerStep:
         param.accumulate_feedback("feedback 3")
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.aggregator = AsyncMock(return_value="aggregated: all three feedbacks")
         optimizer.updater = AsyncMock(return_value="updated value")
         optimizer._bound = True
@@ -469,11 +614,11 @@ class TestSFAOptimizerStep:
         optimizer.aggregator.assert_called_once()
         call_prompt = optimizer.aggregator.call_args[0][0]
 
-        # Should include all feedback items
+        # Should include all feedback items (using XML format now)
         assert "feedback 1" in call_prompt
         assert "feedback 2" in call_prompt
         assert "feedback 3" in call_prompt
-        assert "3 feedback items" in call_prompt
+        assert 'count="3"' in call_prompt
 
     @pytest.mark.asyncio
     async def test_step_skips_aggregation_for_single_feedback(self) -> None:
@@ -483,6 +628,8 @@ class TestSFAOptimizerStep:
         param.accumulate_feedback("single feedback")
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.aggregator = AsyncMock()
         optimizer.updater = AsyncMock(return_value="updated value")
         optimizer._bound = True
@@ -507,6 +654,8 @@ class TestSFAOptimizerStep:
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.aggregator = AsyncMock()
         optimizer.updater = AsyncMock(return_value="updated")
         optimizer._bound = True
@@ -524,6 +673,8 @@ class TestSFAOptimizerStep:
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(return_value="new improved value")
         optimizer._bound = True
 
@@ -542,6 +693,8 @@ class TestSFAOptimizerStep:
         assert len(param._feedback_buffer) == 2
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.aggregator = AsyncMock(return_value="aggregated feedback")
         optimizer.updater = AsyncMock(return_value="updated")
         optimizer._bound = True
@@ -558,6 +711,8 @@ class TestSFAOptimizerStep:
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(return_value="new value")
         optimizer._bound = True
 
@@ -571,9 +726,12 @@ class TestSFAOptimizerStep:
     async def test_step_increments_counter(self) -> None:
         """step() increments step count."""
         param = Parameter("test", description="test")
+        param._name = "param"
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(return_value="updated")
         optimizer._bound = True
 
@@ -582,6 +740,8 @@ class TestSFAOptimizerStep:
         await optimizer.step()
         assert optimizer._step_count == 1
 
+        # For next step, need to re-add record and feedback
+        optimizer.capture_record(record)
         param.accumulate_feedback("more feedback")
         await optimizer.step()
         assert optimizer._step_count == 2
@@ -598,6 +758,8 @@ class TestSFAOptimizerConservatism:
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param], conservatism=0.8)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(return_value="updated")
         optimizer._bound = True
 
@@ -615,6 +777,8 @@ class TestSFAOptimizerConservatism:
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param], conservatism=0.2)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(return_value="updated")
         optimizer._bound = True
 
@@ -623,7 +787,7 @@ class TestSFAOptimizerConservatism:
         call_prompt = optimizer.updater.call_args[0][0]
         assert "0.2" in call_prompt
         # Prompt should explain the scale (0=aggressive, 1=minimal)
-        assert "aggressive" in call_prompt.lower() or "0=" in call_prompt
+        assert "aggressive" in call_prompt.lower() or "0 =" in call_prompt
 
     @pytest.mark.asyncio
     async def test_high_conservatism_prompt(self) -> None:
@@ -633,6 +797,8 @@ class TestSFAOptimizerConservatism:
         param.accumulate_feedback("feedback")
 
         optimizer = SFAOptimizer([param], conservatism=0.9)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(return_value="updated")
         optimizer._bound = True
 
@@ -641,7 +807,7 @@ class TestSFAOptimizerConservatism:
         call_prompt = optimizer.updater.call_args[0][0]
         assert "0.9" in call_prompt
         # Prompt should explain the scale
-        assert "minimal" in call_prompt.lower() or "1=" in call_prompt
+        assert "minimal" in call_prompt.lower() or "1 =" in call_prompt
 
 
 class TestSFAOptimizerMultipleParams:
@@ -659,6 +825,8 @@ class TestSFAOptimizerMultipleParams:
         param2.accumulate_feedback("feedback for 2")
 
         optimizer = SFAOptimizer([param1, param2])
+        record = create_mock_record([param1, param2])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(side_effect=["updated1", "updated2"])
         optimizer._bound = True
 
@@ -684,6 +852,9 @@ class TestSFAOptimizerMultipleParams:
         param3.accumulate_feedback("more feedback")
 
         optimizer = SFAOptimizer([param1, param2, param3])
+        # Create a record that includes all params
+        record = create_mock_record([param1, param2, param3])
+        optimizer.capture_record(record)
         optimizer.updater = AsyncMock(side_effect=["new1", "new3"])
         optimizer._bound = True
 
@@ -718,12 +889,18 @@ class TestSFAOptimizerIntegration:
 
         # Forward + backward for sample 1
         param.accumulate_feedback("Sample 1: too verbose")
+        record1 = create_mock_record([param])
+        optimizer.capture_record(record1)
 
         # Forward + backward for sample 2
         param.accumulate_feedback("Sample 2: good structure")
+        record2 = create_mock_record([param])
+        optimizer.capture_record(record2)
 
         # Forward + backward for sample 3
         param.accumulate_feedback("Sample 3: needs examples")
+        record3 = create_mock_record([param])
+        optimizer.capture_record(record3)
 
         # Optimizer step
         updates = await optimizer.step()
@@ -758,6 +935,8 @@ class TestSFAOptimizerIntegration:
         # Epoch 1
         optimizer.zero_feedback()
         param.accumulate_feedback("epoch 1 feedback")
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
         await optimizer.step()
         assert param.value == "v2"
         assert optimizer._step_count == 1
@@ -765,6 +944,7 @@ class TestSFAOptimizerIntegration:
         # Epoch 2
         optimizer.zero_feedback()
         param.accumulate_feedback("epoch 2 feedback")
+        optimizer.capture_record(record)
         await optimizer.step()
         assert param.value == "v3"
         assert optimizer._step_count == 2
@@ -772,9 +952,170 @@ class TestSFAOptimizerIntegration:
         # Epoch 3
         optimizer.zero_feedback()
         param.accumulate_feedback("epoch 3 feedback")
+        optimizer.capture_record(record)
         await optimizer.step()
         assert param.value == "v4"
         assert optimizer._step_count == 3
+
+
+class TestSFAOptimizerTopologicalOrder:
+    """Tests for topologically-ordered parameter updates."""
+
+    def _create_linear_graph_record(
+        self,
+        params: list[Parameter],
+    ) -> ForwardRecord:
+        """Create a record with linear dependency: node0 -> node1 -> node2.
+
+        Each param is placed in a separate node for proper topological order testing.
+        """
+        node_ids = [f"node_{i}" for i in range(len(params))]
+        module_map: dict[str, InferenceModule] = {}
+
+        for i, (node_id, param) in enumerate(zip(node_ids, params, strict=True)):
+            mock_module = MagicMock(spec=LLMInference)
+            mock_module.named_parameters.return_value = [
+                (param._name or f"p{i}", param)
+            ]
+            mock_module.parameters.return_value = [param]
+            module_map[node_id] = mock_module
+
+        # Create nodes with linear dependencies
+        nodes: dict[str, GraphNode] = {}
+        for i, node_id in enumerate(node_ids):
+            deps = [node_ids[i - 1]] if i > 0 else []
+            nodes[node_id] = GraphNode(
+                id=node_id,
+                module=module_map[node_id],
+                args=(),
+                kwargs={},
+                dependencies=deps,
+                module_name=f"Module_{i}",
+            )
+
+        graph = InferenceGraph(
+            nodes=nodes,
+            input_ids=[node_ids[0]] if node_ids else [],
+            output_ids=[node_ids[-1]] if node_ids else [],
+        )
+
+        return ForwardRecord(
+            graph=graph,
+            node_inputs={nid: {} for nid in node_ids},
+            node_outputs={nid: f"output_{i}" for i, nid in enumerate(node_ids)},
+            module_map=module_map,
+        )
+
+    @pytest.mark.asyncio
+    async def test_step_processes_in_topological_order(self) -> None:
+        """step() processes parameters in forward topological order."""
+        param1 = Parameter("value1", description="First in pipeline")
+        param1._name = "upstream_param"
+        param2 = Parameter("value2", description="Second in pipeline")
+        param2._name = "downstream_param"
+
+        param1.accumulate_feedback("feedback 1")
+        param2.accumulate_feedback("feedback 2")
+
+        optimizer = SFAOptimizer([param1, param2])
+
+        # Create a linear graph where param1 is upstream of param2
+        record = self._create_linear_graph_record([param1, param2])
+        optimizer.capture_record(record)
+
+        # Track the order of updates
+        update_order: list[str] = []
+
+        async def mock_updater(prompt: str) -> str:
+            # Check for the parameter being updated (in <parameter name="...">)
+            if '<parameter name="upstream_param">' in prompt:
+                update_order.append("upstream_param")
+                return "updated_upstream"
+            else:
+                update_order.append("downstream_param")
+                return "updated_downstream"
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        await optimizer.step()
+
+        # Upstream should be processed before downstream
+        assert update_order == ["upstream_param", "downstream_param"]
+
+    @pytest.mark.asyncio
+    async def test_step_includes_upstream_context(self) -> None:
+        """step() includes upstream changes in downstream update prompts."""
+        param1 = Parameter("original_format", description="Format specification")
+        param1._name = "format_spec"
+        param2 = Parameter("original_validator", description="Validation rules")
+        param2._name = "validator"
+
+        param1.accumulate_feedback("change to YAML")
+        param2.accumulate_feedback("update validation")
+
+        optimizer = SFAOptimizer([param1, param2])
+
+        # Create a linear graph where param1 is upstream of param2
+        record = self._create_linear_graph_record([param1, param2])
+        optimizer.capture_record(record)
+
+        captured_prompts: list[str] = []
+
+        async def mock_updater(prompt: str) -> str:
+            captured_prompts.append(prompt)
+            if "format_spec" in prompt:
+                return "YAML format"
+            else:
+                return "updated validator"
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        await optimizer.step()
+
+        # The second prompt (downstream) should have upstream context
+        assert len(captured_prompts) == 2
+
+        # First prompt should NOT have upstream-updates
+        assert "<upstream-updates>" not in captured_prompts[0]
+
+        # Second prompt should have upstream context showing the format change
+        assert "<upstream-updates>" in captured_prompts[1]
+        assert "format_spec" in captured_prompts[1]
+        assert "YAML format" in captured_prompts[1]
+
+    @pytest.mark.asyncio
+    async def test_step_uses_xml_formatted_prompts(self) -> None:
+        """step() uses XML tags for content demarcation in prompts."""
+        param = Parameter("test value", description="Test param")
+        param._name = "param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param])
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
+
+        captured_prompt = ""
+
+        async def mock_updater(prompt: str) -> str:
+            nonlocal captured_prompt
+            captured_prompt = prompt
+            return "updated"
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        await optimizer.step()
+
+        # Check for XML structure
+        assert "<task>" in captured_prompt
+        assert "<parameter" in captured_prompt
+        assert "<description>" in captured_prompt
+        assert "<current-value>" in captured_prompt
+        assert "<aggregated-feedback>" in captured_prompt
+        assert "<update-guidelines>" in captured_prompt
+        assert "<output-format>" in captured_prompt
 
 
 class TestOptimizerExportFromPackage:

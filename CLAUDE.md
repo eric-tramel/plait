@@ -186,7 +186,6 @@ inf-engine/
 │   ├── execution.md         # Scheduler and state
 │   ├── resources.md         # Endpoint configuration
 │   ├── optimization.md      # Backward pass and learning
-│   └── development_plan.md  # Implementation phases
 ├── TASKS.md                 # PR-by-PR implementation breakdown
 ├── CHANGELOG.md             # Version history
 ├── Makefile                 # Build targets
@@ -212,7 +211,6 @@ Key design principle: **Separation of concerns** - module definitions are indepe
 | `TASKS.md` | PR-by-PR implementation tasks |
 | `CHANGELOG.md` | Version history and changes |
 | `design_docs/architecture.md` | System architecture |
-| `design_docs/development_plan.md` | Implementation phases |
 | `Makefile` | Build and test targets |
 | `pyproject.toml` | Dependencies and tool config |
 
