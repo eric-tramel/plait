@@ -9,7 +9,8 @@ custom `InferenceModule` subclasses.
 1. **Stateless transforms**: Provide simple, composable operations.
 2. **Graph-aware by default**: Calls record nodes during tracing.
 3. **Value-first**: Inputs can be raw data or `Value`; outputs are `Value`.
-4. **Batch-friendly**: Operations should accept lists/tuples/dicts of `Value`.
+4. **Explicit collections**: Core ops are scalar. Use `map_values`/`zip_values`/
+   `stack_structured` for element-wise or batch workflows.
 
 ## Usage
 
@@ -32,8 +33,10 @@ summary = llm(prompt)
   `Value` with the appropriate `kind` and optional metadata.
 - **Errors as values**: Ops never raise runtime errors. Failures return
   `Value(ERROR)` for graph-aware error propagation.
-- **Collections**: Ops should traverse lists/tuples/dicts of Values and apply
-  element-wise semantics where meaningful.
+- **Collections**: Scalar ops do not traverse lists/tuples/dicts. Use
+  `map_values`/`zip_values` for element-wise logic; `stack_structured` handles
+  structured batching. Structured ops (`select`, `merge`) operate on structured
+  payloads only.
 
 ## Error Propagation and Resolution
 
@@ -67,11 +70,15 @@ This preserves provenance while keeping a single error value flowing.
 
 ## Function Reference
 
+Unless stated otherwise, functions accept raw Python values or `Value` and
+operate on a single value at a time. They do not implicitly map over
+collections.
+
 ### Text and F-String Ops
 
 #### F.render
 
-**Signature**: `render(template: Value[FSTRING], vars: Value[STRUCTURED]) -> Value[TEXT] | Value[ERROR]`
+**Signature**: `render(template: Value[FSTRING] | str, vars: Value[STRUCTURED] | dict[str, Any]) -> Value[TEXT] | Value[ERROR]`
 
 **Description**: Render an f-string template using structured variables.
 
@@ -105,7 +112,7 @@ text = F.concat(title, body)
 
 #### F.format
 
-**Signature**: `format(fmt: Value[TEXT] | str, vars: Value[STRUCTURED]) -> Value[TEXT] | Value[ERROR]`
+**Signature**: `format(fmt: Value[TEXT] | str, vars: Value[STRUCTURED] | dict[str, Any]) -> Value[TEXT] | Value[ERROR]`
 
 **Description**: Apply structured formatting to a format string.
 
@@ -122,7 +129,7 @@ text = F.format(fmt, vars)
 
 #### F.strip
 
-**Signature**: `strip(text: Value[TEXT], *, chars: str | None = None) -> Value[TEXT] | Value[ERROR]`
+**Signature**: `strip(text: Value[TEXT] | str, *, chars: Value[TEXT] | str | None = None) -> Value[TEXT] | Value[ERROR]`
 
 **Description**: Trim whitespace or specified characters from both ends.
 
@@ -137,8 +144,8 @@ clean = F.strip(valueify("  hi  "))
 
 #### F.lower / F.upper
 
-**Signature**: `lower(text: Value[TEXT]) -> Value[TEXT] | Value[ERROR]`  
-**Signature**: `upper(text: Value[TEXT]) -> Value[TEXT] | Value[ERROR]`
+**Signature**: `lower(text: Value[TEXT] | str) -> Value[TEXT] | Value[ERROR]`  
+**Signature**: `upper(text: Value[TEXT] | str) -> Value[TEXT] | Value[ERROR]`
 
 **Description**: Convert text to lowercase or uppercase.
 
@@ -156,7 +163,7 @@ uppered = F.upper(valueify("Hi"))
 
 #### F.parse_structured
 
-**Signature**: `parse_structured(text: Value[TEXT], schema: type | None = None) -> Value[STRUCTURED] | Value[ERROR]`
+**Signature**: `parse_structured(text: Value[TEXT] | str, schema: type | None = None) -> Value[STRUCTURED] | Value[ERROR]`
 
 **Description**: Parse structured text into a structured payload, optionally validating a schema.
 
@@ -171,7 +178,7 @@ structured = F.parse_structured(valueify("{\"a\": 1}"))
 
 #### F.select
 
-**Signature**: `select(struct: Value[STRUCTURED], key_or_path: str | int | list[str | int], *, default: Any | None = None) -> Value | Value[ERROR]`
+**Signature**: `select(struct: Value[STRUCTURED] | dict | list | tuple, key_or_path: str | int | list[str | int], *, default: Any | None = None) -> Value | Value[ERROR]`
 
 **Description**: Select a field by key or path from a structured value.
 
@@ -191,7 +198,7 @@ chained access remains graph-aware (e.g., `value["a"]["b"]`).
 
 #### F.merge
 
-**Signature**: `merge(*structs: Value[STRUCTURED]) -> Value[STRUCTURED] | Value[ERROR]`
+**Signature**: `merge(*structs: Value[STRUCTURED] | dict[str, Any]) -> Value[STRUCTURED] | Value[ERROR]`
 
 **Description**: Merge structured objects left-to-right.
 
@@ -206,7 +213,7 @@ merged = F.merge(valueify({"a": 1}), valueify({"b": 2}))
 
 #### F.coerce
 
-**Signature**: `coerce(value: Value, kind: ValueKind) -> Value | Value[ERROR]`
+**Signature**: `coerce(value: Value | str | int | float | dict | list | tuple, kind: ValueKind) -> Value | Value[ERROR]`
 
 **Description**: Coerce a value to a target kind when safe.
 
@@ -292,7 +299,7 @@ quot = F.div(valueify(7), valueify(2))
 
 #### F.sum
 
-**Signature**: `sum(values: list[Value[INT|FLOAT]] | list[int|float]) -> Value[INT|FLOAT] | Value[ERROR]`
+**Signature**: `sum(values: Sequence[Value[INT|FLOAT] | int | float] | Value) -> Value[INT|FLOAT] | Value[ERROR]`
 
 **Description**: Sum a list of numeric values with numeric promotion.
 
@@ -307,7 +314,7 @@ total = F.sum(valueify([1, 2, 3]))
 
 #### F.min
 
-**Signature**: `min(values: list[Value[INT|FLOAT]] | list[int|float]) -> Value[INT|FLOAT] | Value[ERROR]`
+**Signature**: `min(values: Sequence[Value[INT|FLOAT] | int | float] | Value) -> Value[INT|FLOAT] | Value[ERROR]`
 
 **Description**: Return the minimum of a list of numeric values.
 
@@ -322,7 +329,7 @@ lowest = F.min(valueify([3, 1, 2]))
 
 #### F.max
 
-**Signature**: `max(values: list[Value[INT|FLOAT]] | list[int|float]) -> Value[INT|FLOAT] | Value[ERROR]`
+**Signature**: `max(values: Sequence[Value[INT|FLOAT] | int | float] | Value) -> Value[INT|FLOAT] | Value[ERROR]`
 
 **Description**: Return the maximum of a list of numeric values.
 
@@ -337,7 +344,7 @@ highest = F.max(valueify([3, 1, 2]))
 
 #### F.mean
 
-**Signature**: `mean(values: list[Value[INT|FLOAT]] | list[int|float]) -> Value[FLOAT] | Value[ERROR]`
+**Signature**: `mean(values: Sequence[Value[INT|FLOAT] | int | float] | Value) -> Value[FLOAT] | Value[ERROR]`
 
 **Description**: Return the mean of a list of numeric values (always FLOAT).
 
@@ -354,7 +361,7 @@ avg = F.mean(valueify([1, 2, 3]))
 
 #### F.extract_text
 
-**Signature**: `extract_text(resp: Value[RESPONSE]) -> Value[TEXT] | Value[ERROR]`
+**Signature**: `extract_text(resp: Value[RESPONSE] | object) -> Value[TEXT] | Value[ERROR]`
 
 **Description**: Extract text content from a response value.
 
@@ -369,7 +376,7 @@ text = F.extract_text(response_value)
 
 #### F.extract_meta
 
-**Signature**: `extract_meta(resp: Value[RESPONSE]) -> Value[STRUCTURED] | Value[ERROR]`
+**Signature**: `extract_meta(resp: Value[RESPONSE] | object) -> Value[STRUCTURED] | Value[ERROR]`
 
 **Description**: Extract usage/model metadata from a response value.
 
@@ -384,7 +391,7 @@ meta = F.extract_meta(response_value)
 
 #### F.chat_complete
 
-**Signature**: `chat_complete(client: Any, *, messages: list[dict[str, str]] | Value[STRUCTURED], model: str | None = None, temperature: float | None = None, max_tokens: int | None = None, **kwargs: Any) -> Value[RESPONSE] | Value[ERROR]`
+**Signature**: `chat_complete(client: Any, *, messages: Sequence[Mapping[str, str]] | Value[STRUCTURED], model: str | None = None, temperature: float | None = None, max_tokens: int | None = None, **kwargs: Any) -> Value[RESPONSE] | Value[ERROR]`
 
 **Description**: Atomic transport for structured chat inputs. Executes an async OpenAI chat completion and returns the raw response object wrapped as `Value(RESPONSE)`.
 
@@ -420,7 +427,7 @@ tagged = F.with_meta(valueify("hi"), source="test")
 
 #### F.try_render
 
-**Signature**: `try_render(template: Value[FSTRING], vars: Value[STRUCTURED]) -> Value[TEXT] | Value[ERROR]`
+**Signature**: `try_render(template: Value[FSTRING] | str, vars: Value[STRUCTURED] | dict[str, Any]) -> Value[TEXT] | Value[ERROR]`
 
 **Description**: Render an f-string template and return errors as values.
 
@@ -435,7 +442,7 @@ prompt = F.try_render(valueify("{x}", kind=ValueKind.FSTRING), valueify({"x": 1}
 
 #### F.unwrap_or
 
-**Signature**: `unwrap_or(value: Value, default: Any) -> Value`
+**Signature**: `unwrap_or(value: Value | object, default: Any) -> Value`
 
 **Description**: Return a fallback value when the input is an error.
 
@@ -450,7 +457,7 @@ safe = F.unwrap_or(maybe_error_value, "fallback")
 
 #### F.is_error
 
-**Signature**: `is_error(value: Value) -> Value[STRUCTURED]`
+**Signature**: `is_error(value: Value | object) -> Value[STRUCTURED]`
 
 **Description**: Return a structured flag indicating whether input is an error.
 
@@ -466,9 +473,9 @@ flag = F.is_error(maybe_error_value)
 
 #### F.map_values
 
-**Signature**: `map_values(fn, values: list[Value] | tuple[Value, ...]) -> list[Value]`
+**Signature**: `map_values(fn, values: Sequence[Value] | Value) -> list[Value]`
 
-**Description**: Apply a function element-wise across a batch.
+**Description**: Apply a function element-wise across a list/tuple batch.
 
 **Usage**:
 ```python
@@ -477,11 +484,13 @@ out = F.map_values(F.strip, valueify([" a ", " b "]))
 
 **Errors**:
 - If an element is `Value(ERROR)`, that error is returned for that element.
-- If `fn` returns an error for an element, that error is preserved.
+- If `fn` raises or returns an error for an element, that error is preserved.
+- If `values` is not list/tuple-like, returns a single `Value(ERROR)` inside the
+  output list.
 
 #### F.zip_values
 
-**Signature**: `zip_values(*batches: list[Value]) -> list[tuple[Value, ...]] | Value[ERROR]`
+**Signature**: `zip_values(*batches: Sequence[Value] | Value) -> list[tuple[Value, ...]] | Value[ERROR]`
 
 **Description**: Zip multiple batches into tuples, validating equal lengths.
 
@@ -496,7 +505,7 @@ pairs = F.zip_values(valueify(["a", "b"]), valueify(["1", "2"]))
 
 #### F.stack_structured
 
-**Signature**: `stack_structured(values: list[Value[STRUCTURED]]) -> Value[STRUCTURED] | Value[ERROR]`
+**Signature**: `stack_structured(values: Sequence[Value[STRUCTURED] | dict | list | tuple] | Value) -> Value[STRUCTURED] | Value[ERROR]`
 
 **Description**: Stack structured values into a single structured payload.
 

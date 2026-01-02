@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add functional API for Value operations
 - Lift parameters into Value with stable refs
   - `Parameter.description` is now optional when `requires_grad=False`
   - `Parameter.description` is required when `requires_grad=True` (raises ValueError)
