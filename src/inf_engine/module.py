@@ -49,6 +49,8 @@ class InferenceModule:
     _children: dict[str, InferenceModule]
     _parameters: dict[str, Parameter]
     _name: str | None
+    _parent: InferenceModule | None
+    _module_state_version: int
     _bound_resources: ResourceConfig | ResourceManager | None
     _bound_config: dict[str, Any]
     _training: bool
@@ -63,6 +65,8 @@ class InferenceModule:
         object.__setattr__(self, "_children", {})
         object.__setattr__(self, "_parameters", {})
         object.__setattr__(self, "_name", None)
+        object.__setattr__(self, "_parent", None)
+        object.__setattr__(self, "_module_state_version", 0)
         object.__setattr__(self, "_bound_resources", None)
         object.__setattr__(self, "_bound_config", {})
         object.__setattr__(self, "_training", False)
@@ -89,10 +93,12 @@ class InferenceModule:
 
         if isinstance(value, InferenceModule):
             self._children[name] = value
-            value._name = name
+            object.__setattr__(value, "_name", name)
+            object.__setattr__(value, "_parent", self)
         elif isinstance(value, Parameter):
             self._parameters[name] = value
-            value._name = name
+            object.__setattr__(value, "_name", name)
+            object.__setattr__(value, "_parent", self)
 
         object.__setattr__(self, name, value)
 
@@ -264,6 +270,15 @@ class InferenceModule:
         for name, child in self.named_children():
             child_prefix = f"{prefix}.{name}" if prefix else name
             yield from child.named_parameters(child_prefix)
+
+    def _increment_state_version(self) -> None:
+        """Increment the module state version.
+
+        Called when any parameter owned by this module updates.
+        """
+        object.__setattr__(
+            self, "_module_state_version", self._module_state_version + 1
+        )
 
     # ─────────────────────────────────────────────────────────────
     # State Serialization (PyTorch-like API)

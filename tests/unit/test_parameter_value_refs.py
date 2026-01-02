@@ -4,6 +4,7 @@ Tests the stable ref format (param:<name>) and ValueKind inference
 when lifting Parameters to Values via valueify().
 """
 
+from inf_engine.module import InferenceModule
 from inf_engine.parameter import Parameter
 from inf_engine.values import (
     ValueKind,
@@ -23,11 +24,16 @@ class TestParameterRefFormat:
         v = valueify(param)
         assert v.ref.startswith("param:")
 
-    def test_param_ref_with_name(self) -> None:
-        """Named parameters use param:<name> format."""
-        param = Parameter("value", description="Test")
-        param._name = "system_prompt"
-        v = valueify(param)
+    def test_param_ref_with_name_from_module(self) -> None:
+        """Parameters assigned to modules use param:<attr_name> format."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.system_prompt = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.system_prompt)
         assert v.ref == "param:system_prompt"
 
     def test_param_ref_without_name_uses_id(self) -> None:
@@ -36,40 +42,65 @@ class TestParameterRefFormat:
         v = valueify(param)
         assert v.ref == f"param:{param._id}"
 
-    def test_param_ref_hierarchical_single_level(self) -> None:
-        """Single-level module names are preserved."""
-        param = Parameter("value", description="Test")
-        param._name = "prompt"
-        v = valueify(param)
+    def test_param_ref_simple_attribute_name(self) -> None:
+        """Parameter _name is set to attribute name when assigned to module."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.prompt)
         assert v.ref == "param:prompt"
 
-    def test_param_ref_hierarchical_two_levels(self) -> None:
-        """Two-level module.param names are preserved."""
-        param = Parameter("value", description="Test")
-        param._name = "module.prompt"
-        v = valueify(param)
-        assert v.ref == "param:module.prompt"
+    def test_param_ref_nested_module_uses_hierarchical_path(self) -> None:
+        """Nested module parameters use hierarchical path in refs.
 
-    def test_param_ref_hierarchical_deep_nesting(self) -> None:
-        """Deeply nested names are fully preserved."""
-        param = Parameter("value", description="Test")
-        param._name = "root.child.grandchild.prompt"
-        v = valueify(param)
-        assert v.ref == "param:root.child.grandchild.prompt"
+        When valueify() is called on a parameter owned by a nested module,
+        the ref includes the full hierarchical path from the root module.
+        """
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w", description="Inner weight")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.inner = Inner()
+
+        outer = Outer()
+        # The ref uses the hierarchical path "inner.weight"
+        v = valueify(outer.inner.weight)
+        assert v.ref == "param:inner.weight"
+        # The _name field still stores immediate attr name
+        assert outer.inner.weight._name == "weight"
 
     def test_param_ref_with_underscores(self) -> None:
         """Parameter names with underscores are preserved."""
-        param = Parameter("value", description="Test")
-        param._name = "my_module.my_prompt"
-        v = valueify(param)
-        assert v.ref == "param:my_module.my_prompt"
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_prompt = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.my_prompt)
+        assert v.ref == "param:my_prompt"
 
     def test_param_ref_numeric_suffix(self) -> None:
         """Parameter names with numeric suffixes are preserved."""
-        param = Parameter("value", description="Test")
-        param._name = "layer0.prompt1"
-        v = valueify(param)
-        assert v.ref == "param:layer0.prompt1"
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt1 = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.prompt1)
+        assert v.ref == "param:prompt1"
 
 
 class TestParameterStructuredKindInference:
@@ -166,18 +197,30 @@ class TestParameterKindOverride:
 
     def test_override_preserves_ref(self) -> None:
         """Kind override preserves the parameter ref."""
-        param = Parameter("value", description="Test")
-        param._name = "my_param"
-        v = valueify(param, kind=ValueKind.OTHER)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.my_param, kind=ValueKind.OTHER)
         assert v.ref == "param:my_param"
 
     def test_override_preserves_metadata(self) -> None:
         """Kind override preserves all parameter metadata."""
-        param = Parameter("value", description="Test", requires_grad=True)
-        param._name = "my_param"
-        v = valueify(param, kind=ValueKind.OTHER)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter(
+                    "value", description="Test", requires_grad=True
+                )
+
+        module = TestModule()
+        v = valueify(module.my_param, kind=ValueKind.OTHER)
         assert v.meta["param_name"] == "my_param"
-        assert v.meta["param_id"] == param._id
+        assert v.meta["param_id"] == module.my_param._id
         assert v.meta["requires_grad"] is True
 
 
@@ -186,30 +229,43 @@ class TestParameterValueRefInteraction:
 
     def test_parameter_value_in_collect_refs(self) -> None:
         """Parameter-derived Values work with collect_refs."""
-        param = Parameter("value", description="Test")
-        param._name = "my_param"
-        v = valueify(param)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.my_param)
         refs = collect_refs(v)
         assert refs == ["param:my_param"]
 
     def test_parameter_value_replace_with_ref(self) -> None:
         """Parameter-derived Values can be replaced with ValueRef."""
-        param = Parameter("value", description="Test")
-        param._name = "my_param"
-        v = valueify(param)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.my_param)
         ref = replace_values_with_refs(v)
         assert isinstance(ref, ValueRef)
         assert ref.ref == "param:my_param"
 
     def test_parameter_values_in_nested_structure(self) -> None:
         """Parameter Values work in nested structures."""
-        param1 = Parameter("first", description="First")
-        param1._name = "p1"
-        param2 = Parameter("second", description="Second")
-        param2._name = "p2"
 
-        v1 = valueify(param1)
-        v2 = valueify(param2)
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.p1 = Parameter("first", description="First")
+                self.p2 = Parameter("second", description="Second")
+
+        module = TestModule()
+        v1 = valueify(module.p1)
+        v2 = valueify(module.p2)
         nested = {"a": v1, "b": [v2]}
 
         refs = collect_refs(nested)
@@ -217,9 +273,14 @@ class TestParameterValueRefInteraction:
 
     def test_parameter_value_ref_in_replace(self) -> None:
         """Nested parameter Values are replaced with ValueRefs."""
-        param = Parameter("value", description="Test")
-        param._name = "nested_param"
-        v = valueify(param)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.nested_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.nested_param)
         structure = [v, {"key": v}]
 
         result = replace_values_with_refs(structure)
@@ -231,11 +292,23 @@ class TestParameterValueRefInteraction:
 class TestConstantParameterRefs:
     """Tests for Parameters with requires_grad=False."""
 
-    def test_constant_parameter_has_ref(self) -> None:
-        """Constant parameters still get refs when valueified."""
+    def test_constant_parameter_has_ref_when_owned(self) -> None:
+        """Constant parameters get refs from module ownership."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.config = Parameter({"model": "gpt-4"}, requires_grad=False)
+
+        module = TestModule()
+        v = valueify(module.config)
+        assert v.ref == "param:config"
+
+    def test_constant_parameter_has_ref_when_unowned(self) -> None:
+        """Unowned constant parameters use id-based refs."""
         param = Parameter({"model": "gpt-4"}, requires_grad=False)
         v = valueify(param)
-        assert v.ref.startswith("param:")
+        assert v.ref == f"param:{param._id}"
 
     def test_constant_parameter_meta_requires_grad_false(self) -> None:
         """Constant parameters have requires_grad=False in meta."""
@@ -251,7 +324,11 @@ class TestConstantParameterRefs:
 
 
 class TestParameterModuleStateVersion:
-    """Tests for module_state_version tracking in Parameter Values."""
+    """Tests for module_state_version tracking in Parameter Values.
+
+    The module_state_version tracks the version of the owning module's state.
+    This is tracked at the module level, not the individual parameter level.
+    """
 
     def test_initial_version_is_zero(self) -> None:
         """New parameters start with module_state_version=0."""
@@ -259,18 +336,214 @@ class TestParameterModuleStateVersion:
         v = valueify(param)
         assert v.meta["module_state_version"] == 0
 
-    def test_version_increments_after_update(self) -> None:
-        """module_state_version increments after apply_update."""
-        param = Parameter("old", description="Test")
-        param.apply_update("new")
-        v = valueify(param)
-        assert v.meta["module_state_version"] == 1
+    def test_owned_parameter_initial_version_is_zero(self) -> None:
+        """Parameters owned by modules start at the module's version (0)."""
 
-    def test_version_tracks_multiple_updates(self) -> None:
-        """module_state_version tracks multiple updates."""
-        param = Parameter("v0", description="Test")
-        param.apply_update("v1")
-        param.apply_update("v2")
-        param.apply_update("v3")
-        v = valueify(param)
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.prompt)
+        assert v.meta["module_state_version"] == 0
+
+    def test_module_version_shared_across_parameters(self) -> None:
+        """All parameters in a module share the same module_state_version."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt1 = Parameter("v1", description="First")
+                self.prompt2 = Parameter("v2", description="Second")
+
+        module = TestModule()
+        v1 = valueify(module.prompt1)
+        v2 = valueify(module.prompt2)
+        assert v1.meta["module_state_version"] == v2.meta["module_state_version"]
+
+    def test_module_version_increments_on_any_param_update(self) -> None:
+        """Module version increments when any parameter is updated."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt1 = Parameter("v1", description="First")
+                self.prompt2 = Parameter("v2", description="Second")
+
+        module = TestModule()
+        # Update first parameter
+        module.prompt1.apply_update("new1")
+
+        # Both parameters should reflect the module's incremented version
+        v1 = valueify(module.prompt1)
+        v2 = valueify(module.prompt2)
+        assert v1.meta["module_state_version"] == 1
+        assert v2.meta["module_state_version"] == 1
+
+    def test_module_version_tracks_multiple_updates(self) -> None:
+        """Module version increments with each parameter update."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("v0", description="Test")
+
+        module = TestModule()
+        module.prompt.apply_update("v1")
+        module.prompt.apply_update("v2")
+        module.prompt.apply_update("v3")
+        v = valueify(module.prompt)
         assert v.meta["module_state_version"] == 3
+
+    def test_nested_module_has_own_version(self) -> None:
+        """Nested modules maintain their own module_state_version."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w", description="Inner weight")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = Parameter("b", description="Outer bias")
+                self.inner = Inner()
+
+        outer = Outer()
+        # Update only inner's parameter
+        outer.inner.weight.apply_update("new_w")
+
+        # Inner's version should increment, outer's should not
+        inner_v = valueify(outer.inner.weight)
+        outer_v = valueify(outer.bias)
+        assert inner_v.meta["module_state_version"] == 1
+        assert outer_v.meta["module_state_version"] == 0
+
+
+class TestParameterOwnership:
+    """Tests for Parameter ownership/parenting when assigned to modules."""
+
+    def test_parameter_name_set_on_assignment(self) -> None:
+        """Parameter._name is set when assigned to a module."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("value", description="Test")
+
+        module = TestModule()
+        assert module.prompt._name == "prompt"
+
+    def test_parameter_registered_in_module(self) -> None:
+        """Parameter is registered in module's _parameters dict."""
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        assert "my_param" in module._parameters
+        assert module._parameters["my_param"] is module.my_param
+
+    def test_nested_module_parameter_registration(self) -> None:
+        """Parameters in nested modules are registered in their parent."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w", description="Inner weight")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = Parameter("b", description="Outer bias")
+                self.inner = Inner()
+
+        outer = Outer()
+        # Outer's own parameter
+        assert "bias" in outer._parameters
+        # Inner's parameter is in Inner's _parameters, not Outer's
+        assert "weight" not in outer._parameters
+        assert "weight" in outer.inner._parameters
+
+    def test_named_parameters_produces_hierarchical_paths(self) -> None:
+        """named_parameters() produces hierarchical paths for nested params."""
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w", description="Inner weight")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.bias = Parameter("b", description="Outer bias")
+                self.inner = Inner()
+
+        outer = Outer()
+        named_params = dict(outer.named_parameters())
+
+        # Direct parameter gets simple name
+        assert "bias" in named_params
+        # Nested parameter gets hierarchical name
+        assert "inner.weight" in named_params
+
+    def test_deeply_nested_named_parameters(self) -> None:
+        """named_parameters() handles deeply nested modules."""
+
+        class Level3(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.param = Parameter("l3", description="Level 3 param")
+
+        class Level2(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.level3 = Level3()
+
+        class Level1(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.level2 = Level2()
+
+        root = Level1()
+        named_params = dict(root.named_parameters())
+
+        assert "level2.level3.param" in named_params
+
+    def test_unowned_parameter_has_no_name(self) -> None:
+        """Parameters not assigned to modules have _name=None."""
+        param = Parameter("value", description="Test")
+        assert param._name is None
+
+    def test_parameter_name_is_immediate_but_refs_are_hierarchical(self) -> None:
+        """Parameter._name stores immediate name; refs use hierarchical paths.
+
+        The _name field stores the immediate attribute name for the module
+        introspection API. The hierarchical path is computed for refs and
+        named_parameters().
+        """
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.weight = Parameter("w", description="Inner weight")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.inner = Inner()
+
+        outer = Outer()
+        # _name stores immediate attribute name
+        assert outer.inner.weight._name == "weight"
+
+        # named_parameters() gives hierarchical paths
+        named_params = dict(outer.named_parameters())
+        assert "inner.weight" in named_params
+
+        # valueify() ref uses hierarchical path
+        v = valueify(outer.inner.weight)
+        assert v.ref == "param:inner.weight"

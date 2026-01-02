@@ -272,9 +272,13 @@ def valueify(x: Any, *, kind: ValueKind | None = None) -> Any:
 
     # Parameter - lift to Value with stable ref
     if isinstance(x, Parameter):
-        param_name = x._name
+        param_name = x._get_hierarchical_name()
+        if param_name is None:
+            param_name = x._name
         param_id = x._id
-        module_state_version = getattr(x, "_module_state_version", 0)
+        module_state_version = 0
+        if x._parent is not None:
+            module_state_version = getattr(x._parent, "_module_state_version", 0)
         inferred_kind = kind
         if inferred_kind is None:
             # Infer kind from parameter value

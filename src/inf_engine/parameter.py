@@ -8,8 +8,11 @@ gradient descent.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from inf_engine.module import InferenceModule
 
 
 @dataclass
@@ -61,10 +64,10 @@ class Parameter:
     description: str | None = None
     requires_grad: bool = True
     _name: str | None = field(default=None, repr=False, compare=False)
+    _parent: InferenceModule | None = field(default=None, repr=False, compare=False)
     _id: str = field(
         default_factory=lambda: uuid4().hex, init=False, repr=False, compare=False
     )
-    _module_state_version: int = field(default=0, init=False, repr=False, compare=False)
     _feedback_buffer: list[str] = field(default_factory=list, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -87,6 +90,33 @@ class Parameter:
             The string representation of the parameter value.
         """
         return str(self.value)
+
+    def _get_hierarchical_name(self) -> str | None:
+        """Return the full hierarchical name for this parameter.
+
+        Builds a dot-separated path from the owning module chain. If the
+        parameter is unowned, returns the local name.
+
+        Returns:
+            The hierarchical name (e.g., "child.prompt"), or None if unnamed.
+        """
+        if self._name is None:
+            return None
+
+        if self._parent is None:
+            return self._name
+
+        parts: list[str] = []
+        module = self._parent
+        while module is not None:
+            module_name = getattr(module, "_name", None)
+            if module_name:
+                parts.append(module_name)
+            module = getattr(module, "_parent", None)
+
+        parts.reverse()
+        parts.append(self._name)
+        return ".".join(parts)
 
     def accumulate_feedback(self, feedback: str) -> None:
         """Collect feedback from backward passes.
@@ -116,7 +146,8 @@ class Parameter:
             new_value: The new value to set.
         """
         self.value = new_value
-        self._module_state_version += 1
+        if self._parent is not None:
+            self._parent._increment_state_version()
         self._feedback_buffer.clear()
 
     def zero_feedback(self) -> None:

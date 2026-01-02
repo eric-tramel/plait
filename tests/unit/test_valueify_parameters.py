@@ -1,5 +1,6 @@
 """Unit tests for Parameter lifting to Value with stable refs."""
 
+from inf_engine.module import InferenceModule
 from inf_engine.parameter import Parameter
 from inf_engine.values import Value, ValueKind, valueify
 
@@ -49,9 +50,14 @@ class TestParameterStableRef:
 
     def test_valueify_parameter_ref_format(self) -> None:
         """valueify creates ref with param: prefix."""
-        param = Parameter("value", description="Test")
-        param._name = "system_prompt"
-        v = valueify(param)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.system_prompt = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.system_prompt)
         assert v.ref == "param:system_prompt"
 
     def test_valueify_parameter_unnamed_ref(self) -> None:
@@ -62,10 +68,20 @@ class TestParameterStableRef:
 
     def test_valueify_parameter_hierarchical_name(self) -> None:
         """valueify preserves hierarchical parameter names."""
-        param = Parameter("value", description="Test")
-        param._name = "module.submodule.prompt"
-        v = valueify(param)
-        assert v.ref == "param:module.submodule.prompt"
+
+        class Inner(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompt = Parameter("value", description="Test")
+
+        class Outer(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.inner = Inner()
+
+        outer = Outer()
+        v = valueify(outer.inner.prompt)
+        assert v.ref == "param:inner.prompt"
 
 
 class TestParameterMetadata:
@@ -73,9 +89,14 @@ class TestParameterMetadata:
 
     def test_valueify_parameter_meta_param_name(self) -> None:
         """valueify includes param_name in meta."""
-        param = Parameter("value", description="Test")
-        param._name = "my_param"
-        v = valueify(param)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.my_param)
         assert v.meta["param_name"] == "my_param"
 
     def test_valueify_parameter_meta_param_id(self) -> None:
@@ -121,9 +142,14 @@ class TestParameterKindOverride:
 
     def test_valueify_parameter_kind_override_preserves_ref(self) -> None:
         """valueify kind override preserves parameter ref."""
-        param = Parameter("value", description="Test")
-        param._name = "my_param"
-        v = valueify(param, kind=ValueKind.OTHER)
+
+        class TestModule(InferenceModule):
+            def __init__(self) -> None:
+                super().__init__()
+                self.my_param = Parameter("value", description="Test")
+
+        module = TestModule()
+        v = valueify(module.my_param, kind=ValueKind.OTHER)
         assert v.ref == "param:my_param"
 
     def test_valueify_parameter_kind_override_preserves_meta(self) -> None:
