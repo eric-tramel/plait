@@ -1957,11 +1957,11 @@ class TestCallWithTraceContext:
         assert result == 10
         assert module.call_count == 1
 
-    def test_call_with_trace_context_returns_proxy(self) -> None:
-        """With trace context, __call__ returns a Proxy."""
+    def test_call_with_trace_context_returns_value(self) -> None:
+        """With trace context, __call__ returns a Value."""
         from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.proxy import Proxy
         from inf_engine.tracing.tracer import Tracer
+        from inf_engine.values import Value
 
         class Doubler(InferenceModule):
             def __init__(self) -> None:
@@ -1976,7 +1976,7 @@ class TestCallWithTraceContext:
         with trace_context(tracer):
             result = module(5)
 
-        assert isinstance(result, Proxy)
+        assert isinstance(result, Value)
 
     def test_call_with_trace_context_does_not_call_forward(self) -> None:
         """With trace context, forward() is not called."""
@@ -2050,7 +2050,8 @@ class TestCallWithTraceContext:
         assert len(tracer.nodes) == 2
 
         # The module call node should depend on the input
-        module_node = tracer.nodes[output.node_id]
+        assert output.ref is not None
+        module_node = tracer.nodes[output.ref]
         assert input_proxy.node_id in module_node.dependencies
 
     def test_call_with_multiple_proxy_inputs(self) -> None:
@@ -2074,7 +2075,8 @@ class TestCallWithTraceContext:
             output = module(proxy_a, proxy_b)
 
         # The module node should depend on both inputs
-        module_node = tracer.nodes[output.node_id]
+        assert output.ref is not None
+        module_node = tracer.nodes[output.ref]
         assert proxy_a.node_id in module_node.dependencies
         assert proxy_b.node_id in module_node.dependencies
 
@@ -2098,7 +2100,8 @@ class TestCallWithTraceContext:
             # First arg is literal, second is proxy
             output = module("Hello, {}!", proxy)
 
-        module_node = tracer.nodes[output.node_id]
+        assert output.ref is not None
+        module_node = tracer.nodes[output.ref]
         # Should only depend on the proxy, not the literal
         assert len(module_node.dependencies) == 1
         assert proxy.node_id in module_node.dependencies
@@ -2124,7 +2127,8 @@ class TestCallWithTraceContext:
             proxy = tracer._create_input_node("name", "Alice")
             output = module(name=proxy, greeting="Hi")
 
-        module_node = tracer.nodes[output.node_id]
+        assert output.ref is not None
+        module_node = tracer.nodes[output.ref]
         assert proxy.node_id in module_node.dependencies
         assert module_node.kwargs["greeting"] == "Hi"
 
@@ -2160,12 +2164,14 @@ class TestCallWithTraceContext:
         assert len(tracer.nodes) == 3
 
         # step1 depends on input
-        step1_node = tracer.nodes[intermediate.node_id]
+        assert intermediate.ref is not None
+        step1_node = tracer.nodes[intermediate.ref]
         assert input_proxy.node_id in step1_node.dependencies
 
-        # step2 depends on step1
-        step2_node = tracer.nodes[final.node_id]
-        assert intermediate.node_id in step2_node.dependencies
+        # step2 depends on step1 (via Value.ref)
+        assert final.ref is not None
+        step2_node = tracer.nodes[final.ref]
+        assert intermediate.ref in step2_node.dependencies
 
     def test_parallel_calls_from_same_input(self) -> None:
         """Parallel module calls from same input create fan-out."""
@@ -2199,14 +2205,16 @@ class TestCallWithTraceContext:
         assert len(tracer.nodes) == 3
 
         # Both outputs depend on the same input
-        node_a = tracer.nodes[output_a.node_id]
-        node_b = tracer.nodes[output_b.node_id]
+        assert output_a.ref is not None
+        assert output_b.ref is not None
+        node_a = tracer.nodes[output_a.ref]
+        node_b = tracer.nodes[output_b.ref]
         assert input_proxy.node_id in node_a.dependencies
         assert input_proxy.node_id in node_b.dependencies
 
         # They don't depend on each other
-        assert output_b.node_id not in node_a.dependencies
-        assert output_a.node_id not in node_b.dependencies
+        assert output_b.ref not in node_a.dependencies
+        assert output_a.ref not in node_b.dependencies
 
     def test_nested_module_calls_during_tracing(self) -> None:
         """Nested module calls are all recorded during tracing."""
@@ -2249,8 +2257,8 @@ class TestCallWithTraceContext:
         """LLMInference works correctly with trace context."""
         from inf_engine.module import LLMInference
         from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.proxy import Proxy
         from inf_engine.tracing.tracer import Tracer
+        from inf_engine.values import Value
 
         llm = LLMInference(alias="test_llm", system_prompt="Be helpful.")
         tracer = Tracer()
@@ -2259,12 +2267,13 @@ class TestCallWithTraceContext:
             input_proxy = tracer._create_input_node("prompt", "Hello!")
             output = llm(input_proxy)
 
-        # Should return a proxy
-        assert isinstance(output, Proxy)
+        # Should return a Value
+        assert isinstance(output, Value)
 
         # Should record the LLM call
         assert len(tracer.nodes) == 2  # input + llm call
-        llm_node = tracer.nodes[output.node_id]
+        assert output.ref is not None
+        llm_node = tracer.nodes[output.ref]
         assert llm_node.module is llm
         assert input_proxy.node_id in llm_node.dependencies
 

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Refactor tracing to Value-driven capture with ValueRef
+  - `Tracer.bind_inputs()` method to wrap inputs as Values with input refs
+  - `record_call()` now collects dependencies via `Value.ref` using `collect_refs()`
+  - `record_call()` stores `ValueRef` placeholders in GraphNode args/kwargs
+  - `record_call()` returns `Value` with ref pointing to the node ID
+  - `_collect_output_ids()` now handles both Proxy and Value objects
+  - `_capture_output_structure()` now handles both Proxy and Value objects
+  - New `Tracer.trace_values()` method for Value-driven tracing flow
+  - Dependencies discovered by scanning inputs for `Value.ref`
+  - ValueRef placeholders replace Values in stored args/kwargs for execution
+  - `ExecutionState._resolve_args()` and `_resolve_kwargs()` now resolve `ValueRef` placeholders
 - Add functional API for Value operations
 - Lift parameters into Value with stable refs
   - `Parameter.description` is now optional when `requires_grad=False`

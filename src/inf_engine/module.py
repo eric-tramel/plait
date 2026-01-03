@@ -662,7 +662,8 @@ class InferenceModule:
         """Execute the module.
 
         Behavior depends on context:
-        1. If a trace context is active: records the call and returns a Proxy
+        1. If a trace context is active: records the call and returns a Value
+           with ref pointing to the generated node ID (Value-driven tracing)
         2. If resources are bound OR ExecutionSettings is active: traces and executes
         3. Otherwise: executes forward() directly (for non-LLM modules)
 
@@ -675,7 +676,9 @@ class InferenceModule:
             **kwargs: Keyword arguments passed to forward().
 
         Returns:
-            If tracing: A Proxy representing the eventual output of this call.
+            If tracing: A Value with ref set to the node ID, representing the
+                eventual output of this call. Dependencies are collected from
+                Value.ref attributes in the arguments.
             If bound/context: A coroutine that yields the execution result.
             Otherwise: The result from forward().
 

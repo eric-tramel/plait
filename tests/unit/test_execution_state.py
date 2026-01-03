@@ -415,6 +415,188 @@ class TestExecutionStateResolveArgs:
         assert resolved == {"context": "resolved_value", "temp": 0.7}
 
 
+class TestExecutionStateNestedResolution:
+    """Tests for nested ValueRef/NodeRef resolution."""
+
+    def test_resolve_value_nested_dict(self) -> None:
+        """_resolve_value handles nested dicts with ValueRef."""
+        from inf_engine.values import ValueRef
+
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        # Simulate completed results
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0",
+            value="hello",
+            duration_ms=10.0,
+        )
+
+        nested = {"outer": {"inner": ValueRef("input:input_0")}}
+        resolved = state._resolve_value(nested)
+
+        assert resolved == {"outer": {"inner": "hello"}}
+
+    def test_resolve_value_nested_list(self) -> None:
+        """_resolve_value handles nested lists with ValueRef."""
+        from inf_engine.values import ValueRef
+
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0",
+            value="hello",
+            duration_ms=10.0,
+        )
+
+        nested = [[ValueRef("input:input_0")], "literal"]
+        resolved = state._resolve_value(nested)
+
+        assert resolved == [["hello"], "literal"]
+
+    def test_resolve_value_mixed_nesting(self) -> None:
+        """_resolve_value handles mixed dict/list nesting."""
+        from inf_engine.values import ValueRef
+
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0",
+            value="hello",
+            duration_ms=10.0,
+        )
+        state.results["LLMInference_1"] = TaskResult(
+            node_id="LLMInference_1",
+            value="world",
+            duration_ms=10.0,
+        )
+
+        nested = {
+            "items": [
+                ValueRef("input:input_0"),
+                {"nested": ValueRef("LLMInference_1")},
+            ],
+            "extra": ValueRef("input:input_0"),
+        }
+        resolved = state._resolve_value(nested)
+
+        assert resolved == {
+            "items": ["hello", {"nested": "world"}],
+            "extra": "hello",
+        }
+
+    def test_resolve_args_with_nested_valuerefs(self) -> None:
+        """_resolve_args handles nested ValueRefs in args tuple."""
+        from inf_engine.values import ValueRef
+
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0",
+            value="hello",
+            duration_ms=10.0,
+        )
+
+        args = ({"nested": [ValueRef("input:input_0")]},)
+        resolved = state._resolve_args(args)
+
+        assert resolved == ({"nested": ["hello"]},)
+
+    def test_resolve_kwargs_with_nested_valuerefs(self) -> None:
+        """_resolve_kwargs handles nested ValueRefs in kwargs."""
+        from inf_engine.values import ValueRef
+
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0",
+            value="hello",
+            duration_ms=10.0,
+        )
+
+        kwargs = {"data": {"items": [ValueRef("input:input_0")]}}
+        resolved = state._resolve_kwargs(kwargs)
+
+        assert resolved == {"data": {"items": ["hello"]}}
+
+    def test_resolve_value_preserves_tuples(self) -> None:
+        """_resolve_value preserves tuple type in nested structures."""
+        from inf_engine.values import ValueRef
+
+        graph = create_linear_graph()
+        state = ExecutionState(graph)
+
+        state.results["input:input_0"] = TaskResult(
+            node_id="input:input_0",
+            value="hello",
+            duration_ms=10.0,
+        )
+
+        nested = (ValueRef("input:input_0"), "literal")
+        resolved = state._resolve_value(nested)
+
+        assert resolved == ("hello", "literal")
+        assert isinstance(resolved, tuple)
+
+
+class TestExecutionStateParameterRefs:
+    """Tests for handling parameter refs in dependency tracking."""
+
+    def test_param_ref_dependency_not_tracked(self) -> None:
+        """Parameter refs in dependencies are not added to waiting_on."""
+        input_node = GraphNode(
+            id="input:input_0",
+            module=InputNode("hello"),
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        # Node with both a normal dependency and a param ref dependency
+        llm_node = GraphNode(
+            id="LLMInference_1",
+            module=LLMInference(alias="fast"),
+            args=(NodeRef("input:input_0"),),
+            kwargs={},
+            dependencies=["input:input_0", "param:system_prompt"],  # param ref!
+        )
+        graph = InferenceGraph(
+            nodes={"input:input_0": input_node, "LLMInference_1": llm_node},
+            input_ids=["input:input_0"],
+            output_ids=["LLMInference_1"],
+        )
+        state = ExecutionState(graph)
+
+        # LLMInference_1 should only wait on input:input_0, not param:system_prompt
+        assert state.waiting_on["LLMInference_1"] == {"input:input_0"}
+        # param ref should not be in dependents
+        assert "param:system_prompt" not in state.dependents
+
+    def test_node_with_only_param_ref_deps_is_ready(self) -> None:
+        """A node with only param ref dependencies should be immediately ready."""
+        # Node that only depends on a param ref
+        llm_node = GraphNode(
+            id="LLMInference_1",
+            module=LLMInference(alias="fast"),
+            args=(),
+            kwargs={},
+            dependencies=["param:system_prompt"],  # only param ref
+        )
+        graph = InferenceGraph(
+            nodes={"LLMInference_1": llm_node},
+            input_ids=[],
+            output_ids=["LLMInference_1"],
+        )
+        state = ExecutionState(graph)
+
+        # Node should be PENDING (ready) since param refs don't block
+        assert state.status["LLMInference_1"] == TaskStatus.PENDING
+        assert state.get_ready_count() == 1
+
+
 class TestExecutionStateEmptyGraph:
     """Tests for edge cases with empty or minimal graphs."""
 

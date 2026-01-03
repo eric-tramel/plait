@@ -6,9 +6,9 @@ Each PR represents a single, tested, reviewable increment of functionality.
 
 ## Progress
 
-- [x] **Phase 5: Values + Functional + Tracing/Execution** (2/5)
+- [x] **Phase 5: Values + Functional + Tracing/Execution** (3/5)
 
-**Total: 2/5 PRs completed**
+**Total: 3/5 PRs completed**
 
 ---
 
@@ -68,7 +68,7 @@ Every PR must:
   - `tests/unit/test_functional_errors.py` (error resolution precedence, default handling)
 - **CHANGELOG**: "Add functional API for Value operations"
 
-### - [ ] PR-062: Tracing with Values + ValueRef
+### - [x] PR-062: Tracing with Values + ValueRef
 - **Branch**: `feat/value-tracing`
 - **Description**: Update tracing to Value-driven capture: bind inputs, collect dependencies via `Value.ref`, store ValueRef placeholders in args/kwargs, and output IDs via `collect_refs`.
 - **Design Docs**:

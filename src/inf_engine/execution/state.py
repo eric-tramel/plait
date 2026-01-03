@@ -41,6 +41,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
 from inf_engine.graph import NodeRef
+from inf_engine.values import ValueRef
 
 if TYPE_CHECKING:
     from inf_engine.graph import InferenceGraph
@@ -359,6 +360,11 @@ class ExecutionState:
 
         This method is called automatically during __init__.
 
+        Note:
+            Only dependencies that are actual graph nodes are tracked for
+            scheduling purposes. Non-node dependencies (e.g., parameter refs
+            like "param:...") are static values and don't need to be awaited.
+
         Example:
             >>> # After initialization, input nodes are PENDING
             >>> state.status["input:input_0"]
@@ -371,13 +377,15 @@ class ExecutionState:
             # All nodes start as BLOCKED
             self.status[node_id] = TaskStatus.BLOCKED
 
-            # Track dependencies
+            # Track dependencies - only for actual graph nodes
+            # Non-node dependencies (e.g., param refs) are static values
             for dep_id in node.dependencies:
-                self.waiting_on[node_id].add(dep_id)
-                self.dependents[dep_id].add(node_id)
+                if dep_id in self.graph.nodes:
+                    self.waiting_on[node_id].add(dep_id)
+                    self.dependents[dep_id].add(node_id)
 
-            # Nodes with no dependencies are immediately ready
-            if not node.dependencies:
+            # Nodes with no node dependencies are immediately ready
+            if not self.waiting_on[node_id]:
                 self._make_ready(node_id)
 
     def _make_ready(self, node_id: str) -> None:
@@ -419,58 +427,85 @@ class ExecutionState:
         # Signal that a new task is ready for execution
         self.task_ready_event.set()
 
-    def _resolve_args(self, args: tuple[Any, ...]) -> tuple[Any, ...]:
-        """Resolve NodeRef references in args to actual result values.
+    def _resolve_value(self, value: Any) -> Any:
+        """Recursively resolve NodeRef and ValueRef references to actual values.
 
-        For each argument that is a NodeRef, replaces it with the
-        corresponding result value. All other arguments are passed
-        through unchanged.
+        Traverses nested structures (dict, list, tuple) and replaces all
+        NodeRef/ValueRef instances with their corresponding result values.
 
         Args:
-            args: Tuple of arguments, which may contain NodeRef references.
+            value: A value that may be a NodeRef, ValueRef, or a nested
+                structure containing them.
 
         Returns:
-            Tuple with NodeRef references replaced by their result values.
+            The value with all NodeRef/ValueRef references resolved to
+            their actual result values.
+
+        Example:
+            >>> # After node "input:0" completes with value "hello"
+            >>> state._resolve_value(NodeRef("input:0"))
+            "hello"
+            >>> state._resolve_value({"x": [ValueRef("input:0")]})
+            {"x": ["hello"]}
+        """
+        if isinstance(value, NodeRef):
+            return self.results[value.node_id].value
+        elif isinstance(value, ValueRef):
+            return self.results[value.ref].value
+        elif isinstance(value, dict):
+            return {k: self._resolve_value(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._resolve_value(item) for item in value]
+        elif isinstance(value, tuple):
+            return tuple(self._resolve_value(item) for item in value)
+        else:
+            return value
+
+    def _resolve_args(self, args: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Resolve NodeRef and ValueRef references in args to actual result values.
+
+        Recursively resolves all NodeRef/ValueRef references in the argument
+        tuple, including those nested within dicts, lists, or tuples.
+
+        Args:
+            args: Tuple of arguments, which may contain NodeRef or ValueRef
+                references at any nesting level.
+
+        Returns:
+            Tuple with all NodeRef/ValueRef references replaced by their
+            result values, preserving the nested structure.
 
         Example:
             >>> # After node "input:input_0" completes with value "hello"
             >>> state._resolve_args((NodeRef("input:input_0"), "literal"))
             ("hello", "literal")
+            >>> state._resolve_args(({"nested": ValueRef("input:0")},))
+            ({"nested": "hello"},)
         """
-        resolved: list[Any] = []
-        for arg in args:
-            if isinstance(arg, NodeRef):
-                resolved.append(self.results[arg.node_id].value)
-            else:
-                resolved.append(arg)
-        return tuple(resolved)
+        return tuple(self._resolve_value(arg) for arg in args)
 
     def _resolve_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Resolve NodeRef references in kwargs to actual result values.
+        """Resolve NodeRef and ValueRef references in kwargs to actual result values.
 
-        For each value that is a NodeRef, replaces it with the
-        corresponding result value. All other values are passed
-        through unchanged.
+        Recursively resolves all NodeRef/ValueRef references in the kwargs
+        dict, including those nested within dicts, lists, or tuples.
 
         Args:
             kwargs: Dictionary of keyword arguments, which may contain
-                NodeRef references as values.
+                NodeRef or ValueRef references at any nesting level.
 
         Returns:
-            Dictionary with NodeRef references replaced by their result values.
+            Dictionary with all NodeRef/ValueRef references replaced by their
+            result values, preserving the nested structure.
 
         Example:
             >>> # After node "input:context" completes with value "world"
             >>> state._resolve_kwargs({"context": NodeRef("input:context"), "temp": 0.7})
             {"context": "world", "temp": 0.7}
+            >>> state._resolve_kwargs({"data": {"nested": ValueRef("input:0")}})
+            {"data": {"nested": "hello"}}
         """
-        resolved: dict[str, Any] = {}
-        for key, value in kwargs.items():
-            if isinstance(value, NodeRef):
-                resolved[key] = self.results[value.node_id].value
-            else:
-                resolved[key] = value
-        return resolved
+        return {key: self._resolve_value(value) for key, value in kwargs.items()}
 
     def get_ready_count(self) -> int:
         """Get the number of tasks ready to execute.

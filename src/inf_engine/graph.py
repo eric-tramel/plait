@@ -213,6 +213,8 @@ class InferenceGraph:
 
         Note:
             Only nodes reachable from output_ids are included in the result.
+            Non-node dependencies (e.g., parameter refs like "param:...")
+            are skipped as they represent static values, not graph nodes.
 
         Example:
             >>> # Linear graph: input -> llm1 -> llm2
@@ -232,6 +234,9 @@ class InferenceGraph:
         order: list[str] = []
 
         def visit(node_id: str, path: list[str]) -> None:
+            # Skip non-node dependencies (e.g., param refs)
+            if node_id not in self.nodes:
+                return
             if node_id in visited:
                 return
             if node_id in visiting:
@@ -267,12 +272,16 @@ class InferenceGraph:
             node_id: The ID of the node to find ancestors for.
 
         Returns:
-            A set of node IDs representing all ancestors. Does not include
-            the node itself. Returns an empty set if the node has no
-            dependencies.
+            A set of node IDs representing all ancestors (only actual graph
+            nodes, not parameter refs). Does not include the node itself.
+            Returns an empty set if the node has no dependencies.
 
         Raises:
             KeyError: If node_id is not in the graph.
+
+        Note:
+            Non-node dependencies (e.g., parameter refs like "param:...")
+            are excluded from the result as they represent static values.
 
         Example:
             >>> # Graph: input -> a -> b -> c
@@ -284,13 +293,16 @@ class InferenceGraph:
             set()
         """
         result: set[str] = set()
-        queue = list(self.nodes[node_id].dependencies)
+        queue = [d for d in self.nodes[node_id].dependencies if d in self.nodes]
 
         while queue:
             current = queue.pop()
             if current not in result:
                 result.add(current)
-                queue.extend(self.nodes[current].dependencies)
+                # Only queue dependencies that are actual nodes
+                queue.extend(
+                    d for d in self.nodes[current].dependencies if d in self.nodes
+                )
 
         return result
 
@@ -398,9 +410,22 @@ class InferenceGraph:
 
         Returns:
             A hex string representing the SHA-256 hash of this node.
+
+        Note:
+            Non-node dependencies (e.g., parameter refs) are included in the
+            hash by their ref string directly, since they represent static
+            values rather than graph nodes.
         """
         # Get dependency hashes in sorted order for determinism
-        dep_hashes = [parent_hashes[dep] for dep in sorted(node.dependencies)]
+        # For node dependencies, use their computed hash
+        # For non-node dependencies (e.g., param refs), use the ref string directly
+        dep_hashes: list[str] = []
+        for dep in sorted(node.dependencies):
+            if dep in parent_hashes:
+                dep_hashes.append(parent_hashes[dep])
+            else:
+                # Non-node dependency (e.g., param ref) - hash the ref string
+                dep_hashes.append(hashlib.sha256(dep.encode()).hexdigest())
 
         # Extract module configuration
         module_config = self._extract_module_config(node.module)

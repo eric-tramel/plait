@@ -1,12 +1,20 @@
-"""Proxy objects for symbolic tracing.
+"""Proxy objects for symbolic tracing (legacy Proxy-based mode).
 
-During tracing, module calls return Proxy objects instead of actual values.
-Proxies are symbolic placeholders that track data flow through the graph.
+This module provides Proxy objects used in the legacy Proxy-based tracing mode.
+In Value-driven tracing (the recommended approach), module calls return Value
+objects with refs instead of Proxy objects.
 
-Example:
-    During tracing, when a module is called:
+Tracing Modes:
+    - Proxy mode (Tracer.trace): Module calls return Proxy objects. Dependencies
+      are tracked via Proxy.node_id. Used for backwards compatibility.
+    - Value mode (Tracer.trace_values): Module calls return Value objects with
+      ref set to the node ID. Dependencies are collected from Value.ref.
+      This is the canonical approach described in design_docs/tracing.md.
 
-    >>> # Inside a trace context
+Example (Proxy mode - legacy):
+    During Proxy-based tracing, when a module is called:
+
+    >>> # Inside a trace context using Tracer.trace()
     >>> output = some_module(input_proxy)
     >>> # output is a Proxy, not an actual value
     >>> print(output)
@@ -16,6 +24,17 @@ Example:
 
     >>> # This creates a dependency: SomeModule_1 -> AnotherModule_2
     >>> result = another_module(output)
+
+Example (Value mode - recommended):
+    During Value-based tracing, when a module is called:
+
+    >>> # Inside a trace context using Tracer.trace_values()
+    >>> output = some_module(input_value)
+    >>> # output is a Value with ref set
+    >>> print(output.ref)
+    'SomeModule_1'
+
+    Dependencies are collected via Value.ref attributes.
 """
 
 from __future__ import annotations

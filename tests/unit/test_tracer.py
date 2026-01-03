@@ -428,42 +428,36 @@ class TestCreateInputNode:
 class TestRecordCall:
     """Tests for Tracer.record_call()."""
 
-    def test_record_call_returns_proxy(self) -> None:
-        """record_call returns a Proxy object."""
+    def test_record_call_returns_value(self) -> None:
+        """record_call returns a Value object."""
+        from inf_engine.values import Value
+
         tracer = Tracer()
         module = LLMInference(alias="test")
 
         result = tracer.record_call(module, (), {})
 
-        assert isinstance(result, Proxy)
+        assert isinstance(result, Value)
 
-    def test_record_call_proxy_has_correct_node_id(self) -> None:
-        """Returned proxy has the correct node_id."""
+    def test_record_call_value_has_correct_ref(self) -> None:
+        """Returned Value has the correct ref."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
+        result = tracer.record_call(module, (), {})
 
-        assert proxy.node_id == "LLMInference_1"
-
-    def test_record_call_proxy_references_tracer(self) -> None:
-        """Returned proxy references the correct tracer."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        proxy = tracer.record_call(module, (), {})
-
-        assert proxy.tracer is tracer
+        assert result.ref == "LLMInference_1"
 
     def test_record_call_creates_graph_node(self) -> None:
         """record_call creates a GraphNode in the nodes dict."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
+        result = tracer.record_call(module, (), {})
 
-        assert proxy.node_id in tracer.nodes
-        node = tracer.nodes[proxy.node_id]
+        assert result.ref is not None
+        assert result.ref in tracer.nodes
+        node = tracer.nodes[result.ref]
         assert isinstance(node, GraphNode)
 
     def test_record_call_node_has_correct_module(self) -> None:
@@ -471,20 +465,22 @@ class TestRecordCall:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.module is module
 
     def test_record_call_node_has_correct_id(self) -> None:
-        """Created GraphNode has the same ID as the proxy."""
+        """Created GraphNode has the same ID as the Value ref."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
-        assert node.id == proxy.node_id
+        assert node.id == result.ref
 
     def test_record_call_extracts_dependencies_from_proxy_args(self) -> None:
         """Dependencies are extracted from Proxy objects in args."""
@@ -492,8 +488,9 @@ class TestRecordCall:
         module = LLMInference(alias="test")
         input_proxy = tracer._create_input_node("text", "hello")
 
-        output_proxy = tracer.record_call(module, (input_proxy,), {})
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, (input_proxy,), {})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert node.dependencies == ["input:text"]
 
@@ -503,8 +500,9 @@ class TestRecordCall:
         module = LLMInference(alias="test")
         input_proxy = tracer._create_input_node("text", "hello")
 
-        output_proxy = tracer.record_call(module, (), {"text": input_proxy})
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, (), {"text": input_proxy})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert node.dependencies == ["input:text"]
 
@@ -515,8 +513,9 @@ class TestRecordCall:
         proxy1 = tracer._create_input_node("arg0", "value1")
         proxy2 = tracer._create_input_node("kwarg1", "value2")
 
-        output_proxy = tracer.record_call(module, (proxy1,), {"extra": proxy2})
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, (proxy1,), {"extra": proxy2})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert "input:arg0" in node.dependencies
         assert "input:kwarg1" in node.dependencies
@@ -527,8 +526,9 @@ class TestRecordCall:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        output_proxy = tracer.record_call(module, ("literal_value", 42), {})
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, ("literal_value", 42), {})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert node.args == ("literal_value", 42)
         assert node.dependencies == []
@@ -538,10 +538,9 @@ class TestRecordCall:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        output_proxy = tracer.record_call(
-            module, (), {"temperature": 0.7, "max_tokens": 100}
-        )
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, (), {"temperature": 0.7, "max_tokens": 100})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert node.kwargs == {"temperature": 0.7, "max_tokens": 100}
         assert node.dependencies == []
@@ -552,8 +551,9 @@ class TestRecordCall:
         module = LLMInference(alias="test")
         input_proxy = tracer._create_input_node("text", "hello")
 
-        output_proxy = tracer.record_call(module, (input_proxy, "literal"), {})
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, (input_proxy, "literal"), {})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert node.args == (NodeRef("input:text"), "literal")
 
@@ -563,10 +563,9 @@ class TestRecordCall:
         module = LLMInference(alias="test")
         input_proxy = tracer._create_input_node("context", {"key": "value"})
 
-        output_proxy = tracer.record_call(
-            module, (), {"context": input_proxy, "temp": 0.5}
-        )
-        node = tracer.nodes[output_proxy.node_id]
+        output = tracer.record_call(module, (), {"context": input_proxy, "temp": 0.5})
+        assert output.ref is not None
+        node = tracer.nodes[output.ref]
 
         assert node.kwargs == {"context": NodeRef("input:context"), "temp": 0.5}
 
@@ -575,13 +574,13 @@ class TestRecordCall:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy1 = tracer.record_call(module, (), {})
-        proxy2 = tracer.record_call(module, (), {})
-        proxy3 = tracer.record_call(module, (), {})
+        result1 = tracer.record_call(module, (), {})
+        result2 = tracer.record_call(module, (), {})
+        result3 = tracer.record_call(module, (), {})
 
-        assert proxy1.node_id == "LLMInference_1"
-        assert proxy2.node_id == "LLMInference_2"
-        assert proxy3.node_id == "LLMInference_3"
+        assert result1.ref == "LLMInference_1"
+        assert result2.ref == "LLMInference_2"
+        assert result3.ref == "LLMInference_3"
         assert len(tracer.nodes) == 3
 
     def test_record_call_node_has_empty_dependencies_without_proxies(self) -> None:
@@ -589,8 +588,9 @@ class TestRecordCall:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, ("literal",), {"key": "value"})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, ("literal",), {"key": "value"})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.dependencies == []
 
@@ -599,8 +599,9 @@ class TestRecordCall:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.module_name == "LLMInference"
 
@@ -615,10 +616,11 @@ class TestRecordCall:
         tracer = Tracer()
         module = CustomProcessor()
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
-        assert proxy.node_id == "CustomProcessor_1"
+        assert result.ref == "CustomProcessor_1"
         assert node.module_name == "CustomProcessor"
         assert node.module is module
 
@@ -656,9 +658,12 @@ class TestRecordCallChaining:
         output_c = tracer.record_call(module_c, (input_proxy,), {})
 
         # All three depend on the same input
-        assert tracer.nodes[output_a.node_id].dependencies == ["input:text"]
-        assert tracer.nodes[output_b.node_id].dependencies == ["input:text"]
-        assert tracer.nodes[output_c.node_id].dependencies == ["input:text"]
+        assert output_a.ref is not None
+        assert output_b.ref is not None
+        assert output_c.ref is not None
+        assert tracer.nodes[output_a.ref].dependencies == ["input:text"]
+        assert tracer.nodes[output_b.ref].dependencies == ["input:text"]
+        assert tracer.nodes[output_c.ref].dependencies == ["input:text"]
 
     def test_fan_in_pattern(self) -> None:
         """One module depending on multiple inputs (fan-in)."""
@@ -673,7 +678,8 @@ class TestRecordCallChaining:
         merged = tracer.record_call(module_merge, (output_a, output_b), {})
 
         # Merge depends on both a and b
-        merge_deps = tracer.nodes[merged.node_id].dependencies
+        assert merged.ref is not None
+        merge_deps = tracer.nodes[merged.ref].dependencies
         assert "LLMInference_1" in merge_deps
         assert "LLMInference_2" in merge_deps
         assert len(merge_deps) == 2
@@ -709,8 +715,9 @@ class TestRecordCallBranchContext:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.branch_condition is None
         assert node.branch_value is None
@@ -723,8 +730,9 @@ class TestRecordCallBranchContext:
         # Simulate being in a branch context
         tracer._branch_stack.append(("condition_node_1", True))
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.branch_condition == "condition_node_1"
         assert node.branch_value is True
@@ -736,8 +744,9 @@ class TestRecordCallBranchContext:
 
         tracer._branch_stack.append(("cond_proxy", False))
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.branch_condition == "cond_proxy"
         assert node.branch_value is False
@@ -751,8 +760,9 @@ class TestRecordCallBranchContext:
         tracer._branch_stack.append(("outer_cond", True))
         tracer._branch_stack.append(("inner_cond", False))
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         # Should use the innermost (last) branch
         assert node.branch_condition == "inner_cond"
@@ -767,8 +777,9 @@ class TestRecordCallModulePath:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.module_path == ""
 
@@ -779,8 +790,9 @@ class TestRecordCallModulePath:
 
         tracer._module_stack.append("parent")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.module_path == "parent"
 
@@ -793,8 +805,9 @@ class TestRecordCallModulePath:
         tracer._module_stack.append("layer1")
         tracer._module_stack.append("attention")
 
-        proxy = tracer.record_call(module, (), {})
-        node = tracer.nodes[proxy.node_id]
+        result = tracer.record_call(module, (), {})
+        assert result.ref is not None
+        node = tracer.nodes[result.ref]
 
         assert node.module_path == "encoder.layer1.attention"
 
@@ -1593,10 +1606,12 @@ class TestTraceMethod:
 
     def test_trace_records_call_via_record_call(self) -> None:
         """trace() records module calls when using record_call directly."""
+        from typing import Any
+
         tracer = Tracer()
 
         class ManualRecord(InferenceModule):
-            def forward(self, x: Proxy) -> Proxy:
+            def forward(self, x: Any) -> Any:
                 # Simulate what a module would do when trace context is active
                 ctx = get_trace_context()
                 if ctx is not None:
@@ -1615,10 +1630,12 @@ class TestTraceMethod:
 
     def test_trace_captures_linear_chain(self) -> None:
         """trace() captures a linear chain of module calls."""
+        from typing import Any
+
         tracer = Tracer()
 
         class LinearChain(InferenceModule):
-            def forward(self, x: Proxy) -> Proxy:
+            def forward(self, x: Any) -> Any:
                 ctx = get_trace_context()
                 if ctx is None:
                     return x
@@ -1644,10 +1661,12 @@ class TestTraceMethod:
 
     def test_trace_captures_diamond_pattern(self) -> None:
         """trace() captures diamond dependency pattern."""
+        from typing import Any
+
         tracer = Tracer()
 
         class DiamondPattern(InferenceModule):
-            def forward(self, x: Proxy) -> Proxy:
+            def forward(self, x: Any) -> Any:
                 ctx = get_trace_context()
                 if ctx is None:
                     return x

@@ -419,8 +419,8 @@ class TestTracingContextBehavior:
     def test_trace_context_takes_precedence(self) -> None:
         """Trace context takes precedence over bound resources."""
         from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.proxy import Proxy
         from inf_engine.tracing.tracer import Tracer
+        from inf_engine.values import Value
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -430,14 +430,14 @@ class TestTracingContextBehavior:
         with trace_context(tracer):
             result = module("hello")
 
-        # Should return a Proxy, not execute
-        assert isinstance(result, Proxy)
+        # Should return a Value, not execute
+        assert isinstance(result, Value)
 
     def test_trace_context_takes_precedence_over_execution_settings(self) -> None:
         """Trace context takes precedence over ExecutionSettings."""
         from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.proxy import Proxy
         from inf_engine.tracing.tracer import Tracer
+        from inf_engine.values import Value
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -447,7 +447,7 @@ class TestTracingContextBehavior:
             with trace_context(tracer):
                 result = module("hello")
 
-        assert isinstance(result, Proxy)
+        assert isinstance(result, Value)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

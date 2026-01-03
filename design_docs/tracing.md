@@ -12,6 +12,41 @@ embedded in args/kwargs.
 3. **Profiling Ready**: Capture metadata for performance analysis
 4. **Minimal Overhead**: Tracing should be fast for complex graphs
 
+## Tracing Modes
+
+The Tracer supports two modes for backwards compatibility:
+
+### Value-Driven Mode (Recommended)
+
+Use `Tracer.trace_values()` for the canonical Value-driven tracing approach:
+
+- Inputs are wrapped as Values with refs pointing to input nodes
+- Module calls return Values with refs pointing to graph nodes
+- Dependencies are collected via `Value.ref` using `collect_refs()`
+- Arguments are stored with `ValueRef` placeholders
+
+```python
+tracer = Tracer()
+graph = tracer.trace_values(module, "input text")
+```
+
+### Proxy-Based Mode (Legacy)
+
+Use `Tracer.trace()` for backwards-compatible Proxy-based tracing:
+
+- Inputs are wrapped as Proxy objects with node IDs
+- Module calls return Proxy objects
+- Dependencies are tracked via `Proxy.node_id`
+- Arguments are stored with `NodeRef` placeholders
+
+```python
+tracer = Tracer()
+graph = tracer.trace(module, "input text")
+```
+
+Both modes produce equivalent `InferenceGraph` structures. Value-driven mode
+is preferred for new code as it aligns with the broader Value-based data model.
+
 ## Core Concepts
 
 ### Value-Driven Capture
@@ -159,13 +194,18 @@ other `Value.ref`.
 
 ## Structured Access (getitem)
 
-`Value.__getitem__` delegates to `F.select`, which records a graph node and
-returns a new `Value`. Chained access remains graph-aware:
+`Value.__getitem__` delegates to `F.select` for structured data access. When
+tracing is active, a select operation can optionally record a graph node:
 
 ```python
 data = valueify({"user": {"name": "Ada"}})
-name = data["user"]["name"]  # each [] is a select node
+name = data["user"]["name"]  # each [] calls F.select
 ```
+
+Note: In the current implementation, `F.select` is pure and does not consult
+the trace context. Structured access during tracing operates on Value payloads
+directly without creating graph nodes. Future versions may add trace-aware
+select operations for more granular dependency tracking.
 
 ## Trace Context
 
