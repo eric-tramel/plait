@@ -518,19 +518,30 @@ class Scheduler:
         """Execute the actual task logic.
 
         Separated from _execute_task to allow timeout wrapping.
+        Implements Value(ERROR) short-circuit: if any dependency is a Value(ERROR),
+        the error is propagated without executing the task.
 
         Args:
             task: The Task to execute.
 
         Returns:
-            The result of the task execution.
+            The result of the task execution, or the first Value(ERROR) if
+            any dependency contains an error.
         """
         from inf_engine.module import LLMInference
+        from inf_engine.values import first_error_value, has_error_value
 
         # Handle input nodes specially - just return their stored value
         if isinstance(task.module, InputNode):
             return task.module.value
-        elif isinstance(task.module, LLMInference):
+
+        # Short-circuit if any dependency is a Value(ERROR)
+        # (functional ops propagate errors as values, not exceptions)
+        if has_error_value(*task.args, **task.kwargs):
+            error_value = first_error_value(*task.args, **task.kwargs)
+            return error_value
+
+        if isinstance(task.module, LLMInference):
             # Execute LLM modules through ResourceManager
             return await self._execute_llm(task.module, task.args, task.kwargs)
         else:
@@ -569,7 +580,8 @@ class Scheduler:
         """Execute a non-LLM module directly.
 
         Calls the module's forward() method with the task's arguments.
-        Handles both sync and async forward methods.
+        Handles both sync and async forward methods. Values are unwrapped
+        to raw payloads before calling forward().
 
         Args:
             task: The Task containing the module and arguments to execute.
@@ -579,8 +591,11 @@ class Scheduler:
 
         Note:
             LLMInference modules are handled by _execute_llm(), not this method.
+            Value payloads are unwrapped so user-defined forward() methods
+            receive raw Python values, not Value containers.
         """
         from inf_engine.module import InferenceModule
+        from inf_engine.values import unwrap
 
         if task.module is None:
             return None
@@ -589,10 +604,14 @@ class Scheduler:
         # in _execute_task before calling this method)
         assert isinstance(task.module, InferenceModule)
 
+        # Unwrap Value payloads for user-defined forward() implementations
+        args = unwrap(task.args)
+        kwargs = unwrap(task.kwargs)
+
         if asyncio.iscoroutinefunction(task.module.forward):
-            return await task.module.forward(*task.args, **task.kwargs)
+            return await task.module.forward(*args, **kwargs)
         else:
-            return task.module.forward(*task.args, **task.kwargs)
+            return task.module.forward(*args, **kwargs)
 
     async def _execute_llm(
         self,
@@ -658,7 +677,7 @@ class Scheduler:
 
         Extracts the prompt from args/kwargs and combines it with the module's
         configuration (system_prompt, temperature, max_tokens, etc.) to create
-        a complete LLMRequest.
+        a complete LLMRequest. Values are unwrapped to raw payloads.
 
         Args:
             module: The LLMInference module containing configuration.
@@ -683,6 +702,8 @@ class Scheduler:
             >>> request.system_prompt
             'You are helpful.'
         """
+        from inf_engine.values import unwrap
+
         # Get prompt from args or kwargs
         if args:
             prompt = args[0]
@@ -693,6 +714,9 @@ class Scheduler:
                 "LLMInference requires a prompt argument. "
                 "Pass it as the first positional argument or as prompt=..."
             )
+
+        # Unwrap Value to raw payload for LLM request
+        prompt = unwrap(prompt)
 
         # Get system prompt from module's Parameter if present
         system_prompt: str | None = None

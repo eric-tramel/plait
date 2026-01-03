@@ -452,3 +452,105 @@ def replace_values_with_refs(obj: Any) -> Any:
         return tuple(replace_values_with_refs(item) for item in obj)
     else:
         return obj
+
+
+def has_error_value(*args: Any, **kwargs: Any) -> bool:
+    """Check if any Value in the args/kwargs is a Value(ERROR).
+
+    Traverses args and kwargs, looking for any Value with kind=ERROR.
+    Handles nested lists, tuples, and dicts.
+
+    Args:
+        *args: Positional arguments to search for error Values.
+        **kwargs: Keyword arguments to search for error Values.
+
+    Returns:
+        True if any Value(ERROR) is found, False otherwise.
+
+    Example:
+        >>> error_val = Value(ValueKind.ERROR, ValueError("test"))
+        >>> has_error_value(error_val)
+        True
+
+        >>> ok_val = Value(ValueKind.TEXT, "hello")
+        >>> has_error_value(ok_val)
+        False
+
+        >>> has_error_value([ok_val, {"nested": error_val}])
+        True
+    """
+
+    def _has_error(obj: Any) -> bool:
+        if isinstance(obj, Value):
+            return obj.kind == ValueKind.ERROR
+        elif isinstance(obj, dict):
+            return any(_has_error(v) for v in obj.values())
+        elif isinstance(obj, (list, tuple)):
+            return any(_has_error(item) for item in obj)
+        return False
+
+    for arg in args:
+        if _has_error(arg):
+            return True
+    for v in kwargs.values():
+        if _has_error(v):
+            return True
+    return False
+
+
+def first_error_value(*args: Any, **kwargs: Any) -> Value | None:
+    """Find the first Value(ERROR) in args/kwargs.
+
+    Traverses args and kwargs in order, returning the first Value with
+    kind=ERROR found. Uses depth-first traversal for nested structures.
+
+    Args:
+        *args: Positional arguments to search for error Values.
+        **kwargs: Keyword arguments to search for error Values.
+
+    Returns:
+        The first Value(ERROR) found, or None if no error Values exist.
+
+    Example:
+        >>> error1 = Value(ValueKind.ERROR, ValueError("first"))
+        >>> error2 = Value(ValueKind.ERROR, ValueError("second"))
+        >>> result = first_error_value(error1, error2)
+        >>> result is error1
+        True
+
+        >>> ok_val = Value(ValueKind.TEXT, "hello")
+        >>> first_error_value(ok_val) is None
+        True
+
+        >>> first_error_value([ok_val, {"nested": error1}]) is error1
+        True
+    """
+
+    def _find_error(obj: Any) -> Value | None:
+        if isinstance(obj, Value):
+            if obj.kind == ValueKind.ERROR:
+                return obj
+            return None
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                error = _find_error(v)
+                if error is not None:
+                    return error
+            return None
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                error = _find_error(item)
+                if error is not None:
+                    return error
+            return None
+        return None
+
+    for arg in args:
+        error = _find_error(arg)
+        if error is not None:
+            return error
+    for v in kwargs.values():
+        error = _find_error(v)
+        if error is not None:
+            return error
+    return None

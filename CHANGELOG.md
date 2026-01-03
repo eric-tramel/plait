@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Execute graphs with ValueRef and error-as-value semantics
+  - `Scheduler._run_task_inner()` implements Value(ERROR) short-circuit behavior
+  - `Scheduler._direct_execute()` unwraps Values before calling `forward()`
+  - `Scheduler._build_llm_request()` unwraps Values for LLM prompts
+  - `has_error_value()` helper to check for Value(ERROR) in args/kwargs
+  - `first_error_value()` helper to find first Value(ERROR) in args/kwargs
+  - Error Values propagate through graphs without executing dependent tasks
+  - User-defined `forward()` methods receive raw payloads, not Value containers
 - Refactor tracing to Value-driven capture with ValueRef
   - `Tracer.bind_inputs()` method to wrap inputs as Values with input refs
   - `record_call()` now collects dependencies via `Value.ref` using `collect_refs()`
