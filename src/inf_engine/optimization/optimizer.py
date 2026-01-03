@@ -32,9 +32,12 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Self
+
+from inf_engine.errors import OptimizationError
 
 if TYPE_CHECKING:
     from inf_engine.graph import InferenceGraph
@@ -43,6 +46,8 @@ if TYPE_CHECKING:
     from inf_engine.parameter import Parameter
     from inf_engine.resources.config import ResourceConfig
     from inf_engine.resources.manager import ResourceManager
+
+logger = logging.getLogger(__name__)
 
 
 class _OptimizerLLMWrapper:
@@ -342,6 +347,7 @@ class SFAOptimizer(Optimizer):
 
     Attributes:
         conservatism: How conservative updates should be (0-1).
+        max_retries: Maximum retry attempts for failed update generation.
 
     Example:
         >>> optimizer = SFAOptimizer(
@@ -370,6 +376,7 @@ class SFAOptimizer(Optimizer):
         params: Iterable[Parameter],
         *,
         conservatism: float = 0.7,
+        max_retries: int = 3,
         reasoning_model: str | None = None,
     ) -> None:
         """Initialize the SFAOptimizer.
@@ -378,23 +385,30 @@ class SFAOptimizer(Optimizer):
             params: Parameters to optimize (e.g., module.parameters()).
             conservatism: How conservative updates should be (0-1).
                 Higher values result in smaller changes. Defaults to 0.7.
+            max_retries: Maximum number of retry attempts when the updater
+                LLM returns an empty or invalid response. Defaults to 3.
             reasoning_model: Optional model identifier for backward-pass
                 reasoning.
 
         Raises:
             ValueError: If conservatism is not in [0, 1] range.
+            ValueError: If max_retries is negative.
 
         Example:
             >>> optimizer = SFAOptimizer(
             ...     module.parameters(),
             ...     conservatism=0.5,  # Moderate changes
+            ...     max_retries=3,
             ... )
         """
         if not 0.0 <= conservatism <= 1.0:
             raise ValueError(f"conservatism must be in [0, 1], got {conservatism}")
+        if max_retries < 0:
+            raise ValueError(f"max_retries must be non-negative, got {max_retries}")
 
         super().__init__(params, reasoning_model=reasoning_model)
         self.conservatism = conservatism
+        self.max_retries = max_retries
 
     async def step(self) -> dict[str, str]:
         """Update parameters in topological order with upstream visibility.
@@ -603,6 +617,21 @@ class SFAOptimizer(Optimizer):
 
         return upstream_params
 
+    def _validate_update(self, value: str) -> bool:
+        """Validate that an update value is non-empty and meaningful.
+
+        Args:
+            value: The update value to validate.
+
+        Returns:
+            True if the value is valid, False otherwise.
+        """
+        if not value:
+            return False
+        if not value.strip():
+            return False
+        return True
+
     async def _update_parameter_with_context(
         self,
         param: Parameter,
@@ -612,6 +641,10 @@ class SFAOptimizer(Optimizer):
     ) -> tuple[Parameter, str]:
         """Generate an update for a parameter with upstream visibility.
 
+        Uses retry logic to handle empty or invalid LLM responses. If the
+        updater returns an empty response, it will retry up to max_retries
+        times before raising an OptimizationError.
+
         Args:
             param: The parameter to update.
             previous_values: Snapshot of all param values before step().
@@ -620,6 +653,10 @@ class SFAOptimizer(Optimizer):
 
         Returns:
             Tuple of (parameter, new_value).
+
+        Raises:
+            OptimizationError: If no valid update could be generated after
+                exhausting all retry attempts.
         """
         # Aggregate feedback for this parameter
         aggregated = await self._aggregate_feedback(param)
@@ -631,14 +668,55 @@ class SFAOptimizer(Optimizer):
             applied_updates,
         )
 
-        # Generate update with context
-        new_value = await self._generate_update_with_context(
-            param,
-            aggregated,
-            upstream_context,
-        )
+        # Generate update with retry logic
+        param_name = self._param_key(param)
+        attempts = 0
+        max_attempts = self.max_retries + 1  # +1 for the initial attempt
 
-        return (param, new_value)
+        while attempts < max_attempts:
+            attempts += 1
+
+            new_value = await self._generate_update_with_context(
+                param,
+                aggregated,
+                upstream_context,
+            )
+
+            if self._validate_update(new_value):
+                if attempts > 1:
+                    logger.info(
+                        "Successfully generated update for parameter '%s' "
+                        "on attempt %d",
+                        param_name,
+                        attempts,
+                    )
+                return (param, new_value)
+
+            # Invalid response, log and potentially retry
+            if attempts < max_attempts:
+                logger.warning(
+                    "Empty or invalid update for parameter '%s' "
+                    "(attempt %d/%d), retrying...",
+                    param_name,
+                    attempts,
+                    max_attempts,
+                )
+            else:
+                logger.error(
+                    "Failed to generate valid update for parameter '%s' "
+                    "after %d attempts",
+                    param_name,
+                    attempts,
+                )
+
+        # Exhausted all retries
+        raise OptimizationError(
+            f"Failed to generate valid update for parameter '{param_name}' "
+            f"after {attempts} attempts. The updater LLM returned empty or "
+            "invalid responses.",
+            parameter_name=param_name,
+            attempts=attempts,
+        )
 
     async def _aggregate_feedback(self, param: Parameter) -> str:
         """Combine all feedback items into one coherent summary.

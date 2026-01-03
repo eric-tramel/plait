@@ -9,7 +9,8 @@ Exception Hierarchy:
     InfEngineError (base)
     ├── RateLimitError - API rate limiting and backpressure
     ├── TransientError - Temporary failures that may succeed on retry
-    └── ExecutionError - Task execution failures
+    ├── ExecutionError - Task execution failures
+    └── OptimizationError - Parameter optimization failures
 
 Example:
     >>> from inf_engine.errors import InfEngineError, RateLimitError
@@ -184,3 +185,50 @@ class ExecutionError(InfEngineError):
         super().__init__(message)
         self.node_id = node_id
         self.cause = cause
+
+
+class OptimizationError(InfEngineError):
+    """Error raised when parameter optimization fails.
+
+    Raised when the optimizer cannot produce valid parameter updates
+    after exhausting retry attempts. This typically occurs when the
+    updater LLM returns empty or malformed responses.
+
+    Args:
+        message: A human-readable description of the optimization error.
+        parameter_name: Optional name of the parameter that failed to update.
+        attempts: Number of attempts made before failing.
+
+    Attributes:
+        message: The error message.
+        parameter_name: The name of the failed parameter, or None if not applicable.
+        attempts: The number of attempts made before failing.
+
+    Example:
+        >>> error = OptimizationError(
+        ...     "Failed to generate update for parameter after 3 attempts",
+        ...     parameter_name="system_prompt",
+        ...     attempts=3,
+        ... )
+        >>> error.parameter_name
+        'system_prompt'
+        >>> error.attempts
+        3
+    """
+
+    def __init__(
+        self,
+        message: str,
+        parameter_name: str | None = None,
+        attempts: int = 0,
+    ) -> None:
+        """Initialize the optimization error.
+
+        Args:
+            message: A human-readable description of the optimization error.
+            parameter_name: Optional name of the parameter that failed to update.
+            attempts: Number of attempts made before failing.
+        """
+        super().__init__(message)
+        self.parameter_name = parameter_name
+        self.attempts = attempts

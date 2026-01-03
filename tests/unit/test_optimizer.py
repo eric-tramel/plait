@@ -1129,3 +1129,231 @@ class TestOptimizerExportFromPackage:
         optimizer = SFAOptimizer(params)
 
         assert isinstance(optimizer, Optimizer)
+
+
+class TestSFAOptimizerRetryBehavior:
+    """Tests for SFAOptimizer retry behavior on empty/invalid updates."""
+
+    def test_max_retries_default(self) -> None:
+        """SFAOptimizer has default max_retries of 3."""
+        params = [Parameter("test", description="test")]
+        optimizer = SFAOptimizer(params)
+        assert optimizer.max_retries == 3
+
+    def test_max_retries_custom(self) -> None:
+        """SFAOptimizer accepts custom max_retries value."""
+        params = [Parameter("test", description="test")]
+        optimizer = SFAOptimizer(params, max_retries=5)
+        assert optimizer.max_retries == 5
+
+    def test_max_retries_zero(self) -> None:
+        """SFAOptimizer accepts max_retries=0 (no retries)."""
+        params = [Parameter("test", description="test")]
+        optimizer = SFAOptimizer(params, max_retries=0)
+        assert optimizer.max_retries == 0
+
+    def test_max_retries_negative_raises(self) -> None:
+        """SFAOptimizer rejects negative max_retries."""
+        params = [Parameter("test", description="test")]
+        with pytest.raises(ValueError) as exc_info:
+            SFAOptimizer(params, max_retries=-1)
+        assert "non-negative" in str(exc_info.value).lower()
+
+    def test_validate_update_empty_string(self) -> None:
+        """_validate_update returns False for empty string."""
+        params = [Parameter("test", description="test")]
+        optimizer = SFAOptimizer(params)
+        assert optimizer._validate_update("") is False
+
+    def test_validate_update_whitespace_only(self) -> None:
+        """_validate_update returns False for whitespace-only string."""
+        params = [Parameter("test", description="test")]
+        optimizer = SFAOptimizer(params)
+        assert optimizer._validate_update("   ") is False
+        assert optimizer._validate_update("\n\t") is False
+
+    def test_validate_update_valid_string(self) -> None:
+        """_validate_update returns True for valid non-empty string."""
+        params = [Parameter("test", description="test")]
+        optimizer = SFAOptimizer(params)
+        assert optimizer._validate_update("valid update") is True
+        assert optimizer._validate_update("  content  ") is True
+
+    @pytest.mark.asyncio
+    async def test_step_retries_on_empty_response(self) -> None:
+        """step() retries when updater returns empty response."""
+
+        param = Parameter("test", description="test param")
+        param._name = "param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param], max_retries=2)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
+
+        # Track call count
+        call_count = 0
+
+        async def mock_updater(prompt: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:  # First 2 calls return empty
+                return ""
+            return "valid update"  # Third call succeeds
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        updates = await optimizer.step()
+
+        # Should have retried and succeeded
+        assert call_count == 3
+        assert param.value == "valid update"
+        assert "param" in updates
+
+    @pytest.mark.asyncio
+    async def test_step_raises_after_exhausting_retries(self) -> None:
+        """step() raises OptimizationError after exhausting retries."""
+        from inf_engine.errors import OptimizationError
+
+        param = Parameter("test", description="test param")
+        param._name = "my_param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param], max_retries=2)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
+
+        # Always return empty
+        optimizer.updater = AsyncMock(return_value="")
+        optimizer._bound = True
+
+        with pytest.raises(OptimizationError) as exc_info:
+            await optimizer.step()
+
+        error = exc_info.value
+        assert error.parameter_name == "my_param"
+        assert error.attempts == 3  # 1 initial + 2 retries
+        assert "my_param" in str(error)
+
+    @pytest.mark.asyncio
+    async def test_step_no_retry_on_valid_response(self) -> None:
+        """step() doesn't retry when updater returns valid response."""
+        param = Parameter("test", description="test param")
+        param._name = "param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param], max_retries=3)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
+
+        call_count = 0
+
+        async def mock_updater(prompt: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return "valid update"
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        await optimizer.step()
+
+        # Should only be called once (no retries needed)
+        assert call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_step_with_zero_retries_fails_immediately(self) -> None:
+        """step() fails immediately with max_retries=0 on empty response."""
+        from inf_engine.errors import OptimizationError
+
+        param = Parameter("test", description="test param")
+        param._name = "param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param], max_retries=0)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
+
+        call_count = 0
+
+        async def mock_updater(prompt: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return ""
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        with pytest.raises(OptimizationError) as exc_info:
+            await optimizer.step()
+
+        # Only one attempt (no retries)
+        assert call_count == 1
+        assert exc_info.value.attempts == 1
+
+    @pytest.mark.asyncio
+    async def test_step_retries_on_whitespace_response(self) -> None:
+        """step() treats whitespace-only response as invalid and retries."""
+        param = Parameter("test", description="test param")
+        param._name = "param"
+        param.accumulate_feedback("feedback")
+
+        optimizer = SFAOptimizer([param], max_retries=1)
+        record = create_mock_record([param])
+        optimizer.capture_record(record)
+
+        call_count = 0
+
+        async def mock_updater(prompt: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "   \n\t  "  # Whitespace only
+            return "valid"
+
+        optimizer.updater = mock_updater
+        optimizer._bound = True
+
+        await optimizer.step()
+
+        assert call_count == 2
+        assert param.value == "valid"
+
+
+class TestOptimizationErrorExport:
+    """Tests for OptimizationError exception class."""
+
+    def test_optimization_error_import(self) -> None:
+        """OptimizationError can be imported from errors module."""
+        from inf_engine.errors import OptimizationError
+
+        error = OptimizationError("test error")
+        assert str(error) == "test error"
+
+    def test_optimization_error_with_parameter_name(self) -> None:
+        """OptimizationError stores parameter_name attribute."""
+        from inf_engine.errors import OptimizationError
+
+        error = OptimizationError(
+            "Failed to update parameter",
+            parameter_name="system_prompt",
+        )
+        assert error.parameter_name == "system_prompt"
+
+    def test_optimization_error_with_attempts(self) -> None:
+        """OptimizationError stores attempts attribute."""
+        from inf_engine.errors import OptimizationError
+
+        error = OptimizationError(
+            "Failed after retries",
+            attempts=3,
+        )
+        assert error.attempts == 3
+
+    def test_optimization_error_inherits_from_inf_engine_error(self) -> None:
+        """OptimizationError inherits from InfEngineError."""
+        from inf_engine.errors import InfEngineError, OptimizationError
+
+        error = OptimizationError("test")
+        assert isinstance(error, InfEngineError)
