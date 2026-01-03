@@ -144,9 +144,15 @@ class TemplateFormatter(InferenceModule):
         >>> # In forward(): formatted = formatter(name="World")
     """
 
+    # Type annotation for the template attribute
+    template: TemplateParameter
+
     def __init__(self, template: TemplateParameter) -> None:
         super().__init__()
-        self.template = template
+        # Use object.__setattr__ to avoid registering the template as a
+        # parameter of this module. The template is already registered
+        # on the parent module that owns it.
+        object.__setattr__(self, "template", template)
 
     def forward(self, **kwargs: str) -> str:
         """Format the template with provided values.
@@ -671,7 +677,7 @@ async def train_hallucination_detector() -> None:
     # Show initial state
     console.print(
         Panel(
-            detector.system_prompt.value,
+            str(detector.system_prompt.value),
             title="[bold]Initial System Prompt[/bold]",
             border_style="blue",
             padding=(1, 2),
@@ -679,7 +685,7 @@ async def train_hallucination_detector() -> None:
     )
     console.print(
         Panel(
-            detector.user_prompt_template.value,
+            str(detector.user_prompt_template.value),
             title="[bold]Initial User Prompt Template[/bold]",
             border_style="blue",
             padding=(1, 2),
@@ -762,7 +768,7 @@ async def train_hallucination_detector() -> None:
                     console.print()
                     console.print(
                         Panel(
-                            detector.system_prompt.value,
+                            str(detector.system_prompt.value),
                             title=f"[bold]Current System Prompt[/bold] [dim](Batch {batch_idx + 1})[/dim]",
                             border_style="magenta",
                             padding=(1, 2),
@@ -770,7 +776,7 @@ async def train_hallucination_detector() -> None:
                     )
                     console.print(
                         Panel(
-                            detector.user_prompt_template.value,
+                            str(detector.user_prompt_template.value),
                             title="[bold]Current User Prompt Template[/bold]",
                             border_style="magenta",
                             padding=(1, 2),
@@ -991,7 +997,7 @@ async def train_hallucination_detector() -> None:
     console.rule("[bold cyan]Final Parameters[/bold cyan]")
     console.print(
         Panel(
-            detector.system_prompt.value,
+            str(detector.system_prompt.value),
             title="[bold green]Optimized System Prompt[/bold green]",
             border_style="green",
             padding=(1, 2),
@@ -999,7 +1005,7 @@ async def train_hallucination_detector() -> None:
     )
     console.print(
         Panel(
-            detector.user_prompt_template.value,
+            str(detector.user_prompt_template.value),
             title="[bold green]Optimized User Prompt Template[/bold green]",
             border_style="green",
             padding=(1, 2),
