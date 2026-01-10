@@ -415,3 +415,219 @@ class TestPropagateBackwardEdgeCases:
         feedback = Feedback(content="Test")
         # Should not raise - input nodes don't have backward
         await _propagate_backward(feedback, record)
+
+
+class TestResolveInputNode:
+    """Tests for _resolve_input_node function."""
+
+    def test_resolve_node_ref_from_args(self) -> None:
+        """Resolves NodeRef from positional arguments."""
+        from inf_engine.optimization.backward import _resolve_input_node
+
+        # Create a graph with node that has NodeRef in args
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        module_node = GraphNode(
+            id="module_1",
+            module=None,
+            args=(NodeRef("input:x"),),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "module_1": module_node},
+            input_ids=["input:x"],
+            output_ids=["module_1"],
+        )
+
+        record = ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        # Resolve by positional index
+        result = _resolve_input_node("module_1", "0", record)
+        assert result == "input:x"
+
+    def test_resolve_node_ref_from_kwargs(self) -> None:
+        """Resolves NodeRef from keyword arguments."""
+        from inf_engine.optimization.backward import _resolve_input_node
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        module_node = GraphNode(
+            id="module_1",
+            module=None,
+            args=(),
+            kwargs={"prompt": NodeRef("input:x")},
+            dependencies=["input:x"],
+        )
+
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "module_1": module_node},
+            input_ids=["input:x"],
+            output_ids=["module_1"],
+        )
+
+        record = ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        # Resolve by kwarg name
+        result = _resolve_input_node("module_1", "prompt", record)
+        assert result == "input:x"
+
+    def test_resolve_value_ref_from_args(self) -> None:
+        """Resolves ValueRef from positional arguments."""
+        from inf_engine.optimization.backward import _resolve_input_node
+        from inf_engine.values import ValueRef
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        module_node = GraphNode(
+            id="module_1",
+            module=None,
+            args=(ValueRef("input:x"),),
+            kwargs={},
+            dependencies=["input:x"],
+        )
+
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "module_1": module_node},
+            input_ids=["input:x"],
+            output_ids=["module_1"],
+        )
+
+        record = ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        # Resolve by positional index - ValueRef should work just like NodeRef
+        result = _resolve_input_node("module_1", "0", record)
+        assert result == "input:x"
+
+    def test_resolve_value_ref_from_kwargs(self) -> None:
+        """Resolves ValueRef from keyword arguments."""
+        from inf_engine.optimization.backward import _resolve_input_node
+        from inf_engine.values import ValueRef
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        module_node = GraphNode(
+            id="module_1",
+            module=None,
+            args=(),
+            kwargs={"context": ValueRef("input:x")},
+            dependencies=["input:x"],
+        )
+
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "module_1": module_node},
+            input_ids=["input:x"],
+            output_ids=["module_1"],
+        )
+
+        record = ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        # Resolve by kwarg name - ValueRef should work just like NodeRef
+        result = _resolve_input_node("module_1", "context", record)
+        assert result == "input:x"
+
+    def test_resolve_single_value_ref_arg(self) -> None:
+        """Single ValueRef arg resolves by name even if not index."""
+        from inf_engine.optimization.backward import _resolve_input_node
+        from inf_engine.values import ValueRef
+
+        input_node = GraphNode(
+            id="input:x",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        module_node = GraphNode(
+            id="module_1",
+            module=None,
+            args=(ValueRef("input:x"),),  # Single arg
+            kwargs={},
+            dependencies=["input:x"],
+        )
+
+        graph = InferenceGraph(
+            nodes={"input:x": input_node, "module_1": module_node},
+            input_ids=["input:x"],
+            output_ids=["module_1"],
+        )
+
+        record = ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        # With single arg, name lookup also works
+        result = _resolve_input_node("module_1", "prompt", record)
+        assert result == "input:x"
+
+    def test_resolve_returns_none_for_missing(self) -> None:
+        """Returns None when input cannot be resolved."""
+        from inf_engine.optimization.backward import _resolve_input_node
+
+        module_node = GraphNode(
+            id="module_1",
+            module=None,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+
+        graph = InferenceGraph(
+            nodes={"module_1": module_node},
+            input_ids=[],
+            output_ids=["module_1"],
+        )
+
+        record = ForwardRecord(
+            graph=graph,
+            node_inputs={},
+            node_outputs={},
+            module_map={},
+        )
+
+        result = _resolve_input_node("module_1", "nonexistent", record)
+        assert result is None

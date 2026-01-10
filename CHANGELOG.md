@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Integrate Value.ref system with optimization components
+  - Loss functions now unwrap Value objects before evaluation
+  - `Loss.__call__` unwraps both output and target Value objects
+  - `Loss._evaluate_batch` unwraps targets in batch mode
+  - `Loss._extract_value_and_record` handles Value, TracedOutput, and raw values
+  - `_resolve_input_node` in backward pass handles both NodeRef and ValueRef
+  - Tests added for Value integration with VerifierLoss, CompositeLoss
 - Add `OptimizationError` exception for parameter optimization failures
   - Raised when optimizer cannot produce valid updates after exhausting retries
   - Includes `parameter_name` and `attempts` attributes for debugging

@@ -1904,3 +1904,128 @@ class TestExtractValueAndRecord:
 
         assert value == "raw"
         assert record is explicit_record
+
+    def test_extract_from_value_object(self) -> None:
+        """Extract from Value object returns unwrapped payload."""
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        value_obj = Value(kind=ValueKind.TEXT, payload="payload content", ref="node_1")
+
+        value, record = loss._extract_value_and_record(value_obj)
+
+        assert value == "payload content"
+        assert record is None  # Value doesn't carry record
+
+    def test_extract_from_value_with_explicit_record(self) -> None:
+        """Extract from Value with explicit record preserves record."""
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        explicit_record = self._create_record()
+        value_obj = Value(kind=ValueKind.TEXT, payload="payload", ref="node_1")
+
+        value, record = loss._extract_value_and_record(value_obj, explicit_record)
+
+        assert value == "payload"
+        assert record is explicit_record
+
+    def test_extract_from_traced_output_with_nested_value(self) -> None:
+        """Extract from TracedOutput containing Value unwraps both."""
+        from inf_engine.optimization.record import TracedOutput
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        inner_record = self._create_record()
+        value_obj = Value(kind=ValueKind.TEXT, payload="nested payload", ref="node_1")
+        traced = TracedOutput(value=value_obj, _record=inner_record)
+
+        value, record = loss._extract_value_and_record(traced)
+
+        assert value == "nested payload"
+        assert record is inner_record
+
+    def test_extract_unwraps_nested_values(self) -> None:
+        """Extract unwraps deeply nested Value objects."""
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        nested = {"key": Value(kind=ValueKind.TEXT, payload="inner", ref="node_1")}
+
+        value, record = loss._extract_value_and_record(nested)
+
+        assert value == {"key": "inner"}
+        assert record is None
+
+
+class TestLossWithValueObjects:
+    """Tests for Loss integration with Value objects."""
+
+    @pytest.mark.asyncio
+    async def test_loss_call_with_value_output(self) -> None:
+        """Loss can be called with Value object as output."""
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        value_obj = Value(kind=ValueKind.TEXT, payload="output", ref="node_1")
+
+        feedback = await loss(value_obj, target="target")
+
+        # SimpleLoss compares payloads
+        assert feedback.score == 0.5  # "output" != "target"
+
+    @pytest.mark.asyncio
+    async def test_loss_call_with_value_target(self) -> None:
+        """Loss can be called with Value object as target."""
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        value_target = Value(kind=ValueKind.TEXT, payload="target", ref="node_1")
+
+        feedback = await loss("output", target=value_target)
+
+        assert feedback.score == 0.5
+
+    @pytest.mark.asyncio
+    async def test_loss_call_with_matching_values(self) -> None:
+        """Loss correctly evaluates matching Value payloads."""
+        from inf_engine.values import Value, ValueKind
+
+        loss = SimpleLoss()
+        output = Value(kind=ValueKind.TEXT, payload="same", ref="node_1")
+        target = Value(kind=ValueKind.TEXT, payload="same", ref="node_2")
+
+        feedback = await loss(output, target=target)
+
+        assert feedback.score == 1.0  # Payloads match
+
+    @pytest.mark.asyncio
+    async def test_verifier_loss_with_value_output(self) -> None:
+        """VerifierLoss unwraps Value before calling verifier."""
+
+        def verifier(output: str) -> tuple[bool, str]:
+            # Should receive unwrapped string, not Value object
+            assert isinstance(output, str)
+            return output == "hello", f"Got: {output}"
+
+        from inf_engine.values import Value, ValueKind
+
+        loss = VerifierLoss(verifier=verifier)
+        output = Value(kind=ValueKind.TEXT, payload="hello", ref="node_1")
+
+        feedback = await loss(output)
+
+        assert feedback.score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_composite_loss_with_values(self) -> None:
+        """CompositeLoss works with Value objects."""
+        from inf_engine.values import Value, ValueKind
+
+        # CompositeLoss takes a list of (loss, weight) tuples
+        loss = CompositeLoss(losses=[(SimpleLoss(always_score=0.5), 1.0)])
+        output = Value(kind=ValueKind.TEXT, payload="output", ref="node_1")
+
+        feedback = await loss(output, target="target")
+
+        assert feedback.score == 0.5

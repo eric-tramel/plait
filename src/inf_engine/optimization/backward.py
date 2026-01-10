@@ -221,7 +221,8 @@ def _resolve_input_node(
     """Resolve which node provided a given input to a node.
 
     Maps from an input name (like "prompt" or "0") to the node_id
-    that provided that input during the forward pass.
+    that provided that input during the forward pass. Handles both
+    NodeRef (from classic tracing) and ValueRef (from Value-driven tracing).
 
     Args:
         node_id: The node receiving the input.
@@ -232,6 +233,15 @@ def _resolve_input_node(
         The node_id of the input provider, or None if not found.
     """
     from inf_engine.graph import NodeRef
+    from inf_engine.values import ValueRef
+
+    def _get_ref_id(arg: Any) -> str | None:
+        """Extract node ID from NodeRef or ValueRef."""
+        if isinstance(arg, NodeRef):
+            return arg.node_id
+        elif isinstance(arg, ValueRef):
+            return arg.ref
+        return None
 
     node = record.graph.nodes[node_id]
 
@@ -240,21 +250,24 @@ def _resolve_input_node(
         idx = int(input_name)
         if idx < len(node.args):
             arg = node.args[idx]
-            if isinstance(arg, NodeRef):
-                return arg.node_id
+            ref_id = _get_ref_id(arg)
+            if ref_id is not None:
+                return ref_id
     else:
         # Check kwargs
         if input_name in node.kwargs:
             arg = node.kwargs[input_name]
-            if isinstance(arg, NodeRef):
-                return arg.node_id
+            ref_id = _get_ref_id(arg)
+            if ref_id is not None:
+                return ref_id
 
         # Check args by iterating (for cases where input_name is a parameter name)
         for arg in node.args:
-            if isinstance(arg, NodeRef):
+            ref_id = _get_ref_id(arg)
+            if ref_id is not None:
                 # If we only have one arg, assume it matches
                 if len(node.args) == 1:
-                    return arg.node_id
+                    return ref_id
 
     return None
 

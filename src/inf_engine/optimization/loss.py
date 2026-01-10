@@ -323,8 +323,14 @@ class Loss(ABC):
             return await self._evaluate_batch(output, target, context)
 
         # Single sample: extract value and record, then evaluate
+        # Unwrap both output and target to handle Value objects
+        from inf_engine.values import unwrap
+
         actual_output, record = self._extract_value_and_record(output)
-        feedback = await self._evaluate_single(actual_output, target, context=context)
+        actual_target = unwrap(target) if target is not None else None
+        feedback = await self._evaluate_single(
+            actual_output, actual_target, context=context
+        )
         return self._attach_record(feedback, record)
 
     @abstractmethod
@@ -378,16 +384,17 @@ class Loss(ABC):
         import asyncio
 
         from inf_engine.optimization.feedback import Feedback, FeedbackType
+        from inf_engine.values import unwrap
 
         n = len(outputs)
 
-        # Normalize targets to list
+        # Normalize targets to list and unwrap Value objects
         if targets is None:
             targets_list: list[Any] = [None] * n
         elif not isinstance(targets, list):
-            targets_list = [targets] * n
+            targets_list = [unwrap(targets)] * n
         else:
-            targets_list = targets
+            targets_list = [unwrap(t) if t is not None else None for t in targets]
 
         # Extract values and records from TracedOutputs
         actual_outputs: list[Any] = []
@@ -501,26 +508,33 @@ class Loss(ABC):
         output: Any,
         record: ForwardRecord | None = None,
     ) -> tuple[Any, ForwardRecord | None]:
-        """Extract actual value and record from output, handling TracedOutput.
+        """Extract actual value and record from output, handling TracedOutput and Value.
 
         When training mode is enabled, modules return TracedOutput wrappers
-        that carry the ForwardRecord implicitly. This helper method extracts
-        the actual value and record, whether the output is a TracedOutput
-        or a raw value.
+        that carry the ForwardRecord implicitly. In Value-driven tracing mode,
+        outputs are Value objects with ref attributes. This helper method
+        extracts the actual value and record, whether the output is a
+        TracedOutput, Value, or a raw value.
 
         Args:
-            output: Either a TracedOutput wrapper or a raw value.
+            output: Either a TracedOutput wrapper, a Value container, or a raw value.
             record: Optional explicit record (takes precedence if both provided).
 
         Returns:
             Tuple of (actual_value, record). The record is from TracedOutput
             if output is wrapped and no explicit record was provided.
+            For Value objects, the payload is extracted but no record is
+            attached (Value.ref is used for dependency tracking, not backward).
 
         Example:
             >>> # With TracedOutput (training mode)
             >>> value, rec = self._extract_value_and_record(traced_output)
             >>> isinstance(rec, ForwardRecord)
             True
+            >>>
+            >>> # With Value (Value-driven tracing)
+            >>> value, rec = self._extract_value_and_record(value_obj)
+            >>> # value is the payload, rec is None (Value uses ref)
             >>>
             >>> # With raw value
             >>> value, rec = self._extract_value_and_record("raw string")
@@ -534,18 +548,28 @@ class Loss(ABC):
 
         Note:
             This method enables automatic record flow when using training mode.
-            Loss functions can call this to transparently handle both raw
-            values and TracedOutput wrappers.
+            Loss functions can call this to transparently handle TracedOutput
+            wrappers, Value containers, and raw values.
         """
         from inf_engine.optimization.record import TracedOutput
+        from inf_engine.values import Value, unwrap
 
         if isinstance(output, TracedOutput):
             actual_value = output.value
             # Use explicit record if provided, otherwise use TracedOutput's record
             effective_record = record if record is not None else output._record
+            # Further unwrap if the value inside TracedOutput is a Value
+            actual_value = unwrap(actual_value)
             return actual_value, effective_record
+        elif isinstance(output, Value):
+            # Value objects carry payload and ref for dependency tracking
+            # Unwrap the payload for evaluation
+            actual_value = unwrap(output)
+            return actual_value, record
         else:
-            return output, record
+            # Raw value - also unwrap in case it's a nested structure with Values
+            actual_value = unwrap(output)
+            return actual_value, record
 
 
 class VerifierLoss(Loss):
