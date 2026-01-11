@@ -210,24 +210,20 @@ async with ExecutionSettings(resources=prod_resources):
 
 ## Examples
 
-The `examples/` directory contains runnable examples:
+The `examples/` directory contains focused, runnable examples:
 
 | Example | Description |
 |---------|-------------|
-| `01_basic_modules.py` | Module creation and composition |
-| `02_parameters.py` | Learnable parameters and state |
-| `03_llm_pipelines.py` | LLM-based inference pipelines |
-| `04_tracing.py` | DAG capture and visualization |
-| `05_execution.py` | Running pipelines with resources |
-| `06_checkpointing.py` | State persistence and recovery |
-| `07_execution_settings.py` | Execution configuration |
-| `08_profiling.py` | Performance profiling |
-| `09_optimization.py` | Backward pass and prompt optimization |
+| `01_module.py` | Module, Parameter, and composition |
+| `02_llm_pipeline.py` | LLMInference and pipeline patterns |
+| `03_tracing.py` | DAG capture and visualization |
+| `04_execution.py` | run(), bind(), ExecutionSettings, batch |
+| `05_optimization.py` | Backward pass and prompt optimization |
 
 Run an example:
 
 ```bash
-python examples/01_basic_modules.py
+python examples/01_module.py
 ```
 
 ## Documentation
