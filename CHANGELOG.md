@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- [#14](https://github.com/eric-tramel/plait/pull/14) Consolidate examples from 9 files to 5 focused single-concept files with `make example` runner
 - [#11](https://github.com/eric-tramel/plait/pull/11) Add comprehensive README with project overview, quick start, examples, and development setup
 - Integrate `Value.ref` system with loss functions and backward pass for seamless value unwrapping
 - Add `OptimizationError` exception with retry logic for `SFAOptimizer` parameter updates

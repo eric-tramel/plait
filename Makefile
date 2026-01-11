@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration lint types ci
+.PHONY: test test-unit test-integration lint types ci example
 
 ci: lint types test
 
@@ -17,3 +17,9 @@ lint:
 
 types:
 	uv run ty check
+
+example:
+	@for f in examples/[0-9]*.py; do \
+		echo "=== Running $$f ==="; \
+		uv run python "$$f" || exit 1; \
+	done
