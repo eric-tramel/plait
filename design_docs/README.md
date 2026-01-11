@@ -31,10 +31,10 @@ feedback backward to update `Parameter`s.
 ### Quick Anchor Example
 
 ```python
-from plait import InferenceModule, LLMInference, Parameter, ResourceConfig, run
+from plait import Module, LLMInference, Parameter, ResourceConfig, run
 
 
-class SummarizeThenAnalyze(InferenceModule):
+class SummarizeThenAnalyze(Module):
     def __init__(self):
         super().__init__()
         self.instructions = Parameter(
@@ -65,7 +65,7 @@ resource-aware scheduling.
 
 ### Torch-like authoring for compound AI systems
 
-- `InferenceModule` provides a familiar module boundary (like `nn.Module`).
+- `Module` provides a familiar module boundary (like `nn.Module`).
 - `LLMInference` is the atomic unit for model calls (executed via resources).
 - `Parameter` represents learnable, persistent state (often prompts/config).
 
@@ -145,7 +145,7 @@ the same execution stack and resource configuration as the forward system.
 
 At a high level:
 
-1. **User code**: `InferenceModule.forward()` expresses composition in Python.
+1. **User code**: `Module.forward()` expresses composition in Python.
 2. **Tracing**: the `Tracer` runs `forward()` in a trace context; module calls
    are recorded as nodes; dependencies come from `Value.ref`; args/kwargs store
    `ValueRef` placeholders.
@@ -166,7 +166,7 @@ If you’re new to the design, read these in order:
 2. **[Values](./values.md)** - Data container + provenance (`Value`, `ValueRef`)
 3. **[Parameters](./parameters.md)** - Learnable state and lifting into `Value`
 4. **[Functional API](./functional_api.md)** - Stateless, graph-aware ops
-5. **[InferenceModule](./inference_module.md)** - Core module system
+5. **[Module](./inference_module.md)** - Core module system
 6. **[Tracing](./tracing.md)** - How DAGs are captured from code
 7. **[Execution](./execution.md)** - Scheduler, state, error handling, checkpointing
 8. **[Resources](./resources.md)** - Endpoint configuration and pooling
@@ -177,7 +177,7 @@ If you’re new to the design, read these in order:
 
 | PyTorch | plait | Purpose |
 |---------|------------|---------|
-| `nn.Module` | `InferenceModule` | Base class for operations |
+| `nn.Module` | `Module` | Base class for operations |
 | `nn.Parameter` | `Parameter` | Learnable values (state) |
 | `forward()` | `forward()` | Define computation |
 | `backward()` | `backward()` | Propagate gradients/feedback |
@@ -190,7 +190,7 @@ If you’re new to the design, read these in order:
 plait/
 ├── src/
 │   └── plait/
-│       ├── module.py           # InferenceModule, LLMInference
+│       ├── module.py           # Module, LLMInference
 │       ├── parameter.py        # Parameter
 │       ├── values.py           # Value, ValueKind, helpers
 │       ├── functional.py       # plait.functional

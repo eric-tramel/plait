@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from plait.module import InferenceModule
+    from plait.module import Module
 
 
 @dataclass
@@ -64,7 +64,7 @@ class Parameter:
     description: str | None = None
     requires_grad: bool = True
     _name: str | None = field(default=None, repr=False, compare=False)
-    _parent: InferenceModule | None = field(default=None, repr=False, compare=False)
+    _parent: Module | None = field(default=None, repr=False, compare=False)
     _id: str = field(
         default_factory=lambda: uuid4().hex, init=False, repr=False, compare=False
     )

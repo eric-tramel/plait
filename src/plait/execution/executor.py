@@ -1,14 +1,14 @@
 """Executor for running inference modules.
 
 This module provides the `run()` function which traces and executes an
-InferenceModule, handling the complete flow from tracing to execution.
+Module, handling the complete flow from tracing to execution.
 
 Example:
     >>> from plait.execution.executor import run
-    >>> from plait.module import InferenceModule, LLMInference
+    >>> from plait.module import Module, LLMInference
     >>> from plait.resources.config import ResourceConfig, EndpointConfig
     >>>
-    >>> class Pipeline(InferenceModule):
+    >>> class Pipeline(Module):
     ...     def __init__(self):
     ...         super().__init__()
     ...         self.llm = LLMInference(alias="fast")
@@ -52,7 +52,7 @@ from plait.tracing.tracer import Tracer
 
 if TYPE_CHECKING:
     from plait.execution.state import TaskResult
-    from plait.module import InferenceModule
+    from plait.module import Module
     from plait.resources.config import ResourceConfig
     from plait.resources.manager import ResourceManager
 
@@ -62,7 +62,7 @@ from typing import Literal
 
 @overload
 async def run(
-    module: InferenceModule,
+    module: Module,
     *args: Any,
     resources: ResourceConfig | ResourceManager | None = None,
     max_concurrent: int = 100,
@@ -75,7 +75,7 @@ async def run(
 
 @overload
 async def run(
-    module: InferenceModule,
+    module: Module,
     *args: Any,
     resources: ResourceConfig | ResourceManager | None = None,
     max_concurrent: int = 100,
@@ -87,7 +87,7 @@ async def run(
 
 
 async def run(
-    module: InferenceModule,
+    module: Module,
     *args: Any,
     resources: ResourceConfig | ResourceManager | None = None,
     max_concurrent: int = 100,
@@ -142,9 +142,9 @@ async def run(
             or are cancelled, an empty dict is returned.
 
     Example:
-        >>> from plait.module import InferenceModule
+        >>> from plait.module import Module
         >>>
-        >>> class Echo(InferenceModule):
+        >>> class Echo(Module):
         ...     def forward(self, text: str) -> str:
         ...         return text.upper()
         >>>
@@ -279,7 +279,7 @@ def _build_forward_record(graph: Any, state: ExecutionState) -> ForwardRecord:
     Returns:
         A ForwardRecord containing execution data for backward pass.
     """
-    from plait.module import InferenceModule
+    from plait.module import Module
 
     # Extract node outputs from state results
     node_outputs: dict[str, Any] = {
@@ -292,9 +292,9 @@ def _build_forward_record(graph: Any, state: ExecutionState) -> ForwardRecord:
     }
 
     # Build module map from graph nodes
-    module_map: dict[str, InferenceModule] = {}
+    module_map: dict[str, Module] = {}
     for node_id, node in graph.nodes.items():
-        if isinstance(node.module, InferenceModule):
+        if isinstance(node.module, Module):
             module_map[node_id] = node.module
 
     return ForwardRecord(

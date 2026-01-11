@@ -2,7 +2,7 @@
 
 from plait.execution.state import ExecutionState, TaskResult
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import InputNode
 from plait.values import Value, ValueKind, ValueRef
 
@@ -11,7 +11,7 @@ from plait.values import Value, ValueKind, ValueRef
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ConcatModule(InferenceModule):
+class ConcatModule(Module):
     """Simple module that concatenates string inputs."""
 
     def forward(self, *args: str) -> str:
@@ -19,7 +19,7 @@ class ConcatModule(InferenceModule):
         return " ".join(str(arg) for arg in args)
 
 
-class UppercaseModule(InferenceModule):
+class UppercaseModule(Module):
     """Simple module that converts input to uppercase."""
 
     def forward(self, text: str) -> str:

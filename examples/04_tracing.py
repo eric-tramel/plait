@@ -8,7 +8,7 @@ directed acyclic graph (DAG) that can be analyzed and executed efficiently.
 Run with: python examples/04_tracing.py
 """
 
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 from plait.tracing.proxy import Proxy
 from plait.tracing.tracer import Tracer
@@ -18,7 +18,7 @@ from plait.tracing.tracer import Tracer
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SimplePipeline(InferenceModule):
+class SimplePipeline(Module):
     """A simple two-step pipeline."""
 
     def __init__(self) -> None:
@@ -64,7 +64,7 @@ def demo_basic_tracing() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ParallelAnalysis(InferenceModule):
+class ParallelAnalysis(Module):
     """Multiple analyzers processing the same input in parallel."""
 
     def __init__(self) -> None:
@@ -106,7 +106,7 @@ def demo_parallel_tracing() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class DiamondPipeline(InferenceModule):
+class DiamondPipeline(Module):
     """Fan-out to parallel analyzers, then fan-in to synthesizer."""
 
     def __init__(self) -> None:
@@ -160,7 +160,7 @@ def demo_diamond_tracing() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class LinearChain(InferenceModule):
+class LinearChain(Module):
     """A linear chain of four processing steps."""
 
     def __init__(self) -> None:
@@ -210,7 +210,7 @@ def demo_graph_traversal() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class DetailedModule(InferenceModule):
+class DetailedModule(Module):
     """Module with parameters for detailed inspection."""
 
     def __init__(self) -> None:
@@ -307,7 +307,7 @@ def demo_multiple_traces() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ComplexPipeline(InferenceModule):
+class ComplexPipeline(Module):
     """A multi-stage pipeline with fan-out and fan-in.
 
     Structure:

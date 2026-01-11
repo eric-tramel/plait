@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from plait.execution.state import TaskResult
-    from plait.module import InferenceModule
+    from plait.module import Module
 
 
 @dataclass
@@ -105,7 +105,7 @@ class Checkpoint:
 
     def is_compatible_with(
         self,
-        module_or_hash: InferenceModule | str,
+        module_or_hash: Module | str,
         *args: Any,
         **kwargs: Any,
     ) -> bool:
@@ -116,11 +116,11 @@ class Checkpoint:
 
         Args:
             module_or_hash: Either a graph hash string from
-                InferenceGraph.compute_hash(), or an InferenceModule to
+                InferenceGraph.compute_hash(), or an Module to
                 trace and compute the hash from.
-            *args: If module_or_hash is an InferenceModule, these are passed
+            *args: If module_or_hash is an Module, these are passed
                 to trace() as the module's input arguments.
-            **kwargs: If module_or_hash is an InferenceModule, these are
+            **kwargs: If module_or_hash is an Module, these are
                 passed to trace() as the module's keyword arguments.
 
         Returns:

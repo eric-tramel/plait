@@ -19,7 +19,7 @@ from plait.execution.executor import run
 from plait.execution.scheduler import Scheduler
 from plait.execution.state import ExecutionState, TaskResult
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import InputNode
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ from plait.tracing.tracer import InputNode
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class EchoModule(InferenceModule):
+class EchoModule(Module):
     """Simple test module that echoes input with prefix."""
 
     def __init__(self, prefix: str = "") -> None:
@@ -38,7 +38,7 @@ class EchoModule(InferenceModule):
         return f"{self.prefix}{text}"
 
 
-class SlowModule(InferenceModule):
+class SlowModule(Module):
     """A module that takes some time to process."""
 
     async def forward(self, text: str) -> str:
@@ -46,7 +46,7 @@ class SlowModule(InferenceModule):
         return f"{text}_slow"
 
 
-class SequentialModule(InferenceModule):
+class SequentialModule(Module):
     """Module that chains multiple operations."""
 
     def __init__(self) -> None:

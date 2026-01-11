@@ -594,15 +594,15 @@ class Scheduler:
             Value payloads are unwrapped so user-defined forward() methods
             receive raw Python values, not Value containers.
         """
-        from plait.module import InferenceModule
+        from plait.module import Module
         from plait.values import unwrap
 
         if task.module is None:
             return None
 
-        # At this point, module must be an InferenceModule (InputNode is handled
+        # At this point, module must be an Module (InputNode is handled
         # in _execute_task before calling this method)
-        assert isinstance(task.module, InferenceModule)
+        assert isinstance(task.module, Module)
 
         # Unwrap Value payloads for user-defined forward() implementations
         args = unwrap(task.args)

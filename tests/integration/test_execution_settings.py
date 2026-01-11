@@ -15,14 +15,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from plait.execution.context import ExecutionSettings, get_execution_settings
-from plait.module import InferenceModule
+from plait.module import Module
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class EchoModule(InferenceModule):
+class EchoModule(Module):
     """Simple test module that echoes input with prefix."""
 
     def __init__(self, prefix: str = "") -> None:
@@ -33,14 +33,14 @@ class EchoModule(InferenceModule):
         return f"{self.prefix}{text}"
 
 
-class UpperModule(InferenceModule):
+class UpperModule(Module):
     """Test module that uppercases input."""
 
     def forward(self, text: str) -> str:
         return text.upper()
 
 
-class ChainModule(InferenceModule):
+class ChainModule(Module):
     """Module that chains two child modules."""
 
     def __init__(self) -> None:

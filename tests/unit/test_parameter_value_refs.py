@@ -4,7 +4,7 @@ Tests the stable ref format (param:<name>) and ValueKind inference
 when lifting Parameters to Values via valueify().
 """
 
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.parameter import Parameter
 from plait.values import (
     ValueKind,
@@ -27,7 +27,7 @@ class TestParameterRefFormat:
     def test_param_ref_with_name_from_module(self) -> None:
         """Parameters assigned to modules use param:<attr_name> format."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.system_prompt = Parameter("value", description="Test")
@@ -45,7 +45,7 @@ class TestParameterRefFormat:
     def test_param_ref_simple_attribute_name(self) -> None:
         """Parameter _name is set to attribute name when assigned to module."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("value", description="Test")
@@ -61,12 +61,12 @@ class TestParameterRefFormat:
         the ref includes the full hierarchical path from the root module.
         """
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="Inner weight")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -81,7 +81,7 @@ class TestParameterRefFormat:
     def test_param_ref_with_underscores(self) -> None:
         """Parameter names with underscores are preserved."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_prompt = Parameter("value", description="Test")
@@ -93,7 +93,7 @@ class TestParameterRefFormat:
     def test_param_ref_numeric_suffix(self) -> None:
         """Parameter names with numeric suffixes are preserved."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt1 = Parameter("value", description="Test")
@@ -198,7 +198,7 @@ class TestParameterKindOverride:
     def test_override_preserves_ref(self) -> None:
         """Kind override preserves the parameter ref."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("value", description="Test")
@@ -210,7 +210,7 @@ class TestParameterKindOverride:
     def test_override_preserves_metadata(self) -> None:
         """Kind override preserves all parameter metadata."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter(
@@ -230,7 +230,7 @@ class TestParameterValueRefInteraction:
     def test_parameter_value_in_collect_refs(self) -> None:
         """Parameter-derived Values work with collect_refs."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("value", description="Test")
@@ -243,7 +243,7 @@ class TestParameterValueRefInteraction:
     def test_parameter_value_replace_with_ref(self) -> None:
         """Parameter-derived Values can be replaced with ValueRef."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("value", description="Test")
@@ -257,7 +257,7 @@ class TestParameterValueRefInteraction:
     def test_parameter_values_in_nested_structure(self) -> None:
         """Parameter Values work in nested structures."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.p1 = Parameter("first", description="First")
@@ -274,7 +274,7 @@ class TestParameterValueRefInteraction:
     def test_parameter_value_ref_in_replace(self) -> None:
         """Nested parameter Values are replaced with ValueRefs."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.nested_param = Parameter("value", description="Test")
@@ -295,7 +295,7 @@ class TestConstantParameterRefs:
     def test_constant_parameter_has_ref_when_owned(self) -> None:
         """Constant parameters get refs from module ownership."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.config = Parameter({"model": "gpt-4"}, requires_grad=False)
@@ -339,7 +339,7 @@ class TestParameterModuleStateVersion:
     def test_owned_parameter_initial_version_is_zero(self) -> None:
         """Parameters owned by modules start at the module's version (0)."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("value", description="Test")
@@ -351,7 +351,7 @@ class TestParameterModuleStateVersion:
     def test_module_version_shared_across_parameters(self) -> None:
         """All parameters in a module share the same module_state_version."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt1 = Parameter("v1", description="First")
@@ -365,7 +365,7 @@ class TestParameterModuleStateVersion:
     def test_module_version_increments_on_any_param_update(self) -> None:
         """Module version increments when any parameter is updated."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt1 = Parameter("v1", description="First")
@@ -384,7 +384,7 @@ class TestParameterModuleStateVersion:
     def test_module_version_tracks_multiple_updates(self) -> None:
         """Module version increments with each parameter update."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("v0", description="Test")
@@ -399,12 +399,12 @@ class TestParameterModuleStateVersion:
     def test_nested_module_has_own_version(self) -> None:
         """Nested modules maintain their own module_state_version."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="Inner weight")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bias = Parameter("b", description="Outer bias")
@@ -427,7 +427,7 @@ class TestParameterOwnership:
     def test_parameter_name_set_on_assignment(self) -> None:
         """Parameter._name is set when assigned to a module."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("value", description="Test")
@@ -438,7 +438,7 @@ class TestParameterOwnership:
     def test_parameter_registered_in_module(self) -> None:
         """Parameter is registered in module's _parameters dict."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("value", description="Test")
@@ -450,12 +450,12 @@ class TestParameterOwnership:
     def test_nested_module_parameter_registration(self) -> None:
         """Parameters in nested modules are registered in their parent."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="Inner weight")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bias = Parameter("b", description="Outer bias")
@@ -471,12 +471,12 @@ class TestParameterOwnership:
     def test_named_parameters_produces_hierarchical_paths(self) -> None:
         """named_parameters() produces hierarchical paths for nested params."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="Inner weight")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bias = Parameter("b", description="Outer bias")
@@ -493,17 +493,17 @@ class TestParameterOwnership:
     def test_deeply_nested_named_parameters(self) -> None:
         """named_parameters() handles deeply nested modules."""
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param = Parameter("l3", description="Level 3 param")
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level3 = Level3()
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
@@ -526,12 +526,12 @@ class TestParameterOwnership:
         named_parameters().
         """
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="Inner weight")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()

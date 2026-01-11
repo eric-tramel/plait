@@ -6,7 +6,7 @@ Tests verify that modules can be composed together in various patterns
 across the module hierarchy.
 """
 
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ from plait.parameter import Parameter
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class Doubler(InferenceModule):
+class Doubler(Module):
     """Simple module that doubles an integer."""
 
     def __init__(self) -> None:
@@ -24,7 +24,7 @@ class Doubler(InferenceModule):
         return x * 2
 
 
-class Adder(InferenceModule):
+class Adder(Module):
     """Module that adds a fixed amount to an integer."""
 
     def __init__(self, amount: int) -> None:
@@ -35,7 +35,7 @@ class Adder(InferenceModule):
         return x + self.amount
 
 
-class Prefixer(InferenceModule):
+class Prefixer(Module):
     """Module that prefixes a string with a learnable prefix."""
 
     def __init__(self, prefix: str, requires_grad: bool = True) -> None:
@@ -46,7 +46,7 @@ class Prefixer(InferenceModule):
         return f"{self.prefix.value}: {text}"
 
 
-class Uppercaser(InferenceModule):
+class Uppercaser(Module):
     """Module that converts text to uppercase."""
 
     def __init__(self) -> None:
@@ -56,7 +56,7 @@ class Uppercaser(InferenceModule):
         return text.upper()
 
 
-class Reverser(InferenceModule):
+class Reverser(Module):
     """Module that reverses a string."""
 
     def __init__(self) -> None:
@@ -77,7 +77,7 @@ class TestSimpleComposition:
     def test_module_containing_another_module(self) -> None:
         """A module can contain another module as a child."""
 
-        class Container(InferenceModule):
+        class Container(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Doubler()
@@ -98,7 +98,7 @@ class TestSimpleComposition:
     def test_module_with_parameter_child(self) -> None:
         """A module can contain a child with parameters."""
 
-        class Wrapper(InferenceModule):
+        class Wrapper(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prefixer = Prefixer("INFO")
@@ -123,7 +123,7 @@ class TestSimpleComposition:
     def test_module_with_llm_inference_child(self) -> None:
         """A module can contain LLMInference as a child."""
 
-        class Assistant(InferenceModule):
+        class Assistant(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(
@@ -159,7 +159,7 @@ class TestNestedComposition:
     def test_two_levels_of_nesting(self) -> None:
         """Modules can be nested two levels deep."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.doubler = Doubler()
@@ -167,7 +167,7 @@ class TestNestedComposition:
             def forward(self, x: int) -> int:
                 return self.doubler(x)
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -188,7 +188,7 @@ class TestNestedComposition:
     def test_three_levels_of_nesting(self) -> None:
         """Modules can be nested three levels deep."""
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param = Parameter("deep", description="test")
@@ -196,7 +196,7 @@ class TestNestedComposition:
             def forward(self, x: str) -> str:
                 return f"{self.param.value}:{x}"
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level3 = Level3()
@@ -204,7 +204,7 @@ class TestNestedComposition:
             def forward(self, x: str) -> str:
                 return self.level3(x.upper())
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
@@ -240,14 +240,14 @@ class TestNestedComposition:
     def test_deeply_nested_llm_inference(self) -> None:
         """LLMInference can be deeply nested and still be discoverable."""
 
-        class Stage1(InferenceModule):
+        class Stage1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.summarizer = LLMInference(
                     alias="fast", system_prompt="Summarize briefly."
                 )
 
-        class Stage2(InferenceModule):
+        class Stage2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.stage1 = Stage1()
@@ -255,7 +255,7 @@ class TestNestedComposition:
                     alias="smart", system_prompt="Analyze thoroughly."
                 )
 
-        class Pipeline(InferenceModule):
+        class Pipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.stage2 = Stage2()
@@ -299,7 +299,7 @@ class TestMultipleChildren:
     def test_module_with_multiple_children(self) -> None:
         """A module can have multiple child modules."""
 
-        class MultiChild(InferenceModule):
+        class MultiChild(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.doubler = Doubler()
@@ -328,7 +328,7 @@ class TestMultipleChildren:
     def test_module_with_mixed_children(self) -> None:
         """A module can have children of different types."""
 
-        class MixedChildren(InferenceModule):
+        class MixedChildren(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.custom = Prefixer("TAG")
@@ -348,7 +348,7 @@ class TestMultipleChildren:
     def test_parallel_llm_inference_modules(self) -> None:
         """Multiple LLMInference modules for parallel analysis."""
 
-        class MultiPerspective(InferenceModule):
+        class MultiPerspective(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.technical = LLMInference(
@@ -386,7 +386,7 @@ class TestSequentialComposition:
     def test_simple_sequential_pipeline(self) -> None:
         """Sequential pipeline passes output of one module to the next."""
 
-        class Pipeline(InferenceModule):
+        class Pipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = Uppercaser()
@@ -406,7 +406,7 @@ class TestSequentialComposition:
     def test_long_sequential_pipeline(self) -> None:
         """Long sequential pipeline with many steps."""
 
-        class LongPipeline(InferenceModule):
+        class LongPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.add_1 = Adder(1)
@@ -435,7 +435,7 @@ class TestSequentialComposition:
     def test_sequential_with_parameters(self) -> None:
         """Sequential pipeline where each step has parameters."""
 
-        class ParameterizedPipeline(InferenceModule):
+        class ParameterizedPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = Prefixer("STEP1")
@@ -476,7 +476,7 @@ class TestParallelComposition:
     def test_parallel_fanout(self) -> None:
         """Parallel fan-out passes same input to multiple modules."""
 
-        class FanOut(InferenceModule):
+        class FanOut(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.double = Doubler()
@@ -502,7 +502,7 @@ class TestParallelComposition:
     def test_parallel_with_different_types(self) -> None:
         """Parallel modules can return different types."""
 
-        class MixedOutput(InferenceModule):
+        class MixedOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.upper = Uppercaser()
@@ -537,7 +537,7 @@ class TestFanInComposition:
     def test_simple_fanin(self) -> None:
         """Fan-in combines outputs from parallel modules."""
 
-        class Analyzer(InferenceModule):
+        class Analyzer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.view1 = Prefixer("View1")
@@ -549,7 +549,7 @@ class TestFanInComposition:
                     "v2": self.view2(text),
                 }
 
-        class Synthesizer(InferenceModule):
+        class Synthesizer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.analyzer = Analyzer()
@@ -579,7 +579,7 @@ class TestParameterDiscovery:
     def test_parameters_from_direct_children(self) -> None:
         """Parameters in direct children are discovered."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child = Prefixer("child_prefix")
@@ -593,18 +593,18 @@ class TestParameterDiscovery:
     def test_parameters_from_nested_children(self) -> None:
         """Parameters in nested children are discovered."""
 
-        class Deep(InferenceModule):
+        class Deep(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param = Parameter("deep_value", description="test")
 
-        class Middle(InferenceModule):
+        class Middle(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.deep = Deep()
                 self.param = Parameter("middle_value", description="test")
 
-        class Top(InferenceModule):
+        class Top(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.middle = Middle()
@@ -620,13 +620,13 @@ class TestParameterDiscovery:
     def test_named_parameters_hierarchical_names(self) -> None:
         """Named parameters have correct hierarchical dot-separated names."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="test")
                 self.bias = Parameter("b", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner1 = Inner()
@@ -648,7 +648,7 @@ class TestParameterDiscovery:
     def test_llm_inference_system_prompts_discovered(self) -> None:
         """System prompts from LLMInference are discovered as parameters."""
 
-        class ChatBot(InferenceModule):
+        class ChatBot(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.greeter = LLMInference(alias="a", system_prompt="Greet users.")
@@ -674,7 +674,7 @@ class TestComplexPatterns:
     def test_diamond_pattern(self) -> None:
         """Diamond pattern: A → (B, C) → D."""
 
-        class DiamondModule(InferenceModule):
+        class DiamondModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.start = Uppercaser()
@@ -695,7 +695,7 @@ class TestComplexPatterns:
     def test_complex_nested_with_shared_modules(self) -> None:
         """Complex nesting with modules at different levels."""
 
-        class Processor(InferenceModule):
+        class Processor(Module):
             def __init__(self, name: str) -> None:
                 super().__init__()
                 self.prefix = Parameter(name, description="test")
@@ -703,7 +703,7 @@ class TestComplexPatterns:
             def forward(self, x: str) -> str:
                 return f"[{self.prefix.value}:{x}]"
 
-        class SubPipeline(InferenceModule):
+        class SubPipeline(Module):
             def __init__(self, name: str) -> None:
                 super().__init__()
                 self.proc1 = Processor(f"{name}_1")
@@ -712,7 +712,7 @@ class TestComplexPatterns:
             def forward(self, x: str) -> str:
                 return self.proc2(self.proc1(x))
 
-        class MainPipeline(InferenceModule):
+        class MainPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.sub_a = SubPipeline("A")
@@ -754,7 +754,7 @@ class TestComplexPatterns:
     def test_module_reuse_different_names(self) -> None:
         """Same module class used multiple times with different names."""
 
-        class MultiAdder(InferenceModule):
+        class MultiAdder(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.add_1 = Adder(1)
@@ -788,7 +788,7 @@ class TestCompositionEdgeCases:
     def test_empty_module_has_no_children(self) -> None:
         """Module with no children has empty children list."""
 
-        class Empty(InferenceModule):
+        class Empty(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -804,7 +804,7 @@ class TestCompositionEdgeCases:
     def test_module_only_has_parameters(self) -> None:
         """Module with only parameters (no child modules)."""
 
-        class ParamsOnly(InferenceModule):
+        class ParamsOnly(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.p1 = Parameter("v1", description="test")
@@ -823,7 +823,7 @@ class TestCompositionEdgeCases:
         """Deep nesting doesn't cause performance issues."""
 
         # Create 50-level deep nesting
-        class DeepModule(InferenceModule):
+        class DeepModule(Module):
             def __init__(self, depth: int) -> None:
                 super().__init__()
                 self.param = Parameter(f"depth_{depth}", description="test")
@@ -851,7 +851,7 @@ class TestCompositionEdgeCases:
     def test_wide_module_with_many_children(self) -> None:
         """Module with many children at same level."""
 
-        class WideModule(InferenceModule):
+        class WideModule(Module):
             def __init__(self, num_children: int) -> None:
                 super().__init__()
                 for i in range(num_children):

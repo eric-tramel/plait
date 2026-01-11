@@ -3,7 +3,7 @@
 import pytest
 
 from plait.graph import GraphNode, InferenceGraph
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.optimization.record import ForwardRecord
 from plait.tracing.tracer import InputNode
 
@@ -212,9 +212,9 @@ class TestForwardRecordWithModules:
         assert record.execution_order == ["input:text", "LLMInference_1"]
 
     def test_forward_record_with_custom_module(self) -> None:
-        """ForwardRecord can store custom InferenceModule subclasses."""
+        """ForwardRecord can store custom Module subclasses."""
 
-        class CustomModule(InferenceModule):
+        class CustomModule(Module):
             def forward(self, x: str) -> str:
                 return x.upper()
 

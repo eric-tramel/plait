@@ -12,10 +12,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from plait.execution.context import ExecutionSettings
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 
 
-class SlowModule(InferenceModule):
+class SlowModule(Module):
     """Test module that simulates slow processing."""
 
     def __init__(self, delay: float = 0.05) -> None:
@@ -210,7 +210,7 @@ class TestBoundModuleExecution:
     async def test_bound_nested_module_executes(self) -> None:
         """Bound module with nested children executes correctly."""
 
-        class NestedPipeline(InferenceModule):
+        class NestedPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = LLMInference(alias="fast")

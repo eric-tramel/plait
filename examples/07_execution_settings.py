@@ -23,14 +23,14 @@ from unittest.mock import MagicMock
 
 from plait.execution.context import ExecutionSettings
 from plait.execution.executor import run
-from plait.module import InferenceModule
+from plait.module import Module
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Modules for Examples
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextProcessor(InferenceModule):
+class TextProcessor(Module):
     """Mock module that processes text with a transformation."""
 
     def __init__(self, name: str = "processor") -> None:
@@ -41,7 +41,7 @@ class TextProcessor(InferenceModule):
         return f"[{self.name}] {text}"
 
 
-class AsyncProcessor(InferenceModule):
+class AsyncProcessor(Module):
     """Mock async module that simulates processing delay."""
 
     def __init__(self, name: str, delay_ms: float = 50) -> None:
@@ -54,7 +54,7 @@ class AsyncProcessor(InferenceModule):
         return f"[{self.name}] {text}"
 
 
-class Pipeline(InferenceModule):
+class Pipeline(Module):
     """A simple multi-step pipeline."""
 
     def __init__(self) -> None:
@@ -70,7 +70,7 @@ class Pipeline(InferenceModule):
         return r3
 
 
-class ParallelPipeline(InferenceModule):
+class ParallelPipeline(Module):
     """Pipeline with parallel branches."""
 
     def __init__(self) -> None:

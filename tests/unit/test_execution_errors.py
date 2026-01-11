@@ -5,7 +5,7 @@ import pytest
 from plait.execution.scheduler import Scheduler
 from plait.execution.state import ExecutionState
 from plait.graph import GraphNode, InferenceGraph
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import InputNode
 from plait.values import (
     Value,
@@ -20,7 +20,7 @@ from plait.values import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TrackedModule(InferenceModule):
+class TrackedModule(Module):
     """Module that tracks whether forward() was called."""
 
     def __init__(self) -> None:
@@ -33,7 +33,7 @@ class TrackedModule(InferenceModule):
         return "processed"
 
 
-class UppercaseModule(InferenceModule):
+class UppercaseModule(Module):
     """Simple module that converts input to uppercase."""
 
     def forward(self, text: str) -> str:

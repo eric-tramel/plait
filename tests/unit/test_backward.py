@@ -7,7 +7,7 @@ Tests cover _propagate_backward() and _combine_feedback() functions.
 import pytest
 
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.optimization.backward import (
     BackwardContext,
     BackwardResult,
@@ -19,7 +19,7 @@ from plait.optimization.record import ForwardRecord
 from plait.parameter import Parameter
 
 
-class MockModule(InferenceModule):
+class MockModule(Module):
     """Mock module for testing backward pass."""
 
     def __init__(self, name: str = "mock") -> None:
@@ -40,7 +40,7 @@ class MockModule(InferenceModule):
         return await super().backward(feedback, ctx)
 
 
-class MockModuleWithParams(InferenceModule):
+class MockModuleWithParams(Module):
     """Mock module with learnable parameter for testing."""
 
     def __init__(self) -> None:

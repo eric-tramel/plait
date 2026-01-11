@@ -43,7 +43,7 @@ class Task:
     """A single executable unit."""
 
     node_id: str
-    module: InferenceModule
+    module: Module
     args: tuple
     kwargs: dict
     dependencies: list[str]
@@ -857,7 +857,7 @@ For advanced control (custom per-call options, state inspection), use `run()` di
 
 ```python
 async def run(
-    module: InferenceModule,
+    module: Module,
     *args: Any,
     resources: ResourceConfig | ResourceManager,
     max_concurrent: int = 100,
@@ -919,7 +919,7 @@ async def run(
 
 ```python
 # Define a pipeline
-class AnalysisPipeline(InferenceModule):
+class AnalysisPipeline(Module):
     def __init__(self):
         super().__init__()
         self.extract = LLMInference(alias="fast")

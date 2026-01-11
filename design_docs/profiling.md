@@ -711,9 +711,9 @@ for endpoint, stats in analyzer.endpoint_stats().items():
 ## Example: Complete Profiling Flow
 
 ```python
-from plait import InferenceModule, LLMInference, ExecutionSettings, ResourceConfig
+from plait import Module, LLMInference, ExecutionSettings, ResourceConfig
 
-class AnalysisPipeline(InferenceModule):
+class AnalysisPipeline(Module):
     def __init__(self):
         super().__init__()
         self.extract = LLMInference(alias="fast")

@@ -651,7 +651,7 @@ balanced_resources = ResourceConfig(
 How modules discover and use resources:
 
 ```python
-class LLMInference(InferenceModule):
+class LLMInference(Module):
     """
     Atomic LLM operation.
 

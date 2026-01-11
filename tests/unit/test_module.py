@@ -1,39 +1,39 @@
-"""Unit tests for the InferenceModule base class.
+"""Unit tests for the Module base class.
 
 This file contains tests for:
 - PR-003 (core structure): Basic instantiation, child/parameter registration
 - PR-004 (introspection): children(), modules(), parameters(), named_* iterators
 """
 
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.parameter import Parameter
 
 
-class TestInferenceModuleInstantiation:
-    """Tests for InferenceModule basic instantiation."""
+class TestModuleInstantiation:
+    """Tests for Module basic instantiation."""
 
     def test_module_instantiation(self) -> None:
-        """InferenceModule can be instantiated."""
-        module = InferenceModule()
+        """Module can be instantiated."""
+        module = Module()
         assert module is not None
 
     def test_module_has_children_dict(self) -> None:
-        """InferenceModule has _children dict after init."""
-        module = InferenceModule()
+        """Module has _children dict after init."""
+        module = Module()
         assert hasattr(module, "_children")
         assert isinstance(module._children, dict)
         assert module._children == {}
 
     def test_module_has_parameters_dict(self) -> None:
-        """InferenceModule has _parameters dict after init."""
-        module = InferenceModule()
+        """Module has _parameters dict after init."""
+        module = Module()
         assert hasattr(module, "_parameters")
         assert isinstance(module._parameters, dict)
         assert module._parameters == {}
 
     def test_module_has_name_attribute(self) -> None:
-        """InferenceModule has _name attribute after init."""
-        module = InferenceModule()
+        """Module has _name attribute after init."""
+        module = Module()
         assert hasattr(module, "_name")
         assert module._name is None
 
@@ -42,12 +42,12 @@ class TestChildModuleRegistration:
     """Tests for automatic child module registration."""
 
     def test_child_module_registered(self) -> None:
-        """Assigning an InferenceModule registers it as a child."""
+        """Assigning an Module registers it as a child."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
 
         parent = Parent()
         assert "child" in parent._children
@@ -56,10 +56,10 @@ class TestChildModuleRegistration:
     def test_child_module_name_set(self) -> None:
         """Child module's _name is set to the attribute name."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.my_child = InferenceModule()
+                self.my_child = Module()
 
         parent = Parent()
         assert parent.my_child._name == "my_child"
@@ -67,12 +67,12 @@ class TestChildModuleRegistration:
     def test_multiple_children_registered(self) -> None:
         """Multiple child modules are all registered."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child1 = InferenceModule()
-                self.child2 = InferenceModule()
-                self.child3 = InferenceModule()
+                self.child1 = Module()
+                self.child2 = Module()
+                self.child3 = Module()
 
         parent = Parent()
         assert len(parent._children) == 3
@@ -83,16 +83,16 @@ class TestChildModuleRegistration:
     def test_nested_child_registration(self) -> None:
         """Nested modules are registered at each level."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Middle(InferenceModule):
+        class Middle(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.middle = Middle()
@@ -104,14 +104,14 @@ class TestChildModuleRegistration:
     def test_reassigning_child_updates_registration(self) -> None:
         """Reassigning a child updates the registration."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
 
         parent = Parent()
         original_child = parent.child
-        new_child = InferenceModule()
+        new_child = Module()
         parent.child = new_child
 
         assert parent._children["child"] is new_child
@@ -127,7 +127,7 @@ class TestParameterRegistration:
     def test_parameter_registered(self) -> None:
         """Assigning a Parameter registers it in _parameters."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("test prompt", description="test")
@@ -139,7 +139,7 @@ class TestParameterRegistration:
     def test_parameter_name_set(self) -> None:
         """Parameter's _name is set to the attribute name."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("test", description="test")
@@ -150,7 +150,7 @@ class TestParameterRegistration:
     def test_multiple_parameters_registered(self) -> None:
         """Multiple parameters are all registered."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param1 = Parameter("value1", description="test")
@@ -166,7 +166,7 @@ class TestParameterRegistration:
     def test_parameter_requires_grad_false_still_registered(self) -> None:
         """Parameters with requires_grad=False are still registered."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.frozen = Parameter(
@@ -183,10 +183,10 @@ class TestMixedRegistration:
     def test_children_and_parameters_separate(self) -> None:
         """Children and parameters are tracked in separate dicts."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
                 self.param = Parameter("test", description="test")
 
         module = MyModule()
@@ -198,12 +198,12 @@ class TestMixedRegistration:
     def test_complex_module_structure(self) -> None:
         """Complex module with multiple children and parameters."""
 
-        class ComplexModule(InferenceModule):
+        class ComplexModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.system_prompt = Parameter("You are helpful.", description="test")
                 self.temperature = 0.7  # Regular attribute
-                self.sub_module = InferenceModule()
+                self.sub_module = Module()
                 self.response_format = Parameter("json", description="test")
 
         module = ComplexModule()
@@ -229,7 +229,7 @@ class TestRegularAttributes:
     def test_regular_attributes_not_registered(self) -> None:
         """Regular attributes are not registered as children or parameters."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.name = "test"
@@ -246,7 +246,7 @@ class TestRegularAttributes:
     def test_none_attribute_not_registered(self) -> None:
         """None values are not registered."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.optional_child = None
@@ -262,7 +262,7 @@ class TestEdgeCases:
     def test_reassign_parameter_to_module(self) -> None:
         """Reassigning from Parameter to Module updates both registries."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.thing = Parameter("initial", description="test")
@@ -272,7 +272,7 @@ class TestEdgeCases:
         assert "thing" not in module._children
 
         # Reassign to a Module
-        module.thing = InferenceModule()
+        module.thing = Module()
 
         # Should now be in _children, but _parameters is NOT auto-cleaned
         # (this matches PyTorch behavior - old registrations are not removed)
@@ -282,10 +282,10 @@ class TestEdgeCases:
     def test_reassign_module_to_parameter(self) -> None:
         """Reassigning from Module to Parameter updates both registries."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.thing = InferenceModule()
+                self.thing = Module()
 
         module = MyModule()
         assert "thing" in module._children
@@ -300,14 +300,14 @@ class TestEdgeCases:
 
     def test_module_assigned_to_multiple_parents(self) -> None:
         """A module assigned to multiple parents gets last parent's name."""
-        shared_child = InferenceModule()
+        shared_child = Module()
 
-        class Parent1(InferenceModule):
+        class Parent1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child_a = shared_child
 
-        class Parent2(InferenceModule):
+        class Parent2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child_b = shared_child
@@ -327,12 +327,12 @@ class TestEdgeCases:
         """A parameter assigned to multiple modules gets last module's name."""
         shared_param = Parameter("shared value", description="test")
 
-        class Module1(InferenceModule):
+        class Module1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt_a = shared_param
 
-        class Module2(InferenceModule):
+        class Module2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt_b = shared_param
@@ -352,7 +352,7 @@ class TestEdgeCases:
         """Subclass that forgets super().__init__() raises AttributeError."""
         import pytest
 
-        class BadModule(InferenceModule):
+        class BadModule(Module):
             def __init__(self) -> None:
                 # Forgot to call super().__init__()
                 pass
@@ -360,12 +360,12 @@ class TestEdgeCases:
         # Instantiation works, but assigning a child fails
         bad = BadModule()
         with pytest.raises(AttributeError):
-            bad.child = InferenceModule()
+            bad.child = Module()
 
     def test_empty_string_parameter_registered(self) -> None:
         """Empty string parameters are still registered."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.empty = Parameter("", description="test")
@@ -377,17 +377,17 @@ class TestEdgeCases:
     def test_attribute_accessible_after_registration(self) -> None:
         """Verify attributes are accessible after registration (not just registered)."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
                 self.param = Parameter("test", description="test")
                 self.regular = "plain"
 
         module = MyModule()
 
         # All attributes should be directly accessible
-        assert isinstance(module.child, InferenceModule)
+        assert isinstance(module.child, Module)
         assert isinstance(module.param, Parameter)
         assert module.regular == "plain"
 
@@ -398,10 +398,10 @@ class TestEdgeCases:
     def test_reassign_to_regular_value_leaves_stale_registration(self) -> None:
         """Reassigning a child/param to regular value leaves stale registration."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.thing = InferenceModule()
+                self.thing = Module()
 
         module = MyModule()
         assert "thing" in module._children
@@ -425,16 +425,16 @@ class TestChildrenIterator:
 
     def test_children_empty_module(self) -> None:
         """children() yields nothing for module with no children."""
-        module = InferenceModule()
+        module = Module()
         assert list(module.children()) == []
 
     def test_children_single_child(self) -> None:
         """children() yields the single child module."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
 
         parent = Parent()
         children_list = list(parent.children())
@@ -445,12 +445,12 @@ class TestChildrenIterator:
     def test_children_multiple_children(self) -> None:
         """children() yields all immediate children."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child1 = InferenceModule()
-                self.child2 = InferenceModule()
-                self.child3 = InferenceModule()
+                self.child1 = Module()
+                self.child2 = Module()
+                self.child3 = Module()
 
         parent = Parent()
         children_list = list(parent.children())
@@ -463,12 +463,12 @@ class TestChildrenIterator:
     def test_children_does_not_recurse(self) -> None:
         """children() only yields immediate children, not grandchildren."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.grandchild = InferenceModule()
+                self.grandchild = Module()
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -483,10 +483,10 @@ class TestChildrenIterator:
     def test_children_excludes_parameters(self) -> None:
         """children() does not yield parameters."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
                 self.param = Parameter("test", description="test")
 
         module = MyModule()
@@ -501,16 +501,16 @@ class TestNamedChildrenIterator:
 
     def test_named_children_empty_module(self) -> None:
         """named_children() yields nothing for module with no children."""
-        module = InferenceModule()
+        module = Module()
         assert list(module.named_children()) == []
 
     def test_named_children_single_child(self) -> None:
         """named_children() yields (name, module) tuple."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.my_child = InferenceModule()
+                self.my_child = Module()
 
         parent = Parent()
         named_list = list(parent.named_children())
@@ -521,11 +521,11 @@ class TestNamedChildrenIterator:
     def test_named_children_multiple_children(self) -> None:
         """named_children() yields all (name, module) tuples."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.alpha = InferenceModule()
-                self.beta = InferenceModule()
+                self.alpha = Module()
+                self.beta = Module()
 
         parent = Parent()
         named_dict = dict(parent.named_children())
@@ -537,12 +537,12 @@ class TestNamedChildrenIterator:
     def test_named_children_does_not_recurse(self) -> None:
         """named_children() only yields immediate children."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.deep = InferenceModule()
+                self.deep = Module()
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -559,7 +559,7 @@ class TestModulesIterator:
 
     def test_modules_includes_self(self) -> None:
         """modules() yields self as first item."""
-        module = InferenceModule()
+        module = Module()
         modules_list = list(module.modules())
 
         assert len(modules_list) == 1
@@ -568,10 +568,10 @@ class TestModulesIterator:
     def test_modules_single_child(self) -> None:
         """modules() yields self and child."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
 
         parent = Parent()
         modules_list = list(parent.modules())
@@ -583,16 +583,16 @@ class TestModulesIterator:
     def test_modules_nested_structure(self) -> None:
         """modules() yields all modules in depth-first order."""
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
 
-        class Root(InferenceModule):
+        class Root(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level1 = Level1()
@@ -608,11 +608,11 @@ class TestModulesIterator:
     def test_modules_multiple_children(self) -> None:
         """modules() yields all modules from multiple children."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child1 = InferenceModule()
-                self.child2 = InferenceModule()
+                self.child1 = Module()
+                self.child2 = Module()
 
         parent = Parent()
         modules_list = list(parent.modules())
@@ -625,17 +625,17 @@ class TestModulesIterator:
     def test_modules_complex_tree(self) -> None:
         """modules() traverses complex tree structure correctly."""
 
-        class Leaf(InferenceModule):
+        class Leaf(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Branch(InferenceModule):
+        class Branch(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.leaf1 = Leaf()
                 self.leaf2 = Leaf()
 
-        class Root(InferenceModule):
+        class Root(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch1 = Branch()
@@ -653,7 +653,7 @@ class TestNamedModulesIterator:
 
     def test_named_modules_self_has_empty_name(self) -> None:
         """named_modules() yields self with empty string name."""
-        module = InferenceModule()
+        module = Module()
         named_list = list(module.named_modules())
 
         assert len(named_list) == 1
@@ -661,7 +661,7 @@ class TestNamedModulesIterator:
 
     def test_named_modules_with_prefix(self) -> None:
         """named_modules(prefix) prepends prefix to all names."""
-        module = InferenceModule()
+        module = Module()
         named_list = list(module.named_modules(prefix="root"))
 
         assert named_list[0] == ("root", module)
@@ -669,10 +669,10 @@ class TestNamedModulesIterator:
     def test_named_modules_single_child(self) -> None:
         """named_modules() yields hierarchical names for children."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
 
         parent = Parent()
         named_dict = dict(parent.named_modules())
@@ -685,16 +685,16 @@ class TestNamedModulesIterator:
     def test_named_modules_nested_names(self) -> None:
         """named_modules() builds dot-separated hierarchical names."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Middle(InferenceModule):
+        class Middle(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.middle = Middle()
@@ -709,11 +709,11 @@ class TestNamedModulesIterator:
     def test_named_modules_with_prefix_nested(self) -> None:
         """named_modules(prefix) works correctly with nested structure."""
 
-        class Child(InferenceModule):
+        class Child(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child = Child()
@@ -730,13 +730,13 @@ class TestParametersIterator:
 
     def test_parameters_empty_module(self) -> None:
         """parameters() yields nothing for module with no parameters."""
-        module = InferenceModule()
+        module = Module()
         assert list(module.parameters()) == []
 
     def test_parameters_single_parameter(self) -> None:
         """parameters() yields the single parameter."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("test", description="test")
@@ -750,7 +750,7 @@ class TestParametersIterator:
     def test_parameters_multiple_parameters(self) -> None:
         """parameters() yields all parameters from this module."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param1 = Parameter("value1", description="test")
@@ -766,12 +766,12 @@ class TestParametersIterator:
     def test_parameters_recurses_into_children(self) -> None:
         """parameters() recursively yields parameters from children."""
 
-        class Child(InferenceModule):
+        class Child(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child_param = Parameter("child value", description="test")
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.parent_param = Parameter("parent value", description="test")
@@ -787,17 +787,17 @@ class TestParametersIterator:
     def test_parameters_deep_nesting(self) -> None:
         """parameters() finds parameters in deeply nested modules."""
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.deep_param = Parameter("deep", description="test")
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level3 = Level3()
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
@@ -811,10 +811,10 @@ class TestParametersIterator:
     def test_parameters_excludes_children_modules(self) -> None:
         """parameters() does not yield child modules themselves."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
                 self.param = Parameter("test", description="test")
 
         module = MyModule()
@@ -829,13 +829,13 @@ class TestNamedParametersIterator:
 
     def test_named_parameters_empty_module(self) -> None:
         """named_parameters() yields nothing for module with no parameters."""
-        module = InferenceModule()
+        module = Module()
         assert list(module.named_parameters()) == []
 
     def test_named_parameters_single_parameter(self) -> None:
         """named_parameters() yields (name, param) tuple."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("test", description="test")
@@ -849,7 +849,7 @@ class TestNamedParametersIterator:
     def test_named_parameters_multiple_parameters(self) -> None:
         """named_parameters() yields all (name, param) tuples."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.alpha = Parameter("a", description="test")
@@ -865,12 +865,12 @@ class TestNamedParametersIterator:
     def test_named_parameters_hierarchical_names(self) -> None:
         """named_parameters() builds dot-separated names for nested params."""
 
-        class Child(InferenceModule):
+        class Child(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child_param = Parameter("child", description="test")
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.parent_param = Parameter("parent", description="test")
@@ -887,7 +887,7 @@ class TestNamedParametersIterator:
     def test_named_parameters_with_prefix(self) -> None:
         """named_parameters(prefix) prepends prefix to all names."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param = Parameter("test", description="test")
@@ -900,19 +900,19 @@ class TestNamedParametersIterator:
     def test_named_parameters_complex_hierarchy(self) -> None:
         """named_parameters() handles complex module hierarchies."""
 
-        class Leaf(InferenceModule):
+        class Leaf(Module):
             def __init__(self, name: str) -> None:
                 super().__init__()
                 self.leaf_param = Parameter(name, description="test")
 
-        class Branch(InferenceModule):
+        class Branch(Module):
             def __init__(self, name: str) -> None:
                 super().__init__()
                 self.branch_param = Parameter(name, description="test")
                 self.left = Leaf(f"{name}_left")
                 self.right = Leaf(f"{name}_right")
 
-        class Root(InferenceModule):
+        class Root(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.root_param = Parameter("root", description="test")
@@ -937,7 +937,7 @@ class TestIntrospectionIntegration:
 
     def test_all_iterators_are_lazy(self) -> None:
         """Verify that iterators are generators (lazy evaluation)."""
-        module = InferenceModule()
+        module = Module()
 
         # All should return iterators/generators, not lists
         from collections.abc import Iterator
@@ -952,10 +952,10 @@ class TestIntrospectionIntegration:
     def test_can_iterate_multiple_times(self) -> None:
         """Verify iterators can be created multiple times."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
                 self.param = Parameter("test", description="test")
 
         module = MyModule()
@@ -974,12 +974,12 @@ class TestIntrospectionIntegration:
     def test_comprehensive_module_traversal(self) -> None:
         """Test that modules() and parameters() are consistent."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner_param = Parameter("inner", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.outer_param = Parameter("outer", description="test")
@@ -1014,13 +1014,13 @@ class TestIntrospectionEdgeCases:
         When the same module instance is registered under multiple parents,
         it will be yielded once for each path to it in the module tree.
         """
-        shared = InferenceModule()
+        shared = Module()
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child1 = InferenceModule()
-                self.child2 = InferenceModule()
+                self.child1 = Module()
+                self.child2 = Module()
 
         parent = Parent()
         # Assign shared module to both children
@@ -1036,13 +1036,13 @@ class TestIntrospectionEdgeCases:
 
     def test_shared_module_named_modules_different_paths(self) -> None:
         """named_modules() yields shared module with different hierarchical names."""
-        shared = InferenceModule()
+        shared = Module()
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.left = InferenceModule()
-                self.right = InferenceModule()
+                self.left = Module()
+                self.right = Module()
 
         parent = Parent()
         parent.left.common = shared
@@ -1061,11 +1061,11 @@ class TestIntrospectionEdgeCases:
         """parameters() visits shared parameter multiple times through different paths."""
         shared_param = Parameter("shared value", description="test")
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child1 = InferenceModule()
-                self.child2 = InferenceModule()
+                self.child1 = Module()
+                self.child2 = Module()
 
         parent = Parent()
         parent.child1.param = shared_param
@@ -1083,19 +1083,19 @@ class TestIntrospectionEdgeCases:
         Structure: root -> left -> bottom
                    root -> right -> bottom (same bottom)
         """
-        bottom = InferenceModule()
+        bottom = Module()
 
-        class Left(InferenceModule):
+        class Left(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bottom = bottom
 
-        class Right(InferenceModule):
+        class Right(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bottom = bottom
 
-        class Root(InferenceModule):
+        class Root(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.left = Left()
@@ -1115,10 +1115,10 @@ class TestIntrospectionEdgeCases:
         entry in _children still points to the original module.
         """
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child = InferenceModule()
+                self.child = Module()
 
         parent = Parent()
         original_child = parent.child
@@ -1137,7 +1137,7 @@ class TestIntrospectionEdgeCases:
     def test_stale_parameters_entry_still_yielded(self) -> None:
         """parameters() yields stale entries when parameter is reassigned."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.param = Parameter("original", description="test")
@@ -1157,23 +1157,23 @@ class TestIntrospectionEdgeCases:
     def test_partial_generator_consumption(self) -> None:
         """Generators work correctly when partially consumed."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.child1 = InferenceModule()
-                self.child2 = InferenceModule()
-                self.child3 = InferenceModule()
+                self.child1 = Module()
+                self.child2 = Module()
+                self.child3 = Module()
 
         parent = Parent()
         gen = parent.children()
 
         # Consume first item
         first = next(gen)
-        assert isinstance(first, InferenceModule)
+        assert isinstance(first, Module)
 
         # Consume second item
         second = next(gen)
-        assert isinstance(second, InferenceModule)
+        assert isinstance(second, Module)
         assert first is not second
 
         # Remaining items can still be consumed
@@ -1183,11 +1183,11 @@ class TestIntrospectionEdgeCases:
     def test_partial_modules_generator_consumption(self) -> None:
         """modules() generator works correctly when partially consumed."""
 
-        class Child(InferenceModule):
+        class Child(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child1 = Child()
@@ -1212,16 +1212,16 @@ class TestIntrospectionEdgeCases:
     def test_named_modules_no_leading_dot(self) -> None:
         """named_modules() never produces names with leading dots."""
 
-        class Deep(InferenceModule):
+        class Deep(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Middle(InferenceModule):
+        class Middle(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.deep = Deep()
 
-        class Root(InferenceModule):
+        class Root(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.middle = Middle()
@@ -1241,12 +1241,12 @@ class TestIntrospectionEdgeCases:
     def test_named_parameters_no_leading_dot(self) -> None:
         """named_parameters() never produces names with leading dots."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner_param = Parameter("inner", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.outer_param = Parameter("outer", description="test")
@@ -1266,21 +1266,21 @@ class TestIntrospectionEdgeCases:
     def test_named_modules_with_empty_prefix_deeply_nested(self) -> None:
         """named_modules() with empty prefix handles deep nesting correctly."""
 
-        class Level4(InferenceModule):
+        class Level4(Module):
             def __init__(self) -> None:
                 super().__init__()
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.l4 = Level4()
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.l3 = Level3()
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.l2 = Level2()
@@ -1308,20 +1308,20 @@ class TestForwardMethod:
     """Tests for forward() method."""
 
     def test_forward_raises_not_implemented_on_base_class(self) -> None:
-        """forward() raises NotImplementedError on base InferenceModule."""
+        """forward() raises NotImplementedError on base Module."""
         import pytest
 
-        module = InferenceModule()
+        module = Module()
         with pytest.raises(NotImplementedError) as exc_info:
             module.forward()
 
-        assert "InferenceModule must implement forward()" in str(exc_info.value)
+        assert "Module must implement forward()" in str(exc_info.value)
 
     def test_forward_error_includes_class_name(self) -> None:
         """forward() error message includes the actual class name."""
         import pytest
 
-        class MyCustomModule(InferenceModule):
+        class MyCustomModule(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1334,7 +1334,7 @@ class TestForwardMethod:
     def test_forward_can_be_overridden(self) -> None:
         """forward() can be overridden in subclasses."""
 
-        class Greeter(InferenceModule):
+        class Greeter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1349,7 +1349,7 @@ class TestForwardMethod:
     def test_forward_accepts_args_and_kwargs(self) -> None:
         """forward() accepts arbitrary args and kwargs."""
 
-        class Formatter(InferenceModule):
+        class Formatter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1364,7 +1364,7 @@ class TestForwardMethod:
     def test_forward_can_return_any_type(self) -> None:
         """forward() can return any type."""
 
-        class DictReturner(InferenceModule):
+        class DictReturner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1379,7 +1379,7 @@ class TestForwardMethod:
     def test_forward_can_return_none(self) -> None:
         """forward() can return None."""
 
-        class NoneReturner(InferenceModule):
+        class NoneReturner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1394,7 +1394,7 @@ class TestForwardMethod:
     def test_forward_with_variadic_args_only(self) -> None:
         """forward() can accept only *args (no named parameters)."""
 
-        class Summer(InferenceModule):
+        class Summer(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1410,7 +1410,7 @@ class TestForwardMethod:
     def test_forward_with_kwargs_only(self) -> None:
         """forward() can accept only **kwargs (no positional parameters)."""
 
-        class Collector(InferenceModule):
+        class Collector(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1426,7 +1426,7 @@ class TestForwardMethod:
     def test_forward_with_none_argument(self) -> None:
         """forward() can receive None as an argument."""
 
-        class NoneHandler(InferenceModule):
+        class NoneHandler(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1441,7 +1441,7 @@ class TestForwardMethod:
     def test_forward_with_default_parameter(self) -> None:
         """forward() can have default parameter values."""
 
-        class Greeter(InferenceModule):
+        class Greeter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1462,7 +1462,7 @@ class TestForwardMethod:
     def test_forward_with_empty_string_argument(self) -> None:
         """forward() handles empty string arguments correctly."""
 
-        class Wrapper(InferenceModule):
+        class Wrapper(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1481,7 +1481,7 @@ class TestCallMethod:
     def test_call_delegates_to_forward(self) -> None:
         """__call__ delegates to forward()."""
 
-        class Doubler(InferenceModule):
+        class Doubler(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1496,7 +1496,7 @@ class TestCallMethod:
     def test_call_passes_positional_args(self) -> None:
         """__call__ passes positional args to forward()."""
 
-        class Adder(InferenceModule):
+        class Adder(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1511,7 +1511,7 @@ class TestCallMethod:
     def test_call_passes_keyword_args(self) -> None:
         """__call__ passes keyword args to forward()."""
 
-        class Greeter(InferenceModule):
+        class Greeter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1526,7 +1526,7 @@ class TestCallMethod:
     def test_call_passes_mixed_args_and_kwargs(self) -> None:
         """__call__ passes both positional and keyword args to forward()."""
 
-        class Formatter(InferenceModule):
+        class Formatter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1545,17 +1545,17 @@ class TestCallMethod:
         """__call__ raises NotImplementedError when forward() is not implemented."""
         import pytest
 
-        module = InferenceModule()
+        module = Module()
         with pytest.raises(NotImplementedError) as exc_info:
             module()
 
-        assert "InferenceModule must implement forward()" in str(exc_info.value)
+        assert "Module must implement forward()" in str(exc_info.value)
 
     def test_call_on_subclass_without_forward_raises(self) -> None:
         """__call__ raises NotImplementedError on subclass without forward()."""
         import pytest
 
-        class EmptyModule(InferenceModule):
+        class EmptyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1568,7 +1568,7 @@ class TestCallMethod:
     def test_call_with_no_args(self) -> None:
         """__call__ works with no arguments."""
 
-        class ConstantReturner(InferenceModule):
+        class ConstantReturner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1583,7 +1583,7 @@ class TestCallMethod:
     def test_call_returns_forward_result(self) -> None:
         """__call__ returns exactly what forward() returns."""
 
-        class ListReturner(InferenceModule):
+        class ListReturner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1600,7 +1600,7 @@ class TestCallMethod:
     def test_call_with_variadic_args_only(self) -> None:
         """__call__ works with forward() that accepts only *args."""
 
-        class Multiplier(InferenceModule):
+        class Multiplier(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1619,7 +1619,7 @@ class TestCallMethod:
     def test_call_with_kwargs_only(self) -> None:
         """__call__ works with forward() that accepts only **kwargs."""
 
-        class ConfigBuilder(InferenceModule):
+        class ConfigBuilder(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1634,7 +1634,7 @@ class TestCallMethod:
     def test_call_with_none_argument(self) -> None:
         """__call__ passes None argument to forward() correctly."""
 
-        class OptionalProcessor(InferenceModule):
+        class OptionalProcessor(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1650,7 +1650,7 @@ class TestCallMethod:
     def test_call_uses_default_parameter_values(self) -> None:
         """__call__ uses default values when arguments are omitted."""
 
-        class Formatter(InferenceModule):
+        class Formatter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1673,7 +1673,7 @@ class TestCallMethod:
     def test_call_and_forward_produce_identical_results(self) -> None:
         """__call__ and forward() produce identical results for same inputs."""
 
-        class Calculator(InferenceModule):
+        class Calculator(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1704,7 +1704,7 @@ class TestCallMethod:
     def test_call_with_empty_string_argument(self) -> None:
         """__call__ handles empty string arguments correctly."""
 
-        class Validator(InferenceModule):
+        class Validator(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1719,7 +1719,7 @@ class TestCallMethod:
     def test_call_with_many_arguments(self) -> None:
         """__call__ handles many arguments correctly (stress test)."""
 
-        class ArgCounter(InferenceModule):
+        class ArgCounter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1754,14 +1754,14 @@ class TestForwardCallIntegration:
     def test_nested_module_calls(self) -> None:
         """Nested modules can call each other through __call__."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, x: int) -> int:
                 return x + 1
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -1778,14 +1778,14 @@ class TestForwardCallIntegration:
     def test_deeply_nested_calls(self) -> None:
         """Deeply nested module calls work correctly."""
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, x: int) -> int:
                 return x + 1
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level3 = Level3()
@@ -1793,7 +1793,7 @@ class TestForwardCallIntegration:
             def forward(self, x: int) -> int:
                 return self.level3(x) * 2
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
@@ -1810,7 +1810,7 @@ class TestForwardCallIntegration:
     def test_parallel_module_calls(self) -> None:
         """Module can call multiple child modules."""
 
-        class Adder(InferenceModule):
+        class Adder(Module):
             def __init__(self, amount: int) -> None:
                 super().__init__()
                 self.amount = amount
@@ -1818,7 +1818,7 @@ class TestForwardCallIntegration:
             def forward(self, x: int) -> int:
                 return x + self.amount
 
-        class ParallelProcessor(InferenceModule):
+        class ParallelProcessor(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.add_one = Adder(1)
@@ -1844,7 +1844,7 @@ class TestForwardCallIntegration:
     def test_module_with_parameters_in_forward(self) -> None:
         """Module can use parameters in forward()."""
 
-        class Prefixer(InferenceModule):
+        class Prefixer(Module):
             def __init__(self, prefix: str) -> None:
                 super().__init__()
                 self.prefix = Parameter(prefix, description="test")
@@ -1860,21 +1860,21 @@ class TestForwardCallIntegration:
     def test_sequential_module_composition(self) -> None:
         """Modules can be composed sequentially."""
 
-        class Upper(InferenceModule):
+        class Upper(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, text: str) -> str:
                 return text.upper()
 
-        class Reverse(InferenceModule):
+        class Reverse(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, text: str) -> str:
                 return text[::-1]
 
-        class Pipeline(InferenceModule):
+        class Pipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.upper = Upper()
@@ -1892,7 +1892,7 @@ class TestForwardCallIntegration:
     def test_forward_can_access_self_attributes(self) -> None:
         """forward() can access self attributes set in __init__."""
 
-        class Multiplier(InferenceModule):
+        class Multiplier(Module):
             def __init__(self, factor: int) -> None:
                 super().__init__()
                 self.factor = factor
@@ -1909,7 +1909,7 @@ class TestForwardCallIntegration:
         """__call__ propagates exceptions raised in forward()."""
         import pytest
 
-        class RaisingModule(InferenceModule):
+        class RaisingModule(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1936,13 +1936,13 @@ class TestForwardCallIntegration:
 class TestCallWithTraceContext:
     """Tests for __call__() behavior with trace context.
 
-    PR-017: Connect InferenceModule.__call__ to Tracer
+    PR-017: Connect Module.__call__ to Tracer
     """
 
     def test_call_without_trace_context_calls_forward(self) -> None:
         """Without trace context, __call__ delegates to forward()."""
 
-        class Counter(InferenceModule):
+        class Counter(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.call_count = 0
@@ -1963,7 +1963,7 @@ class TestCallWithTraceContext:
         from plait.tracing.tracer import Tracer
         from plait.values import Value
 
-        class Doubler(InferenceModule):
+        class Doubler(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -1983,7 +1983,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Counter(InferenceModule):
+        class Counter(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.call_count = 0
@@ -2006,7 +2006,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Doubler(InferenceModule):
+        class Doubler(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2030,7 +2030,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Processor(InferenceModule):
+        class Processor(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2059,7 +2059,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Combiner(InferenceModule):
+        class Combiner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2085,7 +2085,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Formatter(InferenceModule):
+        class Formatter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2113,7 +2113,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Greeter(InferenceModule):
+        class Greeter(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2137,14 +2137,14 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Step1(InferenceModule):
+        class Step1(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, x: str) -> str:
                 return f"Step1({x})"
 
-        class Step2(InferenceModule):
+        class Step2(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2178,14 +2178,14 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class ModuleA(InferenceModule):
+        class ModuleA(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, x: str) -> str:
                 return f"A({x})"
 
-        class ModuleB(InferenceModule):
+        class ModuleB(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -2223,14 +2223,14 @@ class TestCallWithTraceContext:
         from plait.tracing.context import trace_context
         from plait.tracing.tracer import Tracer
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
 
             def forward(self, x: Any) -> Any:
                 return f"Inner({x})"
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -2282,7 +2282,7 @@ class TestCallWithTraceContext:
         from plait.tracing.context import get_trace_context, trace_context
         from plait.tracing.tracer import Tracer
 
-        class Doubler(InferenceModule):
+        class Doubler(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.call_count = 0
@@ -2313,18 +2313,18 @@ class TestCallWithTraceContext:
 
 
 class TestStateDict:
-    """Tests for InferenceModule.state_dict() serialization."""
+    """Tests for Module.state_dict() serialization."""
 
     def test_state_dict_empty_module(self) -> None:
         """state_dict returns empty dict for module with no parameters."""
-        module = InferenceModule()
+        module = Module()
         state = module.state_dict()
         assert state == {}
 
     def test_state_dict_single_parameter(self) -> None:
         """state_dict returns single parameter value."""
 
-        class SingleParam(InferenceModule):
+        class SingleParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("hello", description="test")
@@ -2336,7 +2336,7 @@ class TestStateDict:
     def test_state_dict_multiple_parameters(self) -> None:
         """state_dict returns all parameters."""
 
-        class MultiParam(InferenceModule):
+        class MultiParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.system = Parameter("You are helpful.", description="test")
@@ -2349,12 +2349,12 @@ class TestStateDict:
     def test_state_dict_nested_parameters(self) -> None:
         """state_dict returns hierarchical names for nested parameters."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bias = Parameter("b", description="test")
@@ -2367,17 +2367,17 @@ class TestStateDict:
     def test_state_dict_deeply_nested(self) -> None:
         """state_dict handles deeply nested module hierarchies."""
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.deep = Parameter("level3", description="test")
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level3 = Level3()
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
@@ -2389,12 +2389,12 @@ class TestStateDict:
     def test_state_dict_preserves_order(self) -> None:
         """state_dict preserves parameter order (depth-first)."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.c = Parameter("c", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = Parameter("a", description="test")
@@ -2408,12 +2408,12 @@ class TestStateDict:
 
 
 class TestLoadStateDict:
-    """Tests for InferenceModule.load_state_dict() deserialization."""
+    """Tests for Module.load_state_dict() deserialization."""
 
     def test_load_state_dict_single_parameter(self) -> None:
         """load_state_dict updates single parameter value."""
 
-        class SingleParam(InferenceModule):
+        class SingleParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("original", description="test")
@@ -2425,7 +2425,7 @@ class TestLoadStateDict:
     def test_load_state_dict_multiple_parameters(self) -> None:
         """load_state_dict updates multiple parameters."""
 
-        class MultiParam(InferenceModule):
+        class MultiParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = Parameter("a_original", description="test")
@@ -2439,12 +2439,12 @@ class TestLoadStateDict:
     def test_load_state_dict_nested_parameters(self) -> None:
         """load_state_dict updates nested parameters correctly."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("original_weight", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bias = Parameter("original_bias", description="test")
@@ -2458,7 +2458,7 @@ class TestLoadStateDict:
     def test_load_state_dict_partial_load(self) -> None:
         """load_state_dict allows partial loads (missing keys ignored)."""
 
-        class MultiParam(InferenceModule):
+        class MultiParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = Parameter("a_original", description="test")
@@ -2473,7 +2473,7 @@ class TestLoadStateDict:
         """load_state_dict raises KeyError for unknown parameter names."""
         import pytest
 
-        class SingleParam(InferenceModule):
+        class SingleParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("original", description="test")
@@ -2487,12 +2487,12 @@ class TestLoadStateDict:
         """load_state_dict raises KeyError for unknown nested parameter."""
         import pytest
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("w", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -2505,7 +2505,7 @@ class TestLoadStateDict:
     def test_load_state_dict_empty_dict(self) -> None:
         """load_state_dict with empty dict does nothing."""
 
-        class SingleParam(InferenceModule):
+        class SingleParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("original", description="test")
@@ -2518,7 +2518,7 @@ class TestLoadStateDict:
         """load_state_dict on module with no parameters fails for any key."""
         import pytest
 
-        module = InferenceModule()
+        module = Module()
         with pytest.raises(KeyError):
             module.load_state_dict({"anything": "value"})
 
@@ -2529,7 +2529,7 @@ class TestStateDictRoundTrip:
     def test_round_trip_single_parameter(self) -> None:
         """state_dict -> load_state_dict preserves single parameter."""
 
-        class SingleParam(InferenceModule):
+        class SingleParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("hello world", description="test")
@@ -2545,12 +2545,12 @@ class TestStateDictRoundTrip:
     def test_round_trip_nested_parameters(self) -> None:
         """state_dict -> load_state_dict preserves nested parameters."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.weight = Parameter("inner_value", description="test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.bias = Parameter("outer_value", description="test")
@@ -2568,7 +2568,7 @@ class TestStateDictRoundTrip:
     def test_round_trip_modified_values(self) -> None:
         """Round-trip preserves modified parameter values."""
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("default", description="test")
@@ -2584,10 +2584,10 @@ class TestStateDictRoundTrip:
 
     def test_round_trip_empty_module(self) -> None:
         """Round-trip works for module with no parameters."""
-        module1 = InferenceModule()
+        module1 = Module()
         state = module1.state_dict()
 
-        module2 = InferenceModule()
+        module2 = Module()
         module2.load_state_dict(state)
 
         assert state == {}
@@ -2595,17 +2595,17 @@ class TestStateDictRoundTrip:
     def test_round_trip_complex_hierarchy(self) -> None:
         """Round-trip preserves complex nested hierarchies."""
 
-        class Encoder(InferenceModule):
+        class Encoder(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.embed = Parameter("encoder_embed", description="test")
 
-        class Decoder(InferenceModule):
+        class Decoder(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.output = Parameter("decoder_output", description="test")
 
-        class Transformer(InferenceModule):
+        class Transformer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.encoder = Encoder()
@@ -2630,7 +2630,7 @@ class TestStateDictRoundTrip:
         """state_dict result can be serialized to JSON and back."""
         import json
 
-        class MyModule(InferenceModule):
+        class MyModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("test value", description="test")
@@ -2655,8 +2655,8 @@ class TestStateDictRoundTrip:
 # ─────────────────────────────────────────────────────────────
 
 
-class TestInferenceModuleBackward:
-    """Tests for InferenceModule.backward() default implementation."""
+class TestModuleBackward:
+    """Tests for Module.backward() default implementation."""
 
     @staticmethod
     def _make_context(inputs: dict) -> "BackwardContext":
@@ -2676,7 +2676,7 @@ class TestInferenceModuleBackward:
         )
 
     @staticmethod
-    async def _run_backward(module: InferenceModule, feedback, ctx) -> "BackwardResult":
+    async def _run_backward(module: Module, feedback, ctx) -> "BackwardResult":
         """Run backward on a module."""
         return await module.backward(feedback, ctx)
 
@@ -2684,7 +2684,7 @@ class TestInferenceModuleBackward:
         """backward() is an async method."""
         import inspect
 
-        module = InferenceModule()
+        module = Module()
         assert inspect.iscoroutinefunction(module.backward)
 
     def test_backward_default_passes_feedback_to_inputs(self) -> None:
@@ -2694,7 +2694,7 @@ class TestInferenceModuleBackward:
         from plait.optimization.backward import BackwardResult
         from plait.optimization.feedback import Feedback
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def forward(self, x: str) -> str:
                 return x.upper()
 
@@ -2718,12 +2718,12 @@ class TestInferenceModuleBackward:
 
         from plait.optimization.feedback import Feedback
 
-        module = InferenceModule()
+        module = Module()
         feedback = Feedback(content="Test")
         ctx = self._make_context({"input": "value"})
 
         # Can't call backward directly on base class, need subclass
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def forward(self, x: str) -> str:
                 return x
 
@@ -2738,7 +2738,7 @@ class TestInferenceModuleBackward:
 
         from plait.optimization.feedback import Feedback
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def forward(self) -> str:
                 return "result"
 
@@ -2756,7 +2756,7 @@ class TestInferenceModuleBackward:
 
         from plait.optimization.feedback import Feedback, FeedbackType
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def forward(self, x: str) -> str:
                 return x
 

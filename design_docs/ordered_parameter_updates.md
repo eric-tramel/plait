@@ -268,7 +268,7 @@ def _compute_update_levels(
 ```python
 def _build_param_to_node_mapping(
     self,
-    module_map: dict[str, InferenceModule],
+    module_map: dict[str, Module],
 ) -> dict[str, set[str]]:
     """Map parameter keys to the nodes containing them.
 
@@ -289,7 +289,7 @@ def _build_param_to_node_mapping(
 
 def _build_node_to_param_mapping(
     self,
-    module_map: dict[str, InferenceModule],
+    module_map: dict[str, Module],
 ) -> dict[str, list[Parameter]]:
     """Map node IDs to parameters in that node's module.
 
@@ -535,7 +535,7 @@ Return ONLY the new parameter value. No explanations, no markdown, no quotes.
 Consider a pipeline with a format specification and a validator:
 
 ```python
-class FormattedPipeline(InferenceModule):
+class FormattedPipeline(Module):
     def __init__(self):
         super().__init__()
         self.format_spec = Parameter(

@@ -59,7 +59,7 @@ from rich.table import Table
 from rich.text import Text
 
 from plait.execution.context import ExecutionSettings
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.optimization import (
     SFAOptimizer,
     VerifierLoss,
@@ -129,7 +129,7 @@ class TemplateParameter(Parameter):
         return TemplateFormatter(self)
 
 
-class TemplateFormatter(InferenceModule):
+class TemplateFormatter(Module):
     """A module that formats a TemplateParameter with provided values.
 
     This module participates in tracing, allowing the template parameter
@@ -226,7 +226,7 @@ The template must keep the placeholders: {{{", ".join(f"{{{p}}}" for p in self.t
 # =============================================================================
 
 
-class RegexExtractor(InferenceModule):
+class RegexExtractor(Module):
     """A module that extracts and normalizes verdicts using a learnable regex.
 
     This module is part of the traced graph, allowing the regex pattern
@@ -330,7 +330,7 @@ The pattern must be a valid Python regex and should capture true/false or equiva
         return result
 
 
-class HallucinationDetector(InferenceModule):
+class HallucinationDetector(Module):
     """A hallucination detection module with learnable prompts and regex.
 
     Takes a context, question, and answer as input and determines whether

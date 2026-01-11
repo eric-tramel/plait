@@ -7,7 +7,7 @@ the forward() method behavior.
 
 import pytest
 
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 
 
@@ -22,10 +22,10 @@ class TestLLMInferenceCreation:
         assert isinstance(llm, LLMInference)
 
     def test_llm_inference_is_inference_module(self) -> None:
-        """LLMInference is a subclass of InferenceModule."""
+        """LLMInference is a subclass of Module."""
         llm = LLMInference(alias="test_llm")
 
-        assert isinstance(llm, InferenceModule)
+        assert isinstance(llm, Module)
 
     def test_llm_inference_has_registries(self) -> None:
         """LLMInference has _children and _parameters registries from parent."""
@@ -307,13 +307,13 @@ class TestLLMInferenceForward:
         assert "LLMInference" in str(exc_info.value)
 
 
-class TestLLMInferenceModuleIntegration:
-    """Tests for LLMInference integration with InferenceModule features."""
+class TestLLMModuleIntegration:
+    """Tests for LLMInference integration with Module features."""
 
     def test_llm_inference_as_child_module(self) -> None:
         """LLMInference can be registered as a child of another module."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="child_llm")
@@ -327,7 +327,7 @@ class TestLLMInferenceModuleIntegration:
     def test_llm_inference_name_set_when_child(self) -> None:
         """LLMInference._name is set when registered as child."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_llm = LLMInference(alias="test")
@@ -339,7 +339,7 @@ class TestLLMInferenceModuleIntegration:
     def test_multiple_llm_inferences_in_module(self) -> None:
         """Multiple LLMInference instances can be children of same parent."""
 
-        class MultiLLMModule(InferenceModule):
+        class MultiLLMModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.fast_llm = LLMInference(alias="fast", temperature=0.3)
@@ -356,7 +356,7 @@ class TestLLMInferenceModuleIntegration:
     def test_llm_inference_found_by_modules_iterator(self) -> None:
         """LLMInference is yielded by modules() iterator."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
@@ -371,7 +371,7 @@ class TestLLMInferenceModuleIntegration:
     def test_llm_inference_found_by_named_modules(self) -> None:
         """LLMInference has correct name in named_modules()."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
@@ -385,7 +385,7 @@ class TestLLMInferenceModuleIntegration:
     def test_system_prompt_parameter_found_by_parameters(self) -> None:
         """system_prompt Parameter is found by parameters() iterator."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test", system_prompt="You are helpful.")
@@ -399,7 +399,7 @@ class TestLLMInferenceModuleIntegration:
     def test_system_prompt_parameter_found_by_named_parameters(self) -> None:
         """system_prompt has correct hierarchical name in named_parameters()."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test", system_prompt="You are helpful.")
@@ -413,7 +413,7 @@ class TestLLMInferenceModuleIntegration:
     def test_learnable_system_prompt_requires_grad(self) -> None:
         """Learnable system_prompt found in parameters with requires_grad=True."""
 
-        class ParentModule(InferenceModule):
+        class ParentModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(

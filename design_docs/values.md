@@ -236,7 +236,7 @@ summary = llm(prompt)                      # -> Value(RESPONSE, ref=...)
   `coerce`, `unwrap_or`, `merge`.
 
 This provides a consistent, lightweight API for pure transforms without
-forcing users to define a custom `InferenceModule`.
+forcing users to define a custom `Module`.
 
 ## Mapping Common Payloads
 

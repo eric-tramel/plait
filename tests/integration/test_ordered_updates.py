@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from plait.graph import GraphNode, InferenceGraph
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.optimization.optimizer import SFAOptimizer
 from plait.optimization.record import ForwardRecord
 from plait.parameter import Parameter
@@ -41,7 +41,7 @@ def create_pipeline_record(
             else:
                 dependencies[node_id] = []
 
-    module_map: dict[str, InferenceModule] = {}
+    module_map: dict[str, Module] = {}
     for param, node_id in param_configs:
         mock_module = MagicMock(spec=LLMInference)
         mock_module.named_parameters.return_value = [(param._name, param)]

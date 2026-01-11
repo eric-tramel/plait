@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from plait.module import InferenceModule
+    from plait.module import Module
     from plait.parameter import Parameter
     from plait.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp
 
@@ -97,7 +97,7 @@ class GraphNode:
     Attributes:
         id: Unique identifier for this node within the graph.
         module: The operation to execute. For inference nodes, an
-            InferenceModule instance. For input nodes, an InputNode
+            Module instance. For input nodes, an InputNode
             containing the input value. For data access operations,
             a GetItemOp, IterOp, or MethodOp. May be None for special cases.
         args: Positional arguments as a tuple of NodeRef (for references
@@ -134,7 +134,7 @@ class GraphNode:
     """
 
     id: str
-    module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
+    module: Module | InputNode | GetItemOp | IterOp | MethodOp | None
     args: tuple[NodeRef | Any, ...]
     kwargs: dict[str, NodeRef | Any]
     dependencies: list[str]
@@ -444,7 +444,7 @@ class InferenceGraph:
         return hashlib.sha256(node_json.encode()).hexdigest()
 
     def _extract_module_config(
-        self, module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
+        self, module: Module | InputNode | GetItemOp | IterOp | MethodOp | None
     ) -> dict[str, Any]:
         """Extract configuration from a module for hashing.
 

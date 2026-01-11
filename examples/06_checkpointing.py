@@ -37,14 +37,14 @@ from plait.execution.checkpoint import Checkpoint, CheckpointManager
 from plait.execution.context import ExecutionSettings
 from plait.execution.executor import run
 from plait.execution.state import TaskResult
-from plait.module import InferenceModule
+from plait.module import Module
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example Modules
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SlowProcessor(InferenceModule):
+class SlowProcessor(Module):
     """A module that simulates slow processing."""
 
     def __init__(self, name: str, delay: float = 0.1):
@@ -58,7 +58,7 @@ class SlowProcessor(InferenceModule):
         return f"[{self.name}] {text}"
 
 
-class DataPipeline(InferenceModule):
+class DataPipeline(Module):
     """A pipeline that processes data through multiple stages."""
 
     def __init__(self):
@@ -77,7 +77,7 @@ class DataPipeline(InferenceModule):
         return formatted
 
 
-class BatchAnalyzer(InferenceModule):
+class BatchAnalyzer(Module):
     """A pipeline that analyzes data in parallel branches."""
 
     def __init__(self):

@@ -1,7 +1,7 @@
 """Unit tests for the GraphNode and InferenceGraph data structures."""
 
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 
 
@@ -229,7 +229,7 @@ class TestGraphNodePostInit:
     def test_module_name_with_custom_module_class(self) -> None:
         """module_name correctly reflects custom module class names."""
 
-        class MyCustomModule(InferenceModule):
+        class MyCustomModule(Module):
             def forward(self, x: str) -> str:
                 return x
 

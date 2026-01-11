@@ -1,4 +1,4 @@
-"""InferenceModule base class for plait.
+"""Module base class for plait.
 
 This module provides the core abstraction for building composable
 inference pipelines, inspired by PyTorch's nn.Module.
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from plait.resources.manager import ResourceManager
 
 
-class InferenceModule:
+class Module:
     """Base class for all inference operations.
 
     Analogous to torch.nn.Module. Subclass this to define custom
@@ -32,7 +32,7 @@ class InferenceModule:
 
     Example:
         >>> from plait.parameter import Parameter
-        >>> class MyModule(InferenceModule):
+        >>> class MyModule(Module):
         ...     def __init__(self):
         ...         super().__init__()
         ...         self.prompt = Parameter("You are helpful.")
@@ -46,10 +46,10 @@ class InferenceModule:
         to ensure proper registration of children and parameters.
     """
 
-    _children: dict[str, InferenceModule]
+    _children: dict[str, Module]
     _parameters: dict[str, Parameter]
     _name: str | None
-    _parent: InferenceModule | None
+    _parent: Module | None
     _module_state_version: int
     _bound_resources: ResourceConfig | ResourceManager | None
     _bound_config: dict[str, Any]
@@ -75,7 +75,7 @@ class InferenceModule:
         """Set an attribute with automatic registration of modules and parameters.
 
         When a value is assigned to an attribute:
-        - If it's an InferenceModule, it's registered as a child module
+        - If it's an Module, it's registered as a child module
         - If it's a Parameter, it's registered in the parameters dict
         - The value's _name is set to the attribute name for introspection
 
@@ -91,7 +91,7 @@ class InferenceModule:
         # Import here to avoid circular imports at module load time
         from plait.parameter import Parameter
 
-        if isinstance(value, InferenceModule):
+        if isinstance(value, Module):
             self._children[name] = value
             object.__setattr__(value, "_name", name)
             object.__setattr__(value, "_parent", self)
@@ -106,29 +106,29 @@ class InferenceModule:
     # Module Introspection (PyTorch-like API)
     # ─────────────────────────────────────────────────────────────
 
-    def children(self) -> Iterator[InferenceModule]:
+    def children(self) -> Iterator[Module]:
         """Iterate over immediate child modules.
 
         Yields child modules in the order they were registered.
         Does not recurse into nested modules.
 
         Yields:
-            Each immediate child InferenceModule.
+            Each immediate child Module.
 
         Example:
-            >>> class Parent(InferenceModule):
+            >>> class Parent(Module):
             ...     def __init__(self):
             ...         super().__init__()
-            ...         self.child1 = InferenceModule()
-            ...         self.child2 = InferenceModule()
+            ...         self.child1 = Module()
+            ...         self.child2 = Module()
             ...
             >>> parent = Parent()
             >>> list(parent.children())  # doctest: +ELLIPSIS
-            [<...InferenceModule...>, <...InferenceModule...>]
+            [<...Module...>, <...Module...>]
         """
         yield from self._children.values()
 
-    def named_children(self) -> Iterator[tuple[str, InferenceModule]]:
+    def named_children(self) -> Iterator[tuple[str, Module]]:
         """Iterate over immediate child modules with their names.
 
         Yields (name, module) pairs for each immediate child.
@@ -138,33 +138,33 @@ class InferenceModule:
             Tuples of (attribute_name, child_module).
 
         Example:
-            >>> class Parent(InferenceModule):
+            >>> class Parent(Module):
             ...     def __init__(self):
             ...         super().__init__()
-            ...         self.child1 = InferenceModule()
+            ...         self.child1 = Module()
             ...
             >>> parent = Parent()
             >>> [(name, type(m).__name__) for name, m in parent.named_children()]
-            [('child1', 'InferenceModule')]
+            [('child1', 'Module')]
         """
         yield from self._children.items()
 
-    def modules(self) -> Iterator[InferenceModule]:
+    def modules(self) -> Iterator[Module]:
         """Iterate over all modules in the tree, including self.
 
         Performs a depth-first traversal starting from this module.
         Includes this module as the first item yielded.
 
         Yields:
-            All InferenceModules in the subtree rooted at this module.
+            All Modules in the subtree rooted at this module.
 
         Example:
-            >>> class Nested(InferenceModule):
+            >>> class Nested(Module):
             ...     def __init__(self):
             ...         super().__init__()
-            ...         self.inner = InferenceModule()
+            ...         self.inner = Module()
             ...
-            >>> class Outer(InferenceModule):
+            >>> class Outer(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.nested = Nested()
@@ -177,7 +177,7 @@ class InferenceModule:
         for child in self.children():
             yield from child.modules()
 
-    def named_modules(self, prefix: str = "") -> Iterator[tuple[str, InferenceModule]]:
+    def named_modules(self, prefix: str = "") -> Iterator[tuple[str, Module]]:
         """Iterate over all modules with hierarchical dot-separated names.
 
         Performs a depth-first traversal, yielding (name, module) pairs.
@@ -192,11 +192,11 @@ class InferenceModule:
             has an empty string name (or the prefix if provided).
 
         Example:
-            >>> class Inner(InferenceModule):
+            >>> class Inner(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...
-            >>> class Outer(InferenceModule):
+            >>> class Outer(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.inner = Inner()
@@ -221,7 +221,7 @@ class InferenceModule:
 
         Example:
             >>> from plait.parameter import Parameter
-            >>> class MyModule(InferenceModule):
+            >>> class MyModule(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.prompt = Parameter("test")
@@ -249,12 +249,12 @@ class InferenceModule:
 
         Example:
             >>> from plait.parameter import Parameter
-            >>> class Inner(InferenceModule):
+            >>> class Inner(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.weight = Parameter("w")
             ...
-            >>> class Outer(InferenceModule):
+            >>> class Outer(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.bias = Parameter("b")
@@ -296,12 +296,12 @@ class InferenceModule:
 
         Example:
             >>> from plait.parameter import Parameter
-            >>> class Inner(InferenceModule):
+            >>> class Inner(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.weight = Parameter("w")
             ...
-            >>> class Outer(InferenceModule):
+            >>> class Outer(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.bias = Parameter("b")
@@ -334,7 +334,7 @@ class InferenceModule:
 
         Example:
             >>> from plait.parameter import Parameter
-            >>> class MyModule(InferenceModule):
+            >>> class MyModule(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.prompt = Parameter("original")
@@ -346,7 +346,7 @@ class InferenceModule:
 
         Example with unknown key:
             >>> from plait.parameter import Parameter
-            >>> class MyModule(InferenceModule):
+            >>> class MyModule(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.prompt = Parameter("test")
@@ -593,7 +593,7 @@ class InferenceModule:
             NotImplementedError: If not overridden in a subclass.
 
         Example:
-            >>> class Greeter(InferenceModule):
+            >>> class Greeter(Module):
             ...     def forward(self, name: str) -> str:
             ...         return f"Hello, {name}!"
             ...
@@ -683,7 +683,7 @@ class InferenceModule:
             Otherwise: The result from forward().
 
         Example:
-            >>> class Doubler(InferenceModule):
+            >>> class Doubler(Module):
             ...     def forward(self, x: int) -> int:
             ...         return x * 2
             ...
@@ -1011,7 +1011,7 @@ class InferenceModule:
         )
 
 
-class LLMInference(InferenceModule):
+class LLMInference(Module):
     """Atomic module for LLM API calls.
 
     This is the fundamental building block for LLM operations. All other

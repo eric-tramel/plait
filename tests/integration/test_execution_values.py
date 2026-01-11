@@ -10,7 +10,7 @@ import plait.functional as F
 from plait.execution.scheduler import Scheduler
 from plait.execution.state import ExecutionState
 from plait.graph import GraphNode, InferenceGraph
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import InputNode
 from plait.values import Value, ValueKind, ValueRef
 
@@ -19,7 +19,7 @@ from plait.values import Value, ValueKind, ValueRef
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SelectFieldModule(InferenceModule):
+class SelectFieldModule(Module):
     """Module that selects a field from structured input."""
 
     def __init__(self, field: str) -> None:
@@ -31,7 +31,7 @@ class SelectFieldModule(InferenceModule):
         return data[self.field]
 
 
-class ConcatModule(InferenceModule):
+class ConcatModule(Module):
     """Module that concatenates string inputs."""
 
     def forward(self, *args: str) -> str:
@@ -39,7 +39,7 @@ class ConcatModule(InferenceModule):
         return " ".join(str(arg) for arg in args)
 
 
-class UppercaseModule(InferenceModule):
+class UppercaseModule(Module):
     """Module that converts input to uppercase."""
 
     def forward(self, text: str) -> str:
@@ -47,7 +47,7 @@ class UppercaseModule(InferenceModule):
         return text.upper()
 
 
-class FormatModule(InferenceModule):
+class FormatModule(Module):
     """Module that formats a template with data."""
 
     def __init__(self, template: str) -> None:
@@ -59,7 +59,7 @@ class FormatModule(InferenceModule):
         return self.template.format(**kwargs)
 
 
-class ParseJsonModule(InferenceModule):
+class ParseJsonModule(Module):
     """Module that parses JSON and wraps errors as Values."""
 
     def forward(self, text: str) -> dict | Value:
@@ -473,7 +473,7 @@ class TestFunctionalAPIIntegration:
     async def test_functional_select_with_execution(self) -> None:
         """F.select can be used in a module and executes correctly."""
 
-        class FunctionalSelectModule(InferenceModule):
+        class FunctionalSelectModule(Module):
             """Module that uses F.select internally."""
 
             def __init__(self, path: str) -> None:
@@ -526,7 +526,7 @@ class TestFunctionalAPIIntegration:
     async def test_functional_render_with_execution(self) -> None:
         """F.render can be used in a module and executes correctly."""
 
-        class RenderModule(InferenceModule):
+        class RenderModule(Module):
             """Module that uses F.render internally."""
 
             def __init__(self, template: str) -> None:

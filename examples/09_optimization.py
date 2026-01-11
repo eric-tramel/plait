@@ -52,7 +52,7 @@ import sys
 from pathlib import Path
 
 from plait.execution.context import ExecutionSettings
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.optimization import (
     CompositeLoss,
     LLMRubricLoss,
@@ -68,7 +68,7 @@ from plait.resources.config import OpenAIEndpointConfig, ResourceConfig
 # =============================================================================
 
 
-class ResearchPipeline(InferenceModule):
+class ResearchPipeline(Module):
     """A 3-step research pipeline with learnable prompts at each stage.
 
     Pipeline stages:

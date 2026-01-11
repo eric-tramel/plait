@@ -1,6 +1,6 @@
 """Optimization system for LLM-based parameter learning.
 
-This package provides the infrastructure for optimizing InferenceModule
+This package provides the infrastructure for optimizing Module
 parameters through backward passes. Instead of numerical gradients,
 feedback is propagated through the computation graph to improve
 Parameters (prompts, instructions, etc.).

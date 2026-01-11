@@ -38,7 +38,7 @@ from plait.execution.context import ExecutionSettings
 from plait.execution.executor import run
 from plait.execution.scheduler import Scheduler
 from plait.execution.state import ExecutionState, TaskResult
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import Tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ from plait.tracing.tracer import Tracer
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextProcessor(InferenceModule):
+class TextProcessor(Module):
     """Mock module that processes text with a transformation."""
 
     def __init__(self, prefix: str = "", suffix: str = "") -> None:
@@ -59,7 +59,7 @@ class TextProcessor(InferenceModule):
         return f"{self.prefix}{text}{self.suffix}"
 
 
-class TextCombiner(InferenceModule):
+class TextCombiner(Module):
     """Mock module that combines multiple text inputs."""
 
     def __init__(self, separator: str = " | ") -> None:
@@ -70,7 +70,7 @@ class TextCombiner(InferenceModule):
         return self.separator.join(str(arg) for arg in args)
 
 
-class AsyncTextProcessor(InferenceModule):
+class AsyncTextProcessor(Module):
     """Mock async module that simulates network latency."""
 
     def __init__(self, operation: str, delay_ms: float = 50) -> None:
@@ -83,7 +83,7 @@ class AsyncTextProcessor(InferenceModule):
         return f"[{self.operation}({text})]"
 
 
-class FailingProcessor(InferenceModule):
+class FailingProcessor(Module):
     """Mock module that always fails (for error handling demos)."""
 
     def __init__(self, error_message: str = "Processing failed") -> None:
@@ -99,7 +99,7 @@ class FailingProcessor(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SimplePipeline(InferenceModule):
+class SimplePipeline(Module):
     """A simple two-step pipeline."""
 
     def __init__(self) -> None:
@@ -133,7 +133,7 @@ async def demo_simple_execution() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class LinearChain(InferenceModule):
+class LinearChain(Module):
     """A linear chain of processing steps."""
 
     def __init__(self) -> None:
@@ -168,7 +168,7 @@ async def demo_linear_execution() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ParallelAnalysis(InferenceModule):
+class ParallelAnalysis(Module):
     """Multiple analyzers processing input in parallel."""
 
     def __init__(self) -> None:
@@ -210,7 +210,7 @@ async def demo_parallel_execution() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class DiamondPipeline(InferenceModule):
+class DiamondPipeline(Module):
     """Fan-out to parallel processors, then fan-in to combiner."""
 
     def __init__(self) -> None:
@@ -254,7 +254,7 @@ async def demo_diamond_execution() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ManyParallelTasks(InferenceModule):
+class ManyParallelTasks(Module):
     """Many tasks that can run in parallel."""
 
     def __init__(self, n_tasks: int = 10) -> None:
@@ -340,7 +340,7 @@ async def demo_execution_state() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class PipelineWithFailure(InferenceModule):
+class PipelineWithFailure(Module):
     """Pipeline where a middle step fails."""
 
     def __init__(self) -> None:
@@ -388,7 +388,7 @@ async def demo_error_handling() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class MultiInputPipeline(InferenceModule):
+class MultiInputPipeline(Module):
     """Pipeline that takes multiple inputs."""
 
     def __init__(self) -> None:
@@ -431,7 +431,7 @@ async def demo_multiple_inputs() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ComplexPipeline(InferenceModule):
+class ComplexPipeline(Module):
     """Complex pipeline: preprocess -> [analyze_a, analyze_b] -> synthesize.
 
     This demonstrates combining linear, parallel, and fan-in patterns.

@@ -73,7 +73,7 @@ class GraphNode:
     """A single operation in the execution graph."""
 
     id: str                                  # Unique identifier
-    module: InferenceModule                  # The module to execute
+    module: Module                  # The module to execute
     args: tuple[Any, ...]                    # Raw payloads or ValueRef
     kwargs: dict[str, Any]                   # Raw payloads or ValueRef
     dependencies: list[str]                  # Input refs (Value.ref)
@@ -144,7 +144,7 @@ class Tracer:
         self._node_counter: int = 0
         self._module_stack: list[str] = []
 
-    def trace(self, module: InferenceModule, *args: Any, **kwargs: Any) -> InferenceGraph:
+    def trace(self, module: Module, *args: Any, **kwargs: Any) -> InferenceGraph:
         with trace_context(self):
             inputs = valueify(args)
             kw_inputs = valueify(kwargs)
@@ -166,7 +166,7 @@ class Tracer:
         # Walk pytree, wrap leaves as Value with ref like input:0, input:kw
         ...
 
-    def record_call(self, module: InferenceModule, args: tuple, kwargs: dict) -> Value:
+    def record_call(self, module: Module, args: tuple, kwargs: dict) -> Value:
         """Record a module invocation during tracing."""
         node_id = self._generate_id(module)
         dependencies = collect_refs(args, kwargs)
@@ -181,7 +181,7 @@ class Tracer:
         self.nodes[node_id] = node
         return Value(kind=ValueKind.RESPONSE, payload=None, ref=node_id)
 
-    def _generate_id(self, module: InferenceModule) -> str:
+    def _generate_id(self, module: Module) -> str:
         self._node_counter += 1
         return f"{module.__class__.__name__}_{self._node_counter}"
 ```
@@ -265,7 +265,7 @@ recorded node.
 ## Example: Complete Tracing Flow
 
 ```python
-class AnalysisPipeline(InferenceModule):
+class AnalysisPipeline(Module):
     def __init__(self):
         super().__init__()
         self.summarize = LLMInference(alias="fast")

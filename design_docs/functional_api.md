@@ -2,7 +2,7 @@
 
 This document defines the functional, graph-aware API (similar to
 `torch.nn.functional`) for operating on `Value` containers without defining
-custom `InferenceModule` subclasses.
+custom `Module` subclasses.
 
 ## Goals
 

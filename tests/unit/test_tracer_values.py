@@ -1,7 +1,7 @@
 """Unit tests for Value-driven tracing in the Tracer class."""
 
 from plait.graph import GraphNode, InferenceGraph
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.tracing.tracer import InputNode, Tracer
 from plait.values import Value, ValueKind, ValueRef
 
@@ -409,7 +409,7 @@ class TestTraceValues:
     def test_trace_values_returns_inference_graph(self) -> None:
         """trace_values returns an InferenceGraph."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: Value) -> Value:
                 return x
 
@@ -421,7 +421,7 @@ class TestTraceValues:
     def test_trace_values_creates_input_nodes(self) -> None:
         """trace_values creates input nodes for arguments."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: Value) -> Value:
                 return x
 
@@ -435,7 +435,7 @@ class TestTraceValues:
         """trace_values binds input Values with refs."""
         received_value: list[Value] = []
 
-        class CaptureValue(InferenceModule):
+        class CaptureValue(Module):
             def forward(self, x: Value) -> Value:
                 received_value.append(x)
                 return x
@@ -451,7 +451,7 @@ class TestTraceValues:
     def test_trace_values_collects_output_ids(self) -> None:
         """trace_values collects output IDs from returned Values."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: Value) -> Value:
                 return x
 
@@ -465,7 +465,7 @@ class TestTraceValues:
         """trace_values records module calls returning Values."""
         from plait.tracing.context import get_trace_context
 
-        class WithCall(InferenceModule):
+        class WithCall(Module):
             def forward(self, x: Value) -> Value:
                 ctx = get_trace_context()
                 if ctx is not None:
@@ -484,7 +484,7 @@ class TestTraceValues:
     def test_trace_values_multiple_args(self) -> None:
         """trace_values handles multiple arguments."""
 
-        class TwoInputs(InferenceModule):
+        class TwoInputs(Module):
             def forward(self, a: Value, b: Value) -> tuple[Value, Value]:
                 return a, b
 
@@ -497,7 +497,7 @@ class TestTraceValues:
     def test_trace_values_with_kwargs(self) -> None:
         """trace_values handles keyword arguments."""
 
-        class KwargModule(InferenceModule):
+        class KwargModule(Module):
             def forward(self, *, text: Value, context: Value) -> dict[str, Value]:
                 return {"text": text, "context": context}
 
@@ -510,7 +510,7 @@ class TestTraceValues:
     def test_trace_values_dict_output_structure(self) -> None:
         """trace_values captures dict output structure."""
 
-        class DictOutput(InferenceModule):
+        class DictOutput(Module):
             def forward(self, x: Value) -> dict[str, Value]:
                 return {"result": x}
 
@@ -524,7 +524,7 @@ class TestTraceValues:
         """trace_values collects parameters from module."""
         from plait.parameter import Parameter
 
-        class ModuleWithParam(InferenceModule):
+        class ModuleWithParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("test prompt", description="test")
@@ -545,7 +545,7 @@ class TestValueDependencyChains:
         """Linear chain of Values creates correct dependencies."""
         from plait.tracing.context import get_trace_context
 
-        class LinearChain(InferenceModule):
+        class LinearChain(Module):
             def forward(self, x: Value) -> Value:
                 ctx = get_trace_context()
                 if ctx is None:
@@ -572,7 +572,7 @@ class TestValueDependencyChains:
         """Diamond pattern with Values creates correct dependencies."""
         from plait.tracing.context import get_trace_context
 
-        class DiamondPattern(InferenceModule):
+        class DiamondPattern(Module):
             def forward(self, x: Value) -> Value:
                 ctx = get_trace_context()
                 if ctx is None:
@@ -600,7 +600,7 @@ class TestValueDependencyChains:
         """Fan-out pattern with Values tracks all branches."""
         from plait.tracing.context import get_trace_context
 
-        class FanOut(InferenceModule):
+        class FanOut(Module):
             def forward(self, x: Value) -> list[Value]:
                 ctx = get_trace_context()
                 if ctx is None:

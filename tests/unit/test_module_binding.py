@@ -1,4 +1,4 @@
-"""Unit tests for InferenceModule binding and ExecutionSettings integration.
+"""Unit tests for Module binding and ExecutionSettings integration.
 
 This file contains tests for:
 - PR-045: bind() method for direct module execution
@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from plait.execution.context import ExecutionSettings, get_execution_settings
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def clean_context() -> None:
         current = get_execution_settings()
 
 
-class SimpleModule(InferenceModule):
+class SimpleModule(Module):
     """Simple test module that returns transformed input."""
 
     def __init__(self) -> None:
@@ -40,7 +40,7 @@ class SimpleModule(InferenceModule):
         return text.upper()
 
 
-class NestedModule(InferenceModule):
+class NestedModule(Module):
     """Module with a nested child module."""
 
     def __init__(self) -> None:
@@ -57,7 +57,7 @@ class NestedModule(InferenceModule):
 
 
 class TestBindMethod:
-    """Tests for InferenceModule.bind() method."""
+    """Tests for Module.bind() method."""
 
     def test_bind_stores_resources(self) -> None:
         """bind() stores the provided resources."""

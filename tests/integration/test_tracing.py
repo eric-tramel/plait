@@ -5,7 +5,7 @@ Tests verify full tracing scenarios including nested modules,
 shared inputs, dict outputs, and complete tracing flows.
 """
 
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 from plait.tracing.proxy import Proxy
 from plait.tracing.tracer import Tracer
@@ -21,7 +21,7 @@ class TestNestedModuleTracing:
     def test_single_child_module_is_traced(self) -> None:
         """A module containing a child module is traced correctly."""
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child = LLMInference(alias="test")
@@ -51,7 +51,7 @@ class TestNestedModuleTracing:
         an opaque node - its internal forward() is not executed during tracing.
         """
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="inner")
@@ -59,7 +59,7 @@ class TestNestedModuleTracing:
             def forward(self, text: str) -> Proxy:
                 return self.llm(text)
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -90,7 +90,7 @@ class TestNestedModuleTracing:
         is captured as a node - deeper nesting becomes opaque.
         """
 
-        class Level3(InferenceModule):
+        class Level3(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="deep")
@@ -98,7 +98,7 @@ class TestNestedModuleTracing:
             def forward(self, text: str) -> Proxy:
                 return self.llm(text)
 
-        class Level2(InferenceModule):
+        class Level2(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level3 = Level3()
@@ -106,7 +106,7 @@ class TestNestedModuleTracing:
             def forward(self, text: str) -> Proxy:
                 return self.level3(text)
 
-        class Level1(InferenceModule):
+        class Level1(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.level2 = Level2()
@@ -125,7 +125,7 @@ class TestNestedModuleTracing:
     def test_nested_module_parameters_are_collected(self) -> None:
         """Parameters from nested modules are collected in the graph."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="inner", system_prompt="Inner prompt")
@@ -133,7 +133,7 @@ class TestNestedModuleTracing:
             def forward(self, text: str) -> Proxy:
                 return self.llm(text)
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prefix = Parameter("Outer prefix", description="test")
@@ -154,7 +154,7 @@ class TestNestedModuleTracing:
     def test_nested_module_with_multiple_children(self) -> None:
         """Module with multiple child modules at same level is traced."""
 
-        class MultiChild(InferenceModule):
+        class MultiChild(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = LLMInference(alias="step1")
@@ -186,7 +186,7 @@ class TestSharedInputTracing:
     def test_multiple_modules_share_same_input(self) -> None:
         """Multiple modules depending on the same input are traced correctly."""
 
-        class FanOut(InferenceModule):
+        class FanOut(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = LLMInference(alias="a")
@@ -220,7 +220,7 @@ class TestSharedInputTracing:
     def test_shared_input_with_fan_in(self) -> None:
         """Fan-out followed by fan-in (diamond pattern) is traced correctly."""
 
-        class Diamond(InferenceModule):
+        class Diamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = LLMInference(alias="a")
@@ -254,7 +254,7 @@ class TestSharedInputTracing:
     def test_shared_intermediate_result(self) -> None:
         """Shared intermediate results are traced with correct dependencies."""
 
-        class SharedIntermediate(InferenceModule):
+        class SharedIntermediate(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.preprocess = LLMInference(alias="pre")
@@ -288,7 +288,7 @@ class TestSharedInputTracing:
     def test_multiple_inputs_shared_across_modules(self) -> None:
         """Multiple inputs can be shared across different modules."""
 
-        class MultiInput(InferenceModule):
+        class MultiInput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.uses_first = LLMInference(alias="first")
@@ -330,7 +330,7 @@ class TestDictOutputTracing:
     def test_simple_dict_output(self) -> None:
         """Module returning a simple dict is traced correctly."""
 
-        class DictOutput(InferenceModule):
+        class DictOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm_a = LLMInference(alias="a")
@@ -353,7 +353,7 @@ class TestDictOutputTracing:
     def test_nested_dict_output(self) -> None:
         """Module returning nested dict is traced correctly."""
 
-        class NestedDictOutput(InferenceModule):
+        class NestedDictOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm_a = LLMInference(alias="a")
@@ -383,7 +383,7 @@ class TestDictOutputTracing:
     def test_dict_with_list_values(self) -> None:
         """Module returning dict with list values is traced correctly."""
 
-        class DictWithLists(InferenceModule):
+        class DictWithLists(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm_a = LLMInference(alias="a")
@@ -405,7 +405,7 @@ class TestDictOutputTracing:
     def test_empty_dict_output(self) -> None:
         """Module returning empty dict has no outputs."""
 
-        class EmptyDictOutput(InferenceModule):
+        class EmptyDictOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
 
@@ -420,7 +420,7 @@ class TestDictOutputTracing:
     def test_dict_output_with_mixed_values(self) -> None:
         """Dict with both Proxy and literal values is traced correctly."""
 
-        class MixedDict(InferenceModule):
+        class MixedDict(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
@@ -450,7 +450,7 @@ class TestCompleteTracingFlow:
     def test_linear_pipeline_trace(self) -> None:
         """Linear pipeline (summarize -> analyze -> format) is traced correctly."""
 
-        class AnalysisPipeline(InferenceModule):
+        class AnalysisPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.summarize = LLMInference(alias="fast")
@@ -480,7 +480,7 @@ class TestCompleteTracingFlow:
     def test_complex_pipeline_with_multiple_inputs(self) -> None:
         """Complex pipeline with multiple inputs and shared processing."""
 
-        class ComplexPipeline(InferenceModule):
+        class ComplexPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.encode_text = LLMInference(alias="encoder")
@@ -515,7 +515,7 @@ class TestCompleteTracingFlow:
     def test_graph_ancestors_and_descendants(self) -> None:
         """Graph traversal methods work correctly on traced graph."""
 
-        class Pipeline(InferenceModule):
+        class Pipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = LLMInference(alias="1")
@@ -555,7 +555,7 @@ class TestCompleteTracingFlow:
     def test_trace_preserves_module_references(self) -> None:
         """Traced nodes preserve references to original modules."""
 
-        class Pipeline(InferenceModule):
+        class Pipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(
@@ -580,7 +580,7 @@ class TestCompleteTracingFlow:
     def test_trace_with_kwargs_input(self) -> None:
         """Tracing works correctly with keyword arguments."""
 
-        class KwargModule(InferenceModule):
+        class KwargModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
@@ -600,7 +600,7 @@ class TestCompleteTracingFlow:
     def test_multiple_traces_are_independent(self) -> None:
         """Multiple traces from the same tracer are independent."""
 
-        class Simple(InferenceModule):
+        class Simple(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
@@ -639,7 +639,7 @@ class TestTracingBestPractices:
     def test_modules_defined_in_init_are_traced(self) -> None:
         """Modules created in __init__ are properly traced."""
 
-        class ProperModule(InferenceModule):
+        class ProperModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 # Good: modules created in __init__
@@ -661,7 +661,7 @@ class TestTracingBestPractices:
     def test_pure_forward_produces_consistent_graph(self) -> None:
         """Pure forward() methods produce consistent graphs."""
 
-        class PureModule(InferenceModule):
+        class PureModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = LLMInference(alias="1")
@@ -687,7 +687,7 @@ class TestTracingBestPractices:
     def test_list_output_collection(self) -> None:
         """List outputs are properly collected."""
 
-        class ListOutput(InferenceModule):
+        class ListOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm1 = LLMInference(alias="1")
@@ -713,7 +713,7 @@ class TestTracingBestPractices:
     def test_tuple_output_collection(self) -> None:
         """Tuple outputs are properly collected."""
 
-        class TupleOutput(InferenceModule):
+        class TupleOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm1 = LLMInference(alias="1")
@@ -731,7 +731,7 @@ class TestTracingBestPractices:
     def test_graph_has_valid_topological_order(self) -> None:
         """Traced graphs always have a valid topological order."""
 
-        class ComplexGraph(InferenceModule):
+        class ComplexGraph(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = LLMInference(alias="a")

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from plait.graph import GraphNode, InferenceGraph
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.optimization.optimizer import Optimizer, SFAOptimizer
 from plait.optimization.record import ForwardRecord
 from plait.parameter import Parameter
@@ -28,7 +28,7 @@ def create_mock_record(
         node_ids = ["node_0", "node_1"]
 
     # Create mock modules for each node
-    module_map: dict[str, InferenceModule] = {}
+    module_map: dict[str, Module] = {}
     for _i, node_id in enumerate(node_ids):
         mock_module = MagicMock(spec=LLMInference)
         mock_module.named_parameters.return_value = []
@@ -970,7 +970,7 @@ class TestSFAOptimizerTopologicalOrder:
         Each param is placed in a separate node for proper topological order testing.
         """
         node_ids = [f"node_{i}" for i in range(len(params))]
-        module_map: dict[str, InferenceModule] = {}
+        module_map: dict[str, Module] = {}
 
         for i, (node_id, param) in enumerate(zip(node_ids, params, strict=True)):
             mock_module = MagicMock(spec=LLMInference)
