@@ -47,7 +47,8 @@ pip install plait
 Define a pipeline as a module composition:
 
 ```python
-from plait import Module, LLMInference, Parameter, ResourceConfig
+from plait import Module, LLMInference, Parameter
+from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
 class SummarizeAndAnalyze(Module):
@@ -74,11 +75,19 @@ class SummarizeAndAnalyze(Module):
         return self.analyzer(f"Analyze this summary:\n{summary}")
 
 
-# Configure resources separately from module definition
-resources = ResourceConfig({
-    "fast": {"model": "gpt-4o-mini", "max_concurrent": 20},
-    "smart": {"model": "gpt-4o", "max_concurrent": 5},
-})
+# Configure OpenAI endpoints separately from module definition
+resources = ResourceConfig(
+    endpoints={
+        "fast": OpenAIEndpointConfig(
+            model="gpt-4o-mini",
+            max_concurrent=20,
+        ),
+        "smart": OpenAIEndpointConfig(
+            model="gpt-4o",
+            max_concurrent=5,
+        ),
+    }
+)
 
 # Bind resources to the pipeline, then execute
 pipeline = SummarizeAndAnalyze().bind(resources=resources)
@@ -146,17 +155,48 @@ instructions = Parameter(
 Decouple module definitions from infrastructure. The same pipeline can run against different endpoints:
 
 ```python
-# Development
-dev_resources = ResourceConfig({
-    "fast": {"model": "gpt-4o-mini", "max_concurrent": 5},
-    "smart": {"model": "gpt-4o-mini", "max_concurrent": 5},
-})
+from plait.resources import (
+    OpenAIEndpointConfig,
+    AnthropicEndpointConfig,
+    EndpointConfig,
+    ResourceConfig,
+)
 
-# Production
-prod_resources = ResourceConfig({
-    "fast": {"model": "gpt-4o-mini", "max_concurrent": 50, "rpm_limit": 1000},
-    "smart": {"model": "gpt-4o", "max_concurrent": 20, "rpm_limit": 500},
-})
+# Development: use cheaper models
+dev_resources = ResourceConfig(
+    endpoints={
+        "fast": OpenAIEndpointConfig(model="gpt-4o-mini", max_concurrent=5),
+        "smart": OpenAIEndpointConfig(model="gpt-4o-mini", max_concurrent=5),
+    }
+)
+
+# Production: use appropriate models with rate limiting
+prod_resources = ResourceConfig(
+    endpoints={
+        "fast": OpenAIEndpointConfig(
+            model="gpt-4o-mini",
+            max_concurrent=50,
+            rate_limit=1000.0,  # requests per minute
+        ),
+        "smart": OpenAIEndpointConfig(
+            model="gpt-4o",
+            max_concurrent=20,
+            rate_limit=500.0,
+        ),
+    }
+)
+
+# Self-hosted models with OpenAI-compatible API (vLLM, TGI, etc.)
+local_resources = ResourceConfig(
+    endpoints={
+        "fast": EndpointConfig(
+            provider_api="vllm",
+            model="mistral-7b",
+            base_url="http://vllm.internal:8000/v1",
+            max_concurrent=50,
+        ),
+    }
+)
 
 # Bind resources to a pipeline
 pipeline = MyPipeline().bind(resources=dev_resources)
