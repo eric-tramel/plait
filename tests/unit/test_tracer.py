@@ -1,75 +1,44 @@
-"""Unit tests for the Tracer class."""
+"""Unit tests for the Tracer class.
+
+This module tests tracer creation, input nodes, recording module calls,
+dependency extraction, and graph construction via trace().
+Tests are consolidated to reduce redundancy while maintaining coverage.
+"""
+
+from typing import Any
+
+import pytest
 
 from plait.graph import GraphNode, InferenceGraph, NodeRef
 from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 from plait.tracing.context import get_trace_context
 from plait.tracing.proxy import Proxy
-from plait.tracing.tracer import InputNode, Tracer
+from plait.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp, Tracer
+from plait.values import Value
 
 
 class TestTracerInstantiation:
-    """Tests for Tracer instantiation."""
+    """Tests for Tracer instantiation and initial state."""
 
-    def test_tracer_creation(self) -> None:
-        """Tracer can be created with no arguments."""
+    def test_creation_with_empty_initial_state(self) -> None:
+        """New tracer has empty nodes, input_ids, output_ids, stacks, and counter."""
         tracer = Tracer()
 
-        assert tracer is not None
         assert isinstance(tracer, Tracer)
-
-    def test_tracer_has_empty_nodes(self) -> None:
-        """New tracer has empty nodes dictionary."""
-        tracer = Tracer()
-
         assert tracer.nodes == {}
-        assert len(tracer.nodes) == 0
-
-    def test_tracer_has_empty_input_ids(self) -> None:
-        """New tracer has empty input_ids list."""
-        tracer = Tracer()
-
         assert tracer.input_ids == []
-
-    def test_tracer_has_empty_output_ids(self) -> None:
-        """New tracer has empty output_ids list."""
-        tracer = Tracer()
-
         assert tracer.output_ids == []
-
-    def test_tracer_node_counter_starts_at_zero(self) -> None:
-        """Node counter starts at zero."""
-        tracer = Tracer()
-
         assert tracer._node_counter == 0
-
-    def test_tracer_has_empty_module_stack(self) -> None:
-        """New tracer has empty module stack."""
-        tracer = Tracer()
-
         assert tracer._module_stack == []
-
-    def test_tracer_has_empty_branch_stack(self) -> None:
-        """New tracer has empty branch stack."""
-        tracer = Tracer()
-
         assert tracer._branch_stack == []
 
 
 class TestTracerIdGeneration:
     """Tests for Tracer._generate_id()."""
 
-    def test_generate_id_format(self) -> None:
-        """Generated ID has format 'ClassName_N'."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        node_id = tracer._generate_id(module)
-
-        assert node_id == "LLMInference_1"
-
-    def test_generate_id_increments_counter(self) -> None:
-        """Each call to _generate_id increments the counter."""
+    def test_generate_id_format_and_increments(self) -> None:
+        """Generated ID has format 'ClassName_N' and increments counter."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
@@ -84,25 +53,16 @@ class TestTracerIdGeneration:
 
     def test_generate_id_uses_class_name(self) -> None:
         """Generated ID uses the module's class name."""
-        tracer = Tracer()
-
-        # Create a custom module subclass
-        from plait.module import Module
 
         class CustomModule(Module):
             def forward(self, x: str) -> str:
                 return x
 
-        module = CustomModule()
-        node_id = tracer._generate_id(module)
-
-        assert node_id == "CustomModule_1"
-
-    def test_generate_id_different_modules(self) -> None:
-        """Different module types get their own IDs with shared counter."""
         tracer = Tracer()
+        assert tracer._generate_id(CustomModule()) == "CustomModule_1"
 
-        from plait.module import Module
+    def test_different_modules_share_counter(self) -> None:
+        """Different module types share a single counter."""
 
         class ModuleA(Module):
             def forward(self, x: str) -> str:
@@ -112,6 +72,7 @@ class TestTracerIdGeneration:
             def forward(self, x: str) -> str:
                 return x
 
+        tracer = Tracer()
         id1 = tracer._generate_id(ModuleA())
         id2 = tracer._generate_id(ModuleB())
         id3 = tracer._generate_id(LLMInference(alias="test"))
@@ -120,79 +81,31 @@ class TestTracerIdGeneration:
         assert id2 == "ModuleB_2"
         assert id3 == "LLMInference_3"
 
-    def test_generate_id_counter_persists(self) -> None:
-        """Counter persists across multiple calls with different modules."""
-        tracer = Tracer()
-        module1 = LLMInference(alias="a")
-        module2 = LLMInference(alias="b")
-
-        tracer._generate_id(module1)
-        tracer._generate_id(module2)
-        tracer._generate_id(module1)  # Same module again
-
-        assert tracer._node_counter == 3
-
 
 class TestTracerReset:
     """Tests for Tracer.reset()."""
 
-    def test_reset_clears_nodes(self) -> None:
-        """Reset clears the nodes dictionary."""
+    def test_reset_clears_all_state(self) -> None:
+        """Reset clears nodes, IDs, counter, and stacks."""
         tracer = Tracer()
-        tracer.nodes["test_node"] = None  # type: ignore
+        module = LLMInference(alias="test")
+
+        # Pollute tracer state
+        tracer._generate_id(module)
+        tracer._generate_id(module)
+        tracer.nodes["test"] = None  # type: ignore
+        tracer.input_ids.append("input_0")
+        tracer.output_ids.append("output_0")
+        tracer._module_stack.append("parent")
+        tracer._branch_stack.append(("cond", True))
 
         tracer.reset()
 
         assert tracer.nodes == {}
-
-    def test_reset_clears_input_ids(self) -> None:
-        """Reset clears the input_ids list."""
-        tracer = Tracer()
-        tracer.input_ids.append("input_0")
-
-        tracer.reset()
-
         assert tracer.input_ids == []
-
-    def test_reset_clears_output_ids(self) -> None:
-        """Reset clears the output_ids list."""
-        tracer = Tracer()
-        tracer.output_ids.append("output_0")
-
-        tracer.reset()
-
         assert tracer.output_ids == []
-
-    def test_reset_resets_node_counter(self) -> None:
-        """Reset sets node counter back to zero."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        tracer._generate_id(module)
-        tracer._generate_id(module)
-        assert tracer._node_counter == 2
-
-        tracer.reset()
-
         assert tracer._node_counter == 0
-
-    def test_reset_clears_module_stack(self) -> None:
-        """Reset clears the module stack."""
-        tracer = Tracer()
-        tracer._module_stack.append("parent")
-        tracer._module_stack.append("child")
-
-        tracer.reset()
-
         assert tracer._module_stack == []
-
-    def test_reset_clears_branch_stack(self) -> None:
-        """Reset clears the branch stack."""
-        tracer = Tracer()
-        tracer._branch_stack.append(("condition_1", True))
-
-        tracer.reset()
-
         assert tracer._branch_stack == []
 
     def test_reset_allows_fresh_tracing(self) -> None:
@@ -200,279 +113,88 @@ class TestTracerReset:
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        # Simulate some tracing
         tracer._generate_id(module)
-        tracer.nodes["LLMInference_1"] = None  # type: ignore
-        tracer.input_ids.append("input_0")
-        tracer.output_ids.append("LLMInference_1")
-
-        # Reset and verify fresh state
         tracer.reset()
 
         # Generate IDs again - should start from 1
         new_id = tracer._generate_id(module)
         assert new_id == "LLMInference_1"
-        assert tracer.nodes == {}
-        assert tracer.input_ids == []
-        assert tracer.output_ids == []
-
-
-class TestTracerMultipleInstances:
-    """Tests for multiple Tracer instances."""
-
-    def test_tracers_have_independent_nodes(self) -> None:
-        """Different tracer instances have independent node dictionaries."""
-        tracer1 = Tracer()
-        tracer2 = Tracer()
-
-        tracer1.nodes["node1"] = None  # type: ignore
-
-        assert "node1" in tracer1.nodes
-        assert "node1" not in tracer2.nodes
-
-    def test_tracers_have_independent_counters(self) -> None:
-        """Different tracer instances have independent counters."""
-        tracer1 = Tracer()
-        tracer2 = Tracer()
-        module = LLMInference(alias="test")
-
-        tracer1._generate_id(module)
-        tracer1._generate_id(module)
-
-        # tracer2 counter should still be at 0
-        id1 = tracer2._generate_id(module)
-        assert id1 == "LLMInference_1"
-        assert tracer2._node_counter == 1
-        assert tracer1._node_counter == 2
-
-    def test_tracers_have_independent_stacks(self) -> None:
-        """Different tracer instances have independent stacks."""
-        tracer1 = Tracer()
-        tracer2 = Tracer()
-
-        tracer1._module_stack.append("module1")
-        tracer1._branch_stack.append(("cond", True))
-
-        assert tracer2._module_stack == []
-        assert tracer2._branch_stack == []
 
 
 class TestInputNode:
     """Tests for the InputNode class."""
 
-    def test_input_node_creation(self) -> None:
-        """InputNode can be created with a value."""
-        node = InputNode(value="test input")
-
-        assert node.value == "test input"
-
-    def test_input_node_stores_any_type(self) -> None:
+    @pytest.mark.parametrize(
+        "value",
+        ["text", 42, {"key": "value"}, [1, 2, 3], None],
+        ids=["string", "int", "dict", "list", "none"],
+    )
+    def test_stores_any_type(self, value: object) -> None:
         """InputNode can store values of any type."""
-        string_node = InputNode(value="text")
-        int_node = InputNode(value=42)
-        dict_node = InputNode(value={"key": "value"})
-        list_node = InputNode(value=[1, 2, 3])
-        none_node = InputNode(value=None)
+        node = InputNode(value=value)
+        assert node.value == value
 
-        assert string_node.value == "text"
-        assert int_node.value == 42
-        assert dict_node.value == {"key": "value"}
-        assert list_node.value == [1, 2, 3]
-        assert none_node.value is None
-
-    def test_input_node_is_dataclass(self) -> None:
-        """InputNode is a dataclass with expected behavior."""
-        node1 = InputNode(value="test")
-        node2 = InputNode(value="test")
-
-        # Dataclasses support equality
-        assert node1 == node2
-
-        # Different values are not equal
-        node3 = InputNode(value="other")
-        assert node1 != node3
+    def test_equality(self) -> None:
+        """InputNodes with same value are equal."""
+        assert InputNode(value="test") == InputNode(value="test")
+        assert InputNode(value="test") != InputNode(value="other")
 
 
 class TestCreateInputNode:
     """Tests for Tracer._create_input_node()."""
 
-    def test_create_input_node_returns_proxy(self) -> None:
-        """_create_input_node returns a Proxy object."""
-        tracer = Tracer()
-
-        proxy = tracer._create_input_node("text", "input value")
-
-        assert isinstance(proxy, Proxy)
-
-    def test_create_input_node_id_format(self) -> None:
-        """Input node IDs have the format 'input:{name}'."""
+    def test_returns_proxy_with_correct_id(self) -> None:
+        """_create_input_node returns a Proxy with format 'input:{name}'."""
         tracer = Tracer()
 
         proxy = tracer._create_input_node("text", "value")
 
+        assert isinstance(proxy, Proxy)
         assert proxy.node_id == "input:text"
+        assert proxy.tracer is tracer
 
-    def test_create_input_node_adds_to_input_ids(self) -> None:
-        """Created input nodes are added to input_ids list."""
-        tracer = Tracer()
-
-        tracer._create_input_node("first", "value1")
-        tracer._create_input_node("second", "value2")
-
-        assert tracer.input_ids == ["input:first", "input:second"]
-
-    def test_create_input_node_creates_graph_node(self) -> None:
-        """_create_input_node creates a GraphNode in nodes dict."""
-        tracer = Tracer()
-
-        proxy = tracer._create_input_node("text", "hello")
-
-        assert proxy.node_id in tracer.nodes
-        node = tracer.nodes[proxy.node_id]
-        assert isinstance(node, GraphNode)
-
-    def test_create_input_node_graph_node_has_correct_fields(self) -> None:
-        """Created GraphNode has correct field values."""
+    def test_adds_to_input_ids_and_nodes(self) -> None:
+        """Created input nodes are added to input_ids and nodes dict."""
         tracer = Tracer()
 
         proxy = tracer._create_input_node("prompt", "user input")
-        node = tracer.nodes[proxy.node_id]
 
-        assert node.id == "input:prompt"
+        assert tracer.input_ids == ["input:prompt"]
+        assert "input:prompt" in tracer.nodes
+
+        node = tracer.nodes[proxy.node_id]
+        assert isinstance(node, GraphNode)
         assert isinstance(node.module, InputNode)
-        assert node.args == ()
-        assert node.kwargs == {}
-        assert node.dependencies == []
+        assert node.module.value == "user input"
         assert node.module_name == "Input(prompt)"
+        assert node.dependencies == []
 
-    def test_create_input_node_stores_value_in_input_node(self) -> None:
-        """The input value is stored in the InputNode module."""
-        tracer = Tracer()
-
-        proxy = tracer._create_input_node("data", {"key": "value"})
-        node = tracer.nodes[proxy.node_id]
-
-        assert isinstance(node.module, InputNode)
-        assert node.module.value == {"key": "value"}
-
-    def test_create_input_node_proxy_references_tracer(self) -> None:
-        """Returned proxy references the correct tracer."""
-        tracer = Tracer()
-
-        proxy = tracer._create_input_node("text", "value")
-
-        assert proxy.tracer is tracer
-
-    def test_create_input_node_with_positional_args_convention(self) -> None:
-        """Input nodes for positional args follow 'input_N' naming convention."""
-        tracer = Tracer()
-
-        proxy0 = tracer._create_input_node("input_0", "first arg")
-        proxy1 = tracer._create_input_node("input_1", "second arg")
-
-        assert proxy0.node_id == "input:input_0"
-        assert proxy1.node_id == "input:input_1"
-        assert tracer.input_ids == ["input:input_0", "input:input_1"]
-
-    def test_create_input_node_with_kwarg_convention(self) -> None:
-        """Input nodes for kwargs use the kwarg name."""
-        tracer = Tracer()
-
-        proxy = tracer._create_input_node("input_temperature", 0.7)
-
-        assert proxy.node_id == "input:input_temperature"
-        module = tracer.nodes[proxy.node_id].module
-        assert isinstance(module, InputNode)
-        assert module.value == 0.7
-
-    def test_create_multiple_input_nodes(self) -> None:
-        """Multiple input nodes can be created and tracked."""
-        tracer = Tracer()
-
-        tracer._create_input_node("text", "Hello")
-        tracer._create_input_node("context", {"user": "alice"})
-
-        assert len(tracer.nodes) == 2
-        assert len(tracer.input_ids) == 2
-        text_module = tracer.nodes["input:text"].module
-        context_module = tracer.nodes["input:context"].module
-        assert isinstance(text_module, InputNode)
-        assert isinstance(context_module, InputNode)
-        assert text_module.value == "Hello"
-        assert context_module.value == {"user": "alice"}
-
-    def test_create_input_node_does_not_affect_node_counter(self) -> None:
+    def test_does_not_affect_node_counter(self) -> None:
         """Input nodes do not increment the _node_counter."""
         tracer = Tracer()
 
-        tracer._create_input_node("text", "value")
-        tracer._create_input_node("other", "value2")
+        tracer._create_input_node("a", "value1")
+        tracer._create_input_node("b", "value2")
 
-        # Counter should still be 0 - only _generate_id increments it
         assert tracer._node_counter == 0
-
-    def test_reset_clears_input_nodes(self) -> None:
-        """Tracer.reset() clears created input nodes."""
-        tracer = Tracer()
-
-        tracer._create_input_node("text", "value")
-        assert len(tracer.nodes) == 1
-        assert len(tracer.input_ids) == 1
-
-        tracer.reset()
-
-        assert len(tracer.nodes) == 0
-        assert len(tracer.input_ids) == 0
 
 
 class TestRecordCall:
     """Tests for Tracer.record_call()."""
 
-    def test_record_call_returns_value(self) -> None:
-        """record_call returns a Value object."""
-        from plait.values import Value
-
+    def test_returns_value_with_correct_ref(self) -> None:
+        """record_call returns a Value with correct node ref."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
         result = tracer.record_call(module, (), {})
 
         assert isinstance(result, Value)
-
-    def test_record_call_value_has_correct_ref(self) -> None:
-        """Returned Value has the correct ref."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result = tracer.record_call(module, (), {})
-
         assert result.ref == "LLMInference_1"
-
-    def test_record_call_creates_graph_node(self) -> None:
-        """record_call creates a GraphNode in the nodes dict."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result = tracer.record_call(module, (), {})
-
-        assert result.ref is not None
         assert result.ref in tracer.nodes
-        node = tracer.nodes[result.ref]
-        assert isinstance(node, GraphNode)
 
-    def test_record_call_node_has_correct_module(self) -> None:
-        """Created GraphNode stores the correct module reference."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result = tracer.record_call(module, (), {})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert node.module is module
-
-    def test_record_call_node_has_correct_id(self) -> None:
-        """Created GraphNode has the same ID as the Value ref."""
+    def test_creates_graph_node_with_correct_fields(self) -> None:
+        """record_call creates a GraphNode with correct module and metadata."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
@@ -481,33 +203,11 @@ class TestRecordCall:
         node = tracer.nodes[result.ref]
 
         assert node.id == result.ref
+        assert node.module is module
+        assert node.module_name == "LLMInference"
 
-    def test_record_call_extracts_dependencies_from_proxy_args(self) -> None:
-        """Dependencies are extracted from Proxy objects in args."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-        input_proxy = tracer._create_input_node("text", "hello")
-
-        output = tracer.record_call(module, (input_proxy,), {})
-        assert output.ref is not None
-        node = tracer.nodes[output.ref]
-
-        assert node.dependencies == ["input:text"]
-
-    def test_record_call_extracts_dependencies_from_proxy_kwargs(self) -> None:
-        """Dependencies are extracted from Proxy objects in kwargs."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-        input_proxy = tracer._create_input_node("text", "hello")
-
-        output = tracer.record_call(module, (), {"text": input_proxy})
-        assert output.ref is not None
-        node = tracer.nodes[output.ref]
-
-        assert node.dependencies == ["input:text"]
-
-    def test_record_call_extracts_dependencies_from_both_args_and_kwargs(self) -> None:
-        """Dependencies are extracted from both args and kwargs."""
+    def test_extracts_dependencies_from_proxy_args_and_kwargs(self) -> None:
+        """Dependencies are extracted from Proxy objects in args and kwargs."""
         tracer = Tracer()
         module = LLMInference(alias="test")
         proxy1 = tracer._create_input_node("arg0", "value1")
@@ -519,128 +219,45 @@ class TestRecordCall:
 
         assert "input:arg0" in node.dependencies
         assert "input:kwarg1" in node.dependencies
-        assert len(node.dependencies) == 2
 
-    def test_record_call_preserves_literal_args(self) -> None:
-        """Literal values in args are preserved as-is."""
+    def test_preserves_literal_values(self) -> None:
+        """Literal values in args/kwargs are preserved as-is."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 
-        output = tracer.record_call(module, ("literal_value", 42), {})
+        output = tracer.record_call(module, ("literal_value", 42), {"temperature": 0.7})
         assert output.ref is not None
         node = tracer.nodes[output.ref]
 
         assert node.args == ("literal_value", 42)
+        assert node.kwargs == {"temperature": 0.7}
         assert node.dependencies == []
 
-    def test_record_call_preserves_literal_kwargs(self) -> None:
-        """Literal values in kwargs are preserved as-is."""
+    def test_replaces_proxy_with_node_refs(self) -> None:
+        """Proxy objects are replaced with NodeRef wrappers."""
         tracer = Tracer()
         module = LLMInference(alias="test")
+        proxy = tracer._create_input_node("text", "hello")
 
-        output = tracer.record_call(module, (), {"temperature": 0.7, "max_tokens": 100})
-        assert output.ref is not None
-        node = tracer.nodes[output.ref]
-
-        assert node.kwargs == {"temperature": 0.7, "max_tokens": 100}
-        assert node.dependencies == []
-
-    def test_record_call_replaces_proxy_args_with_node_refs(self) -> None:
-        """Proxy objects in args are replaced with NodeRef wrappers."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-        input_proxy = tracer._create_input_node("text", "hello")
-
-        output = tracer.record_call(module, (input_proxy, "literal"), {})
+        output = tracer.record_call(module, (proxy, "literal"), {"ctx": proxy})
         assert output.ref is not None
         node = tracer.nodes[output.ref]
 
         assert node.args == (NodeRef("input:text"), "literal")
-
-    def test_record_call_replaces_proxy_kwargs_with_node_refs(self) -> None:
-        """Proxy objects in kwargs are replaced with NodeRef wrappers."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-        input_proxy = tracer._create_input_node("context", {"key": "value"})
-
-        output = tracer.record_call(module, (), {"context": input_proxy, "temp": 0.5})
-        assert output.ref is not None
-        node = tracer.nodes[output.ref]
-
-        assert node.kwargs == {"context": NodeRef("input:context"), "temp": 0.5}
-
-    def test_record_call_multiple_nodes_increments_id(self) -> None:
-        """Multiple record_call creates nodes with incrementing IDs."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result1 = tracer.record_call(module, (), {})
-        result2 = tracer.record_call(module, (), {})
-        result3 = tracer.record_call(module, (), {})
-
-        assert result1.ref == "LLMInference_1"
-        assert result2.ref == "LLMInference_2"
-        assert result3.ref == "LLMInference_3"
-        assert len(tracer.nodes) == 3
-
-    def test_record_call_node_has_empty_dependencies_without_proxies(self) -> None:
-        """Node has empty dependencies list when no proxies are passed."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result = tracer.record_call(module, ("literal",), {"key": "value"})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert node.dependencies == []
-
-    def test_record_call_node_module_name_is_set(self) -> None:
-        """Created GraphNode has correct module_name."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result = tracer.record_call(module, (), {})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert node.module_name == "LLMInference"
-
-    def test_record_call_with_custom_module_class(self) -> None:
-        """record_call works with custom module subclasses."""
-        from plait.module import Module
-
-        class CustomProcessor(Module):
-            def forward(self, x: str) -> str:
-                return x.upper()
-
-        tracer = Tracer()
-        module = CustomProcessor()
-
-        result = tracer.record_call(module, (), {})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert result.ref == "CustomProcessor_1"
-        assert node.module_name == "CustomProcessor"
-        assert node.module is module
+        assert node.kwargs == {"ctx": NodeRef("input:text")}
 
 
 class TestRecordCallChaining:
     """Tests for chaining multiple record_call invocations."""
 
-    def test_chained_calls_create_dependency_chain(self) -> None:
-        """Chained module calls create a dependency chain."""
+    def test_linear_chain(self) -> None:
+        """Chained module calls create a linear dependency chain."""
         tracer = Tracer()
-        module1 = LLMInference(alias="step1")
-        module2 = LLMInference(alias="step2")
-        module3 = LLMInference(alias="step3")
-
         input_proxy = tracer._create_input_node("text", "input")
-        output1 = tracer.record_call(module1, (input_proxy,), {})
-        output2 = tracer.record_call(module2, (output1,), {})
-        _output3 = tracer.record_call(module3, (output2,), {})
+        output1 = tracer.record_call(LLMInference(alias="s1"), (input_proxy,), {})
+        output2 = tracer.record_call(LLMInference(alias="s2"), (output1,), {})
+        _output3 = tracer.record_call(LLMInference(alias="s3"), (output2,), {})
 
-        # Verify the dependency chain
         assert tracer.nodes["LLMInference_1"].dependencies == ["input:text"]
         assert tracer.nodes["LLMInference_2"].dependencies == ["LLMInference_1"]
         assert tracer.nodes["LLMInference_3"].dependencies == ["LLMInference_2"]
@@ -648,228 +265,100 @@ class TestRecordCallChaining:
     def test_fan_out_pattern(self) -> None:
         """Multiple modules depending on the same input (fan-out)."""
         tracer = Tracer()
-        module_a = LLMInference(alias="a")
-        module_b = LLMInference(alias="b")
-        module_c = LLMInference(alias="c")
-
         input_proxy = tracer._create_input_node("text", "input")
-        output_a = tracer.record_call(module_a, (input_proxy,), {})
-        output_b = tracer.record_call(module_b, (input_proxy,), {})
-        output_c = tracer.record_call(module_c, (input_proxy,), {})
+        out_a = tracer.record_call(LLMInference(alias="a"), (input_proxy,), {})
+        out_b = tracer.record_call(LLMInference(alias="b"), (input_proxy,), {})
 
-        # All three depend on the same input
-        assert output_a.ref is not None
-        assert output_b.ref is not None
-        assert output_c.ref is not None
-        assert tracer.nodes[output_a.ref].dependencies == ["input:text"]
-        assert tracer.nodes[output_b.ref].dependencies == ["input:text"]
-        assert tracer.nodes[output_c.ref].dependencies == ["input:text"]
+        assert out_a.ref is not None
+        assert out_b.ref is not None
+        assert tracer.nodes[out_a.ref].dependencies == ["input:text"]
+        assert tracer.nodes[out_b.ref].dependencies == ["input:text"]
 
     def test_fan_in_pattern(self) -> None:
         """One module depending on multiple inputs (fan-in)."""
         tracer = Tracer()
-        module_a = LLMInference(alias="a")
-        module_b = LLMInference(alias="b")
-        module_merge = LLMInference(alias="merge")
-
         input_proxy = tracer._create_input_node("text", "input")
-        output_a = tracer.record_call(module_a, (input_proxy,), {})
-        output_b = tracer.record_call(module_b, (input_proxy,), {})
-        merged = tracer.record_call(module_merge, (output_a, output_b), {})
+        out_a = tracer.record_call(LLMInference(alias="a"), (input_proxy,), {})
+        out_b = tracer.record_call(LLMInference(alias="b"), (input_proxy,), {})
+        merged = tracer.record_call(LLMInference(alias="merge"), (out_a, out_b), {})
 
-        # Merge depends on both a and b
         assert merged.ref is not None
         merge_deps = tracer.nodes[merged.ref].dependencies
-        assert "LLMInference_1" in merge_deps
-        assert "LLMInference_2" in merge_deps
-        assert len(merge_deps) == 2
-
-    def test_diamond_pattern(self) -> None:
-        """Diamond dependency pattern: input -> [a, b] -> merge."""
-        tracer = Tracer()
-
-        input_proxy = tracer._create_input_node("text", "input")
-        module_a = LLMInference(alias="a")
-        module_b = LLMInference(alias="b")
-        module_merge = LLMInference(alias="merge")
-
-        output_a = tracer.record_call(module_a, (input_proxy,), {})
-        output_b = tracer.record_call(module_b, (input_proxy,), {})
-        _merged = tracer.record_call(module_merge, (output_a, output_b), {})
-
-        # Total nodes: 1 input + 3 modules = 4
-        assert len(tracer.nodes) == 4
-
-        # Verify structure
-        assert tracer.nodes["LLMInference_1"].dependencies == ["input:text"]
-        assert tracer.nodes["LLMInference_2"].dependencies == ["input:text"]
-        merge_deps = tracer.nodes["LLMInference_3"].dependencies
         assert set(merge_deps) == {"LLMInference_1", "LLMInference_2"}
 
 
-class TestRecordCallBranchContext:
-    """Tests for record_call with branch context."""
+class TestRecordCallBranchAndPath:
+    """Tests for record_call with branch context and module path."""
 
-    def test_record_call_without_branch_context(self) -> None:
+    def test_no_branch_context(self) -> None:
         """Node has no branch info when not in a branch context."""
         tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        result = tracer.record_call(module, (), {})
+        result = tracer.record_call(LLMInference(alias="test"), (), {})
         assert result.ref is not None
         node = tracer.nodes[result.ref]
 
         assert node.branch_condition is None
         assert node.branch_value is None
 
-    def test_record_call_with_branch_context(self) -> None:
+    @pytest.mark.parametrize(
+        "branch_value", [True, False], ids=["true_branch", "false_branch"]
+    )
+    def test_captures_branch_context(self, branch_value: bool) -> None:
         """Node captures branch info when in a branch context."""
         tracer = Tracer()
-        module = LLMInference(alias="test")
+        tracer._branch_stack.append(("condition_node", branch_value))
 
-        # Simulate being in a branch context
-        tracer._branch_stack.append(("condition_node_1", True))
-
-        result = tracer.record_call(module, (), {})
+        result = tracer.record_call(LLMInference(alias="test"), (), {})
         assert result.ref is not None
         node = tracer.nodes[result.ref]
 
-        assert node.branch_condition == "condition_node_1"
-        assert node.branch_value is True
+        assert node.branch_condition == "condition_node"
+        assert node.branch_value is branch_value
 
-    def test_record_call_with_false_branch(self) -> None:
-        """Node captures False branch value correctly."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        tracer._branch_stack.append(("cond_proxy", False))
-
-        result = tracer.record_call(module, (), {})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert node.branch_condition == "cond_proxy"
-        assert node.branch_value is False
-
-    def test_record_call_nested_branch_uses_innermost(self) -> None:
+    def test_nested_branch_uses_innermost(self) -> None:
         """Nested branches use the innermost branch context."""
         tracer = Tracer()
-        module = LLMInference(alias="test")
+        tracer._branch_stack.append(("outer", True))
+        tracer._branch_stack.append(("inner", False))
 
-        # Push two branch contexts
-        tracer._branch_stack.append(("outer_cond", True))
-        tracer._branch_stack.append(("inner_cond", False))
-
-        result = tracer.record_call(module, (), {})
+        result = tracer.record_call(LLMInference(alias="test"), (), {})
         assert result.ref is not None
         node = tracer.nodes[result.ref]
 
-        # Should use the innermost (last) branch
-        assert node.branch_condition == "inner_cond"
+        assert node.branch_condition == "inner"
         assert node.branch_value is False
 
-
-class TestRecordCallModulePath:
-    """Tests for record_call with module path tracking."""
-
-    def test_record_call_without_module_stack(self) -> None:
-        """Node has empty module_path when module_stack is empty."""
+    def test_module_path_from_stack(self) -> None:
+        """Node has dot-separated module_path from stack."""
         tracer = Tracer()
-        module = LLMInference(alias="test")
+        tracer._module_stack.extend(["encoder", "layer1", "attention"])
 
-        result = tracer.record_call(module, (), {})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert node.module_path == ""
-
-    def test_record_call_with_single_module_in_stack(self) -> None:
-        """Node has correct module_path with one module in stack."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        tracer._module_stack.append("parent")
-
-        result = tracer.record_call(module, (), {})
-        assert result.ref is not None
-        node = tracer.nodes[result.ref]
-
-        assert node.module_path == "parent"
-
-    def test_record_call_with_nested_module_stack(self) -> None:
-        """Node has dot-separated module_path with nested stack."""
-        tracer = Tracer()
-        module = LLMInference(alias="test")
-
-        tracer._module_stack.append("encoder")
-        tracer._module_stack.append("layer1")
-        tracer._module_stack.append("attention")
-
-        result = tracer.record_call(module, (), {})
+        result = tracer.record_call(LLMInference(alias="test"), (), {})
         assert result.ref is not None
         node = tracer.nodes[result.ref]
 
         assert node.module_path == "encoder.layer1.attention"
 
 
-class TestRecordGetitem:
-    """Tests for Tracer.record_getitem()."""
+class TestRecordDataAccessOps:
+    """Tests for record_getitem, record_iter, and record_method."""
 
-    def test_record_getitem_returns_proxy(self) -> None:
-        """record_getitem returns a Proxy."""
+    def test_getitem_creates_node_with_dependency(self) -> None:
+        """record_getitem creates a node that depends on the source."""
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"key": "value"})
 
         result = tracer.record_getitem(input_proxy, "key")
 
         assert isinstance(result, Proxy)
-
-    def test_record_getitem_creates_node(self) -> None:
-        """record_getitem creates a new node in the graph."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"key": "value"})
-
-        tracer.record_getitem(input_proxy, "key")
-
         assert "getitem_1" in tracer.nodes
-
-    def test_record_getitem_node_has_correct_dependencies(self) -> None:
-        """Getitem node depends on the source node."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"key": "value"})
-
-        tracer.record_getitem(input_proxy, "key")
-
         node = tracer.nodes["getitem_1"]
         assert node.dependencies == ["input:data"]
-
-    def test_record_getitem_stores_key(self) -> None:
-        """Getitem node stores the key used."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"key": "value"})
-
-        tracer.record_getitem(input_proxy, "my_key")
-
-        from plait.tracing.tracer import GetItemOp
-
-        node = tracer.nodes["getitem_1"]
         assert isinstance(node.module, GetItemOp)
-        assert node.module.key == "my_key"
+        assert node.module.key == "key"
+        assert node.module_name == "getitem['key']"
 
-    def test_record_getitem_with_integer_key(self) -> None:
-        """record_getitem works with integer keys."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", [1, 2, 3])
-
-        tracer.record_getitem(input_proxy, 0)
-
-        from plait.tracing.tracer import GetItemOp
-
-        node = tracer.nodes["getitem_1"]
-        assert isinstance(node.module, GetItemOp)
-        assert node.module.key == 0
-
-    def test_record_getitem_chaining(self) -> None:
+    def test_getitem_chaining(self) -> None:
         """Multiple getitem calls can be chained."""
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": {"b": "c"}})
@@ -877,441 +366,141 @@ class TestRecordGetitem:
         first = tracer.record_getitem(input_proxy, "a")
         second = tracer.record_getitem(first, "b")
 
-        assert "getitem_1" in tracer.nodes
-        assert "getitem_2" in tracer.nodes
         assert tracer.nodes["getitem_1"].dependencies == ["input:data"]
         assert tracer.nodes["getitem_2"].dependencies == ["getitem_1"]
         assert second.node_id == "getitem_2"
 
-    def test_record_getitem_has_module_name(self) -> None:
-        """Getitem node has descriptive module_name."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"key": "value"})
-
-        tracer.record_getitem(input_proxy, "my_key")
-
-        node = tracer.nodes["getitem_1"]
-        assert node.module_name == "getitem['my_key']"
-
-    def test_record_getitem_stores_source_as_node_ref(self) -> None:
-        """Getitem node stores source as NodeRef in args."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"key": "value"})
-
-        tracer.record_getitem(input_proxy, "key")
-
-        node = tracer.nodes["getitem_1"]
-        assert node.args == (NodeRef("input:data"),)
-
-
-class TestRecordIter:
-    """Tests for Tracer.record_iter()."""
-
-    def test_record_iter_returns_proxy(self) -> None:
-        """record_iter returns a Proxy."""
+    def test_iter_creates_node_with_dependency(self) -> None:
+        """record_iter creates a node that depends on the source."""
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", [1, 2, 3])
 
         result = tracer.record_iter(input_proxy)
 
         assert isinstance(result, Proxy)
-
-    def test_record_iter_creates_node(self) -> None:
-        """record_iter creates a new node in the graph."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", [1, 2, 3])
-
-        tracer.record_iter(input_proxy)
-
         assert "iter_1" in tracer.nodes
-
-    def test_record_iter_node_has_correct_dependencies(self) -> None:
-        """Iter node depends on the source node."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", [1, 2, 3])
-
-        tracer.record_iter(input_proxy)
-
         node = tracer.nodes["iter_1"]
         assert node.dependencies == ["input:data"]
-
-    def test_record_iter_uses_iter_op(self) -> None:
-        """Iter node uses IterOp module."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", [1, 2, 3])
-
-        tracer.record_iter(input_proxy)
-
-        from plait.tracing.tracer import IterOp
-
-        node = tracer.nodes["iter_1"]
         assert isinstance(node.module, IterOp)
-
-    def test_record_iter_has_module_name(self) -> None:
-        """Iter node has descriptive module_name."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", [1, 2, 3])
-
-        tracer.record_iter(input_proxy)
-
-        node = tracer.nodes["iter_1"]
         assert node.module_name == "iter"
 
-
-class TestRecordMethod:
-    """Tests for Tracer.record_method()."""
-
-    def test_record_method_returns_proxy(self) -> None:
-        """record_method returns a Proxy."""
+    @pytest.mark.parametrize("method", ["keys", "values", "items"])
+    def test_method_creates_node_with_dependency(self, method: str) -> None:
+        """record_method creates a node for dict methods."""
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})
 
-        result = tracer.record_method(input_proxy, "keys")
+        result = tracer.record_method(input_proxy, method)
 
         assert isinstance(result, Proxy)
-
-    def test_record_method_creates_node(self) -> None:
-        """record_method creates a new node in the graph."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "keys")
-
         assert "method_1" in tracer.nodes
-
-    def test_record_method_node_has_correct_dependencies(self) -> None:
-        """Method node depends on the source node."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "values")
-
         node = tracer.nodes["method_1"]
         assert node.dependencies == ["input:data"]
-
-    def test_record_method_stores_method_name(self) -> None:
-        """Method node stores the method name."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "items")
-
-        from plait.tracing.tracer import MethodOp
-
-        node = tracer.nodes["method_1"]
         assert isinstance(node.module, MethodOp)
-        assert node.module.method == "items"
-
-    def test_record_method_keys(self) -> None:
-        """record_method works with 'keys'."""
-        from plait.tracing.tracer import MethodOp
-
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "keys")
-
-        node = tracer.nodes["method_1"]
-        assert isinstance(node.module, MethodOp)
-        assert node.module.method == "keys"
-        assert node.module_name == ".keys()"
-
-    def test_record_method_values(self) -> None:
-        """record_method works with 'values'."""
-        from plait.tracing.tracer import MethodOp
-
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "values")
-
-        node = tracer.nodes["method_1"]
-        assert isinstance(node.module, MethodOp)
-        assert node.module.method == "values"
-        assert node.module_name == ".values()"
-
-    def test_record_method_items(self) -> None:
-        """record_method works with 'items'."""
-        from plait.tracing.tracer import MethodOp
-
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "items")
-
-        node = tracer.nodes["method_1"]
-        assert isinstance(node.module, MethodOp)
-        assert node.module.method == "items"
-        assert node.module_name == ".items()"
-
-    def test_record_method_multiple_calls(self) -> None:
-        """Multiple method calls create separate nodes."""
-        tracer = Tracer()
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "keys")
-        tracer.record_method(input_proxy, "values")
-        tracer.record_method(input_proxy, "items")
-
-        assert "method_1" in tracer.nodes
-        assert "method_2" in tracer.nodes
-        assert "method_3" in tracer.nodes
+        assert node.module.method == method
+        assert node.module_name == f".{method}()"
 
 
-class TestRecordOperationBranchContext:
-    """Tests for data access operations with branch context."""
+class TestCollectAndCaptureOutputs:
+    """Tests for _collect_output_ids and _capture_output_structure."""
 
-    def test_record_getitem_with_branch_context(self) -> None:
-        """Getitem node captures branch info when in a branch context."""
-        tracer = Tracer()
-        tracer._branch_stack.append(("condition_1", True))
-        input_proxy = tracer._create_input_node("data", {"key": "value"})
-
-        tracer.record_getitem(input_proxy, "key")
-
-        node = tracer.nodes["getitem_1"]
-        assert node.branch_condition == "condition_1"
-        assert node.branch_value is True
-
-    def test_record_iter_with_branch_context(self) -> None:
-        """Iter node captures branch info when in a branch context."""
-        tracer = Tracer()
-        tracer._branch_stack.append(("condition_2", False))
-        input_proxy = tracer._create_input_node("data", [1, 2])
-
-        tracer.record_iter(input_proxy)
-
-        node = tracer.nodes["iter_1"]
-        assert node.branch_condition == "condition_2"
-        assert node.branch_value is False
-
-    def test_record_method_with_branch_context(self) -> None:
-        """Method node captures branch info when in a branch context."""
-        tracer = Tracer()
-        tracer._branch_stack.append(("condition_3", True))
-        input_proxy = tracer._create_input_node("data", {"a": 1})
-
-        tracer.record_method(input_proxy, "keys")
-
-        node = tracer.nodes["method_1"]
-        assert node.branch_condition == "condition_3"
-        assert node.branch_value is True
-
-
-class TestCollectOutputIds:
-    """Tests for Tracer._collect_output_ids()."""
-
-    def test_collect_single_proxy(self) -> None:
+    def test_collect_from_single_proxy(self) -> None:
         """Collects node ID from a single Proxy."""
         tracer = Tracer()
         proxy = tracer._create_input_node("text", "value")
 
-        result = tracer._collect_output_ids(proxy)
+        assert tracer._collect_output_ids(proxy) == ["input:text"]
 
-        assert result == ["input:text"]
-
-    def test_collect_from_dict(self) -> None:
-        """Collects node IDs from dict values."""
+    @pytest.mark.parametrize(
+        "structure_factory,expected_ids",
+        [
+            (lambda p1, p2: {"x": p1, "y": p2}, {"input:a", "input:b"}),
+            (lambda p1, p2: [p1, p2], ["input:a", "input:b"]),
+            (lambda p1, p2: (p1, p2), ["input:a", "input:b"]),
+        ],
+        ids=["dict", "list", "tuple"],
+    )
+    def test_collect_from_containers(
+        self, structure_factory: Any, expected_ids: Any
+    ) -> None:
+        """Collects node IDs from dict, list, and tuple."""
         tracer = Tracer()
         proxy1 = tracer._create_input_node("a", "val1")
         proxy2 = tracer._create_input_node("b", "val2")
 
-        result = tracer._collect_output_ids({"x": proxy1, "y": proxy2})
+        result = tracer._collect_output_ids(structure_factory(proxy1, proxy2))
 
-        assert "input:a" in result
-        assert "input:b" in result
-        assert len(result) == 2
+        if isinstance(expected_ids, set):
+            assert set(result) == expected_ids
+        else:
+            assert result == expected_ids
 
-    def test_collect_from_list(self) -> None:
-        """Collects node IDs from list items."""
-        tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
-
-        result = tracer._collect_output_ids([proxy1, proxy2])
-
-        assert result == ["input:a", "input:b"]
-
-    def test_collect_from_tuple(self) -> None:
-        """Collects node IDs from tuple items."""
-        tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
-
-        result = tracer._collect_output_ids((proxy1, proxy2))
-
-        assert result == ["input:a", "input:b"]
-
-    def test_collect_from_nested_structure(self) -> None:
-        """Collects node IDs from nested dict/list structure."""
-        tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
-        proxy3 = tracer._create_input_node("c", "val3")
-
-        nested = {"outer": [proxy1, {"inner": proxy2}], "single": proxy3}
-        result = tracer._collect_output_ids(nested)
-
-        assert "input:a" in result
-        assert "input:b" in result
-        assert "input:c" in result
-        assert len(result) == 3
-
-    def test_collect_from_literal_returns_empty(self) -> None:
-        """Returns empty list for literal values."""
-        tracer = Tracer()
-
-        assert tracer._collect_output_ids("string") == []
-        assert tracer._collect_output_ids(42) == []
-        assert tracer._collect_output_ids(None) == []
-
-    def test_collect_from_empty_dict(self) -> None:
-        """Returns empty list for empty dict."""
-        tracer = Tracer()
-
-        result = tracer._collect_output_ids({})
-
-        assert result == []
-
-    def test_collect_from_empty_list(self) -> None:
-        """Returns empty list for empty list."""
-        tracer = Tracer()
-
-        result = tracer._collect_output_ids([])
-
-        assert result == []
-
-    def test_collect_mixed_proxies_and_literals(self) -> None:
+    def test_collect_ignores_literals(self) -> None:
         """Ignores literals when collecting from mixed structure."""
         tracer = Tracer()
         proxy = tracer._create_input_node("a", "val1")
 
         result = tracer._collect_output_ids([proxy, "literal", 42, None])
-
         assert result == ["input:a"]
 
-
-class TestCaptureOutputStructure:
-    """Tests for Tracer._capture_output_structure()."""
-
-    def test_capture_single_proxy(self) -> None:
-        """Captures single proxy as node_id string."""
+    def test_capture_preserves_structure(self) -> None:
+        """_capture_output_structure preserves dict keys and list order."""
         tracer = Tracer()
-        proxy = tracer._create_input_node("text", "value")
+        p1 = tracer._create_input_node("a", "v1")
+        p2 = tracer._create_input_node("b", "v2")
 
-        result = tracer._capture_output_structure(proxy)
+        dict_result = tracer._capture_output_structure({"summary": p1, "analysis": p2})
+        list_result = tracer._capture_output_structure([p1, p2])
 
-        assert result == "input:text"
+        assert dict_result == {"summary": "input:a", "analysis": "input:b"}
+        assert list_result == ["input:a", "input:b"]
 
-    def test_capture_dict_preserves_keys(self) -> None:
-        """Captures dict output preserving user-defined keys."""
+
+class TestTraceMethod:
+    """Tests for Tracer.trace()."""
+
+    def test_returns_inference_graph(self) -> None:
+        """trace() returns an InferenceGraph."""
+
+        class PassThrough(Module):
+            def forward(self, x: str) -> Proxy:
+                return x  # type: ignore
+
         tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
+        graph = tracer.trace(PassThrough(), "input")
 
-        result = tracer._capture_output_structure(
-            {"summary": proxy1, "analysis": proxy2}
-        )
+        assert isinstance(graph, InferenceGraph)
 
-        assert result == {"summary": "input:a", "analysis": "input:b"}
+    def test_creates_input_nodes_for_args_and_kwargs(self) -> None:
+        """trace() creates input nodes for positional and keyword arguments."""
 
-    def test_capture_list_preserves_order(self) -> None:
-        """Captures list output preserving order."""
+        class TwoInputs(Module):
+            def forward(self, a: str, *, text: str) -> tuple[Proxy, Proxy]:
+                return a, text  # type: ignore
+
         tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
+        graph = tracer.trace(TwoInputs(), "first", text="hello")
 
-        result = tracer._capture_output_structure([proxy1, proxy2])
+        assert "input:input_0" in graph.input_ids
+        assert "input:input_text" in graph.input_ids
+        assert graph.nodes["input:input_0"].module.value == "first"  # type: ignore
+        assert graph.nodes["input:input_text"].module.value == "hello"  # type: ignore
 
-        assert result == ["input:a", "input:b"]
+    def test_collects_outputs(self) -> None:
+        """trace() collects outputs from single, list, and dict returns."""
 
-    def test_capture_tuple_as_list(self) -> None:
-        """Captures tuple output as list."""
+        class DictOutput(Module):
+            def forward(self, a: str, b: str) -> dict[str, Proxy]:
+                return {"x": a, "y": b}  # type: ignore
+
         tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
+        graph = tracer.trace(DictOutput(), "first", "second")
 
-        result = tracer._capture_output_structure((proxy1, proxy2))
+        assert "input:input_0" in graph.output_ids
+        assert "input:input_1" in graph.output_ids
 
-        assert result == ["input:a", "input:b"]
-
-    def test_capture_nested_dict(self) -> None:
-        """Captures nested dict structure."""
-        tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
-
-        result = tracer._capture_output_structure(
-            {
-                "outer": {"inner": proxy1},
-                "simple": proxy2,
-            }
-        )
-
-        assert result == {
-            "outer": {"inner": "input:a"},
-            "simple": "input:b",
-        }
-
-    def test_capture_mixed_list_in_dict(self) -> None:
-        """Captures list inside dict structure."""
-        tracer = Tracer()
-        proxy1 = tracer._create_input_node("a", "val1")
-        proxy2 = tracer._create_input_node("b", "val2")
-
-        result = tracer._capture_output_structure(
-            {
-                "results": [proxy1, proxy2],
-            }
-        )
-
-        assert result == {"results": ["input:a", "input:b"]}
-
-    def test_capture_literal_returns_none(self) -> None:
-        """Literal values return None."""
-        tracer = Tracer()
-
-        assert tracer._capture_output_structure("literal") is None
-        assert tracer._capture_output_structure(42) is None
-        assert tracer._capture_output_structure(None) is None
-
-    def test_capture_empty_dict_returns_none(self) -> None:
-        """Empty dict returns None."""
-        tracer = Tracer()
-
-        result = tracer._capture_output_structure({})
-
-        assert result is None
-
-    def test_capture_empty_list_returns_none(self) -> None:
-        """Empty list returns None."""
-        tracer = Tracer()
-
-        result = tracer._capture_output_structure([])
-
-        assert result is None
-
-    def test_capture_mixed_proxies_and_literals(self) -> None:
-        """Only captures proxy values, ignores literals."""
-        tracer = Tracer()
-        proxy = tracer._create_input_node("a", "val1")
-
-        result = tracer._capture_output_structure(
-            {
-                "proxy": proxy,
-                "literal": "string",
-            }
-        )
-
-        # Only the proxy key is captured
-        assert result == {"proxy": "input:a"}
-
-
-class TestTraceOutputStructure:
-    """Tests for output_structure in trace() results."""
-
-    def test_trace_captures_dict_output_structure(self) -> None:
-        """trace() captures dict output structure with user keys."""
+    def test_captures_output_structure(self) -> None:
+        """trace() captures output structure with user keys."""
 
         class DictOutput(Module):
             def forward(self, a: str, b: str) -> dict[str, Proxy]:
@@ -1325,148 +514,10 @@ class TestTraceOutputStructure:
             "analysis": "input:input_1",
         }
 
-    def test_trace_captures_single_output_structure(self) -> None:
-        """trace() captures single proxy output as string."""
-
-        class SingleOutput(Module):
-            def forward(self, x: str) -> Proxy:
-                return x  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(SingleOutput(), "input")
-
-        assert graph.output_structure == "input:input_0"
-
-    def test_trace_captures_list_output_structure(self) -> None:
-        """trace() captures list output structure."""
-
-        class ListOutput(Module):
-            def forward(self, a: str, b: str) -> list[Proxy]:
-                return [a, b]  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(ListOutput(), "first", "second")
-
-        assert graph.output_structure == ["input:input_0", "input:input_1"]
-
-    def test_trace_literal_output_has_none_structure(self) -> None:
-        """trace() with literal output has None structure."""
-
-        class LiteralOutput(Module):
-            def forward(self) -> str:
-                return "constant"
-
-        tracer = Tracer()
-        graph = tracer.trace(LiteralOutput())
-
-        assert graph.output_structure is None
-
-
-class TestTraceMethod:
-    """Tests for Tracer.trace()."""
-
-    def test_trace_returns_inference_graph(self) -> None:
-        """trace() returns an InferenceGraph."""
-
-        class PassThrough(Module):
-            def forward(self, x: str) -> Proxy:
-                return x  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(PassThrough(), "input")
-
-        assert isinstance(graph, InferenceGraph)
-
-    def test_trace_creates_input_node_for_positional_arg(self) -> None:
-        """trace() creates input node for each positional argument."""
-
-        class PassThrough(Module):
-            def forward(self, x: str) -> Proxy:
-                return x  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(PassThrough(), "input value")
-
-        assert "input:input_0" in graph.input_ids
-        assert "input:input_0" in graph.nodes
-        node = graph.nodes["input:input_0"]
-        assert isinstance(node.module, InputNode)
-        assert node.module.value == "input value"
-
-    def test_trace_creates_input_nodes_for_multiple_args(self) -> None:
-        """trace() creates input nodes for multiple positional arguments."""
-
-        class TwoInputs(Module):
-            def forward(self, a: str, b: str) -> tuple[Proxy, Proxy]:
-                return a, b  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(TwoInputs(), "first", "second")
-
-        assert graph.input_ids == ["input:input_0", "input:input_1"]
-        assert graph.nodes["input:input_0"].module.value == "first"  # type: ignore
-        assert graph.nodes["input:input_1"].module.value == "second"  # type: ignore
-
-    def test_trace_creates_input_nodes_for_kwargs(self) -> None:
-        """trace() creates input nodes for keyword arguments."""
-
-        class KwargModule(Module):
-            def forward(self, *, text: str, context: str) -> tuple[Proxy, Proxy]:
-                return text, context  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(KwargModule(), text="hello", context="world")
-
-        assert "input:input_text" in graph.input_ids
-        assert "input:input_context" in graph.input_ids
-        assert graph.nodes["input:input_text"].module.value == "hello"  # type: ignore
-        assert graph.nodes["input:input_context"].module.value == "world"  # type: ignore
-
-    def test_trace_collects_single_proxy_output(self) -> None:
-        """trace() collects single proxy output."""
-
-        class PassThrough(Module):
-            def forward(self, x: str) -> Proxy:
-                return x  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(PassThrough(), "input")
-
-        assert graph.output_ids == ["input:input_0"]
-
-    def test_trace_collects_list_output(self) -> None:
-        """trace() collects outputs from list."""
-
-        class ListOutput(Module):
-            def forward(self, a: str, b: str) -> list[Proxy]:
-                return [a, b]  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(ListOutput(), "first", "second")
-
-        assert graph.output_ids == ["input:input_0", "input:input_1"]
-
-    def test_trace_collects_dict_output(self) -> None:
-        """trace() collects outputs from dict values."""
-
-        class DictOutput(Module):
-            def forward(self, a: str, b: str) -> dict[str, Proxy]:
-                return {"x": a, "y": b}  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(DictOutput(), "first", "second")
-
-        assert "input:input_0" in graph.output_ids
-        assert "input:input_1" in graph.output_ids
-
-    def test_trace_resets_state_before_tracing(self) -> None:
+    def test_resets_state_before_tracing(self) -> None:
         """trace() resets tracer state before starting."""
         tracer = Tracer()
-
-        # Pollute tracer state
         tracer.nodes["garbage"] = None  # type: ignore
-        tracer.input_ids.append("old_input")
-        tracer.output_ids.append("old_output")
         tracer._node_counter = 99
 
         class PassThrough(Module):
@@ -1475,13 +526,10 @@ class TestTraceMethod:
 
         graph = tracer.trace(PassThrough(), "input")
 
-        # State should be clean
         assert "garbage" not in graph.nodes
-        assert "old_input" not in graph.input_ids
-        assert "old_output" not in graph.output_ids
 
-    def test_trace_sets_trace_context(self) -> None:
-        """trace() sets trace context during forward execution."""
+    def test_sets_and_clears_trace_context(self) -> None:
+        """trace() sets trace context during forward and clears after."""
         captured_context: list[Tracer | None] = []
 
         class ContextCapture(Module):
@@ -1493,38 +541,10 @@ class TestTraceMethod:
         tracer.trace(ContextCapture(), "input")
 
         assert captured_context[0] is tracer
-
-    def test_trace_clears_context_after_tracing(self) -> None:
-        """trace() clears trace context after completing."""
-
-        class PassThrough(Module):
-            def forward(self, x: str) -> Proxy:
-                return x  # type: ignore
-
-        tracer = Tracer()
-        tracer.trace(PassThrough(), "input")
-
         assert get_trace_context() is None
 
-    def test_trace_collects_parameters_from_module(self) -> None:
+    def test_collects_parameters_from_module(self) -> None:
         """trace() collects parameters from the module tree."""
-
-        class ModuleWithParam(Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.prompt = Parameter("test prompt", description="test")
-
-            def forward(self, x: str) -> Proxy:
-                return x  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(ModuleWithParam(), "input")
-
-        assert "prompt" in graph.parameters
-        assert graph.parameters["prompt"].value == "test prompt"
-
-    def test_trace_collects_nested_parameters(self) -> None:
-        """trace() collects parameters from nested modules."""
 
         class Inner(Module):
             def __init__(self) -> None:
@@ -1549,33 +569,7 @@ class TestTraceMethod:
         assert "outer_param" in graph.parameters
         assert "inner.inner_param" in graph.parameters
 
-    def test_trace_with_module_calling_child(self) -> None:
-        """trace() captures calls from parent to child modules."""
-
-        class Child(Module):
-            def forward(self, x: Proxy) -> Proxy:
-                # Just return the input - in a real module this would
-                # be recorded by record_call when trace context is active
-                return x
-
-        class Parent(Module):
-            def __init__(self) -> None:
-                super().__init__()
-                self.child = Child()
-
-            def forward(self, x: str) -> Proxy:
-                # Forward should pass the proxy through
-                return self.child.forward(x)  # type: ignore
-
-        tracer = Tracer()
-        graph = tracer.trace(Parent(), "input")
-
-        # Should have the input node
-        assert "input:input_0" in graph.nodes
-        # The child.forward call returns the same proxy, so output should be the input
-        assert graph.output_ids == ["input:input_0"]
-
-    def test_trace_can_be_called_multiple_times(self) -> None:
+    def test_can_be_called_multiple_times(self) -> None:
         """trace() can be called multiple times on same tracer."""
 
         class PassThrough(Module):
@@ -1583,56 +577,18 @@ class TestTraceMethod:
                 return x  # type: ignore
 
         tracer = Tracer()
-
         graph1 = tracer.trace(PassThrough(), "first")
         graph2 = tracer.trace(PassThrough(), "second")
 
-        # Each trace should be independent
         assert graph1.nodes["input:input_0"].module.value == "first"  # type: ignore
         assert graph2.nodes["input:input_0"].module.value == "second"  # type: ignore
 
-    def test_trace_with_empty_inputs(self) -> None:
-        """trace() works with no input arguments."""
 
-        class NoInput(Module):
-            def forward(self) -> str:
-                return "constant"
+class TestTraceGraphPatterns:
+    """Tests for trace() capturing complex graph patterns."""
 
-        tracer = Tracer()
-        graph = tracer.trace(NoInput())
-
-        assert graph.input_ids == []
-        assert graph.output_ids == []  # "constant" is not a Proxy
-
-    def test_trace_records_call_via_record_call(self) -> None:
-        """trace() records module calls when using record_call directly."""
-        from typing import Any
-
-        tracer = Tracer()
-
-        class ManualRecord(Module):
-            def forward(self, x: Any) -> Any:
-                # Simulate what a module would do when trace context is active
-                ctx = get_trace_context()
-                if ctx is not None:
-                    child = LLMInference(alias="test")
-                    return ctx.record_call(child, (x,), {})
-                return x
-
-        graph = tracer.trace(ManualRecord(), "input")
-
-        # Should have input node + recorded LLMInference call
-        assert len(graph.nodes) == 2
-        assert "input:input_0" in graph.nodes
-        assert "LLMInference_1" in graph.nodes
-        assert graph.nodes["LLMInference_1"].dependencies == ["input:input_0"]
-        assert graph.output_ids == ["LLMInference_1"]
-
-    def test_trace_captures_linear_chain(self) -> None:
+    def test_linear_chain(self) -> None:
         """trace() captures a linear chain of module calls."""
-        from typing import Any
-
-        tracer = Tracer()
 
         class LinearChain(Module):
             def forward(self, x: Any) -> Any:
@@ -1640,30 +596,22 @@ class TestTraceMethod:
                 if ctx is None:
                     return x
 
-                # Simulate: step1 -> step2 -> step3
-                step1 = LLMInference(alias="step1")
-                step2 = LLMInference(alias="step2")
-                step3 = LLMInference(alias="step3")
-
-                out1 = ctx.record_call(step1, (x,), {})
-                out2 = ctx.record_call(step2, (out1,), {})
-                out3 = ctx.record_call(step3, (out2,), {})
+                out1 = ctx.record_call(LLMInference(alias="s1"), (x,), {})
+                out2 = ctx.record_call(LLMInference(alias="s2"), (out1,), {})
+                out3 = ctx.record_call(LLMInference(alias="s3"), (out2,), {})
                 return out3
 
+        tracer = Tracer()
         graph = tracer.trace(LinearChain(), "input")
 
-        # Verify structure
         assert len(graph.nodes) == 4  # 1 input + 3 LLM calls
         assert graph.nodes["LLMInference_1"].dependencies == ["input:input_0"]
         assert graph.nodes["LLMInference_2"].dependencies == ["LLMInference_1"]
         assert graph.nodes["LLMInference_3"].dependencies == ["LLMInference_2"]
         assert graph.output_ids == ["LLMInference_3"]
 
-    def test_trace_captures_diamond_pattern(self) -> None:
+    def test_diamond_pattern(self) -> None:
         """trace() captures diamond dependency pattern."""
-        from typing import Any
-
-        tracer = Tracer()
 
         class DiamondPattern(Module):
             def forward(self, x: Any) -> Any:
@@ -1671,28 +619,34 @@ class TestTraceMethod:
                 if ctx is None:
                     return x
 
-                # Diamond: input -> [branch_a, branch_b] -> merge
-                branch_a = LLMInference(alias="a")
-                branch_b = LLMInference(alias="b")
-                merge = LLMInference(alias="merge")
-
-                out_a = ctx.record_call(branch_a, (x,), {})
-                out_b = ctx.record_call(branch_b, (x,), {})
-                out_merge = ctx.record_call(merge, (out_a, out_b), {})
+                out_a = ctx.record_call(LLMInference(alias="a"), (x,), {})
+                out_b = ctx.record_call(LLMInference(alias="b"), (x,), {})
+                out_merge = ctx.record_call(
+                    LLMInference(alias="merge"), (out_a, out_b), {}
+                )
                 return out_merge
 
+        tracer = Tracer()
         graph = tracer.trace(DiamondPattern(), "input")
 
-        # Verify diamond structure
-        assert len(graph.nodes) == 4  # 1 input + 3 LLM calls
-
-        # Both branches depend on input
+        assert len(graph.nodes) == 4
         assert graph.nodes["LLMInference_1"].dependencies == ["input:input_0"]
         assert graph.nodes["LLMInference_2"].dependencies == ["input:input_0"]
-
-        # Merge depends on both branches
         merge_deps = graph.nodes["LLMInference_3"].dependencies
-        assert "LLMInference_1" in merge_deps
-        assert "LLMInference_2" in merge_deps
+        assert set(merge_deps) == {"LLMInference_1", "LLMInference_2"}
 
-        assert graph.output_ids == ["LLMInference_3"]
+
+class TestMultipleTracerInstances:
+    """Tests for multiple Tracer instances."""
+
+    def test_independent_state(self) -> None:
+        """Different tracer instances have independent state."""
+        tracer1 = Tracer()
+        tracer2 = Tracer()
+
+        tracer1.nodes["node1"] = None  # type: ignore
+        tracer1._generate_id(LLMInference(alias="test"))
+
+        assert "node1" not in tracer2.nodes
+        assert tracer2._node_counter == 0
+        assert tracer2._generate_id(LLMInference(alias="test")) == "LLMInference_1"

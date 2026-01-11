@@ -343,12 +343,22 @@ class Scheduler:
                 # Get next task from the pending queue
                 task = await state.get_next_task()
                 if task is None:
-                    # No task available but not complete - release slot and wait
-                    # for task_ready_event to be signaled (when a task completes
-                    # or fails, the event is set to wake up waiting schedulers)
-                    self.release()
+                    # No task available - check if we're done. This re-check is
+                    # needed because state may have changed while we were blocked
+                    # on acquire() above (a task may have completed).
+                    if state.is_complete():
+                        self.release()
+                        break
+
+                    # Not complete - wait for a task to become ready.
+                    # Order matters here to avoid a race condition:
+                    # 1. Clear event BEFORE releasing slot
+                    # 2. Release slot (allows in-progress tasks to complete)
+                    # 3. Wait for event (will be set if task completed after step 1)
+                    # If we released before clearing, a task could complete and
+                    # set the event, then we'd clear it and wait forever.
                     state.task_ready_event.clear()
-                    # Wait for event with timeout to prevent indefinite blocking
+                    self.release()
                     try:
                         await asyncio.wait_for(
                             state.task_ready_event.wait(),
@@ -356,7 +366,7 @@ class Scheduler:
                         )
                     except TimeoutError:
                         # Timeout is a safety mechanism - just retry the loop
-                        # In normal operation this should not happen
+                        # In normal operation this should rarely happen
                         pass
                     continue
 

@@ -221,3 +221,84 @@ def record_call(
 | Integration | `tests/integration/` | Component interaction |
 
 Mock LLM responses in tests rather than making real API calls.
+
+### Test Design Principles
+
+1. **Consolidate with parametrize**: Use `@pytest.mark.parametrize` to combine similar tests
+   - Consolidate tests that check multiple default values into a single parametrized test
+   - Combine tests that check multiple input types into one parametrized test
+   - Prefer one comprehensive test over many trivial tests
+
+2. **Avoid test redundancy**:
+   - Do NOT write separate tests for each default value (combine into one parametrized test)
+   - Do NOT write separate tests for each attribute (test multiple attributes in one test)
+   - Do NOT write trivial tests that just check `isinstance()` or basic construction
+   - Do NOT duplicate coverage across unit and integration tests
+
+3. **Test organization**:
+   - Group related tests in classes (e.g., `TestModuleInstantiation`, `TestModuleChildren`)
+   - Each test class should focus on one aspect of the component
+   - Keep test files focused - aim for ~20-40 tests per file
+
+4. **What to test**:
+   - Core behavior and invariants
+   - Edge cases that could cause bugs
+   - Integration between components
+   - Error handling paths
+
+5. **What NOT to test**:
+   - Trivial getters/setters
+   - Constructor calls that just store values
+   - Python language features (e.g., inheritance works)
+   - Implementation details that could change
+
+### Example: Good vs. Bad Test Patterns
+
+**BAD** - Separate trivial tests:
+```python
+def test_has_children_dict(self) -> None:
+    module = Module()
+    assert hasattr(module, "_children")
+
+def test_children_dict_is_empty(self) -> None:
+    module = Module()
+    assert module._children == {}
+
+def test_has_parameters_dict(self) -> None:
+    module = Module()
+    assert hasattr(module, "_parameters")
+```
+
+**GOOD** - Consolidated test:
+```python
+def test_module_initial_state(self) -> None:
+    """Module has correct initial state after init."""
+    module = Module()
+    assert module._children == {}
+    assert module._parameters == {}
+    assert module._name is None
+```
+
+**BAD** - Separate default value tests:
+```python
+def test_base_url_default_none(self) -> None:
+    config = EndpointConfig(provider_api="openai", model="gpt-4o")
+    assert config.base_url is None
+
+def test_api_key_default_none(self) -> None:
+    config = EndpointConfig(provider_api="openai", model="gpt-4o")
+    assert config.api_key is None
+```
+
+**GOOD** - Parametrized defaults test:
+```python
+@pytest.mark.parametrize("field,default", [
+    ("base_url", None),
+    ("api_key", None),
+    ("max_retries", 3),
+    ("timeout", 300.0),
+])
+def test_defaults(self, field: str, default: object) -> None:
+    config = EndpointConfig(provider_api="openai", model="gpt-4o")
+    assert getattr(config, field) == default
+```
