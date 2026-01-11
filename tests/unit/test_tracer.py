@@ -1,7 +1,7 @@
 """Unit tests for the Tracer class."""
 
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 from plait.tracing.context import get_trace_context
 from plait.tracing.proxy import Proxy
@@ -87,9 +87,9 @@ class TestTracerIdGeneration:
         tracer = Tracer()
 
         # Create a custom module subclass
-        from plait.module import InferenceModule
+        from plait.module import Module
 
-        class CustomModule(InferenceModule):
+        class CustomModule(Module):
             def forward(self, x: str) -> str:
                 return x
 
@@ -102,13 +102,13 @@ class TestTracerIdGeneration:
         """Different module types get their own IDs with shared counter."""
         tracer = Tracer()
 
-        from plait.module import InferenceModule
+        from plait.module import Module
 
-        class ModuleA(InferenceModule):
+        class ModuleA(Module):
             def forward(self, x: str) -> str:
                 return x
 
-        class ModuleB(InferenceModule):
+        class ModuleB(Module):
             def forward(self, x: str) -> str:
                 return x
 
@@ -607,9 +607,9 @@ class TestRecordCall:
 
     def test_record_call_with_custom_module_class(self) -> None:
         """record_call works with custom module subclasses."""
-        from plait.module import InferenceModule
+        from plait.module import Module
 
-        class CustomProcessor(InferenceModule):
+        class CustomProcessor(Module):
             def forward(self, x: str) -> str:
                 return x.upper()
 
@@ -1313,7 +1313,7 @@ class TestTraceOutputStructure:
     def test_trace_captures_dict_output_structure(self) -> None:
         """trace() captures dict output structure with user keys."""
 
-        class DictOutput(InferenceModule):
+        class DictOutput(Module):
             def forward(self, a: str, b: str) -> dict[str, Proxy]:
                 return {"summary": a, "analysis": b}  # type: ignore
 
@@ -1328,7 +1328,7 @@ class TestTraceOutputStructure:
     def test_trace_captures_single_output_structure(self) -> None:
         """trace() captures single proxy output as string."""
 
-        class SingleOutput(InferenceModule):
+        class SingleOutput(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1340,7 +1340,7 @@ class TestTraceOutputStructure:
     def test_trace_captures_list_output_structure(self) -> None:
         """trace() captures list output structure."""
 
-        class ListOutput(InferenceModule):
+        class ListOutput(Module):
             def forward(self, a: str, b: str) -> list[Proxy]:
                 return [a, b]  # type: ignore
 
@@ -1352,7 +1352,7 @@ class TestTraceOutputStructure:
     def test_trace_literal_output_has_none_structure(self) -> None:
         """trace() with literal output has None structure."""
 
-        class LiteralOutput(InferenceModule):
+        class LiteralOutput(Module):
             def forward(self) -> str:
                 return "constant"
 
@@ -1368,7 +1368,7 @@ class TestTraceMethod:
     def test_trace_returns_inference_graph(self) -> None:
         """trace() returns an InferenceGraph."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1380,7 +1380,7 @@ class TestTraceMethod:
     def test_trace_creates_input_node_for_positional_arg(self) -> None:
         """trace() creates input node for each positional argument."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1396,7 +1396,7 @@ class TestTraceMethod:
     def test_trace_creates_input_nodes_for_multiple_args(self) -> None:
         """trace() creates input nodes for multiple positional arguments."""
 
-        class TwoInputs(InferenceModule):
+        class TwoInputs(Module):
             def forward(self, a: str, b: str) -> tuple[Proxy, Proxy]:
                 return a, b  # type: ignore
 
@@ -1410,7 +1410,7 @@ class TestTraceMethod:
     def test_trace_creates_input_nodes_for_kwargs(self) -> None:
         """trace() creates input nodes for keyword arguments."""
 
-        class KwargModule(InferenceModule):
+        class KwargModule(Module):
             def forward(self, *, text: str, context: str) -> tuple[Proxy, Proxy]:
                 return text, context  # type: ignore
 
@@ -1425,7 +1425,7 @@ class TestTraceMethod:
     def test_trace_collects_single_proxy_output(self) -> None:
         """trace() collects single proxy output."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1437,7 +1437,7 @@ class TestTraceMethod:
     def test_trace_collects_list_output(self) -> None:
         """trace() collects outputs from list."""
 
-        class ListOutput(InferenceModule):
+        class ListOutput(Module):
             def forward(self, a: str, b: str) -> list[Proxy]:
                 return [a, b]  # type: ignore
 
@@ -1449,7 +1449,7 @@ class TestTraceMethod:
     def test_trace_collects_dict_output(self) -> None:
         """trace() collects outputs from dict values."""
 
-        class DictOutput(InferenceModule):
+        class DictOutput(Module):
             def forward(self, a: str, b: str) -> dict[str, Proxy]:
                 return {"x": a, "y": b}  # type: ignore
 
@@ -1469,7 +1469,7 @@ class TestTraceMethod:
         tracer.output_ids.append("old_output")
         tracer._node_counter = 99
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1484,7 +1484,7 @@ class TestTraceMethod:
         """trace() sets trace context during forward execution."""
         captured_context: list[Tracer | None] = []
 
-        class ContextCapture(InferenceModule):
+        class ContextCapture(Module):
             def forward(self, x: str) -> Proxy:
                 captured_context.append(get_trace_context())
                 return x  # type: ignore
@@ -1497,7 +1497,7 @@ class TestTraceMethod:
     def test_trace_clears_context_after_tracing(self) -> None:
         """trace() clears trace context after completing."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1509,7 +1509,7 @@ class TestTraceMethod:
     def test_trace_collects_parameters_from_module(self) -> None:
         """trace() collects parameters from the module tree."""
 
-        class ModuleWithParam(InferenceModule):
+        class ModuleWithParam(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("test prompt", description="test")
@@ -1526,7 +1526,7 @@ class TestTraceMethod:
     def test_trace_collects_nested_parameters(self) -> None:
         """trace() collects parameters from nested modules."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner_param = Parameter("inner value", description="test")
@@ -1534,7 +1534,7 @@ class TestTraceMethod:
             def forward(self, x: str) -> str:
                 return x
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.outer_param = Parameter("outer value", description="test")
@@ -1552,13 +1552,13 @@ class TestTraceMethod:
     def test_trace_with_module_calling_child(self) -> None:
         """trace() captures calls from parent to child modules."""
 
-        class Child(InferenceModule):
+        class Child(Module):
             def forward(self, x: Proxy) -> Proxy:
                 # Just return the input - in a real module this would
                 # be recorded by record_call when trace context is active
                 return x
 
-        class Parent(InferenceModule):
+        class Parent(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.child = Child()
@@ -1578,7 +1578,7 @@ class TestTraceMethod:
     def test_trace_can_be_called_multiple_times(self) -> None:
         """trace() can be called multiple times on same tracer."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def forward(self, x: str) -> Proxy:
                 return x  # type: ignore
 
@@ -1594,7 +1594,7 @@ class TestTraceMethod:
     def test_trace_with_empty_inputs(self) -> None:
         """trace() works with no input arguments."""
 
-        class NoInput(InferenceModule):
+        class NoInput(Module):
             def forward(self) -> str:
                 return "constant"
 
@@ -1610,7 +1610,7 @@ class TestTraceMethod:
 
         tracer = Tracer()
 
-        class ManualRecord(InferenceModule):
+        class ManualRecord(Module):
             def forward(self, x: Any) -> Any:
                 # Simulate what a module would do when trace context is active
                 ctx = get_trace_context()
@@ -1634,7 +1634,7 @@ class TestTraceMethod:
 
         tracer = Tracer()
 
-        class LinearChain(InferenceModule):
+        class LinearChain(Module):
             def forward(self, x: Any) -> Any:
                 ctx = get_trace_context()
                 if ctx is None:
@@ -1665,7 +1665,7 @@ class TestTraceMethod:
 
         tracer = Tracer()
 
-        class DiamondPattern(InferenceModule):
+        class DiamondPattern(Module):
             def forward(self, x: Any) -> Any:
                 ctx = get_trace_context()
                 if ctx is None:

@@ -23,7 +23,7 @@ plait moves that complexity into a shared runtime:
 
 ## Features
 
-- **PyTorch-like API**: `InferenceModule` with `forward()` and `backward()` methods
+- **PyTorch-like API**: `Module` with `forward()` and `backward()` methods
 - **Automatic DAG capture**: Trace-based graph construction from eager-mode code
 - **Async execution**: Maximum throughput with adaptive backpressure and rate limiting
 - **Resource management**: Decouple module definitions from endpoint configuration
@@ -47,10 +47,10 @@ pip install plait
 Define a pipeline as a module composition:
 
 ```python
-from plait import InferenceModule, LLMInference, Parameter, ResourceConfig, run
+from plait import Module, LLMInference, Parameter, ResourceConfig, run
 
 
-class SummarizeAndAnalyze(InferenceModule):
+class SummarizeAndAnalyze(Module):
     """A two-stage pipeline: summarize, then analyze."""
 
     def __init__(self):
@@ -90,23 +90,23 @@ The pipeline is traced into a DAG, and the scheduler runs nodes concurrently whe
 
 | PyTorch | plait | Purpose |
 |---------|-------|---------|
-| `nn.Module` | `InferenceModule` | Base class for operations |
+| `nn.Module` | `Module` | Base class for operations |
 | `nn.Parameter` | `Parameter` | Learnable values (prompts, instructions) |
 | `forward()` | `forward()` | Define computation |
 | `backward()` | `backward()` | Propagate feedback |
 | `torch.fx.Tracer` | `Tracer` | Capture computation graph |
 | `torch.optim.*` | `Optimizer` | Update parameters |
 
-### InferenceModule
+### Module
 
 The base class for all operations. Compose modules by assigning them as attributes:
 
 ```python
-class DocumentProcessor(InferenceModule):
+class DocumentProcessor(Module):
     def __init__(self):
         super().__init__()
         self.extractor = LLMInference(alias="fast", system_prompt="Extract key facts.")
-        self.analyzer = MultiPerspectiveAnalysis()  # Another InferenceModule
+        self.analyzer = MultiPerspectiveAnalysis()  # Another Module
         self.reporter = LLMInference(alias="smart", system_prompt="Write a report.")
 
     def forward(self, document: str) -> str:
@@ -185,7 +185,7 @@ python examples/01_basic_modules.py
 For detailed architecture and design documentation, see the [`design_docs/`](design_docs/) directory:
 
 - [Architecture Overview](design_docs/architecture.md) - System design and component interactions
-- [InferenceModule](design_docs/inference_module.md) - Core module system
+- [Module](design_docs/inference_module.md) - Core module system
 - [Tracing](design_docs/tracing.md) - How DAGs are captured from code
 - [Execution](design_docs/execution.md) - Scheduler, state, and error handling
 - [Resources](design_docs/resources.md) - Endpoint configuration and rate limiting

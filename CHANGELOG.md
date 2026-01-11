@@ -26,18 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `Optimizer` abstract base class following torch.optim patterns
 - Add `SFAOptimizer` (Stochastic Feedback Ascent) with configurable conservatism
 - Add backward pass infrastructure with `BackwardContext`, `BackwardResult`, and `_propagate_backward()`
-- Add `InferenceModule.backward()` and `LLMInference.backward()` for feedback propagation
+- Add `Module.backward()` and `LLMInference.backward()` for feedback propagation
 - Add `Loss` base class, `VerifierLoss`, `LLMJudge`, and `CompositeLoss` for output evaluation
 - Add `Feedback` dataclass with `FeedbackType` enum for representing evaluation results
 - Add `ForwardRecord` dataclass and `record` parameter to `run()` for backward pass support
-- Add `InferenceModule` base class with child/parameter registration and introspection methods
+- Add `Module` base class with child/parameter registration and introspection methods
 - Add `LLMInference` atomic module for LLM API calls
 - Add tracing infrastructure with `Tracer`, `Proxy`, `GraphNode`, and `InferenceGraph`
 - Add `ExecutionState` for task management with dependency tracking and failure handling
 - Add `Scheduler` with concurrency control and `run()` function for end-to-end execution
 - Add data access operations (`__getitem__`, `__iter__`) and `NodeRef` for type-safe references
 - Add cycle detection, event-driven scheduling, and `visualize_graph()` for DOT output
-- Add `state_dict()` and `load_state_dict()` to `InferenceModule` for parameter serialization
+- Add `state_dict()` and `load_state_dict()` to `Module` for parameter serialization
 - Add `EndpointConfig`, `ResourceConfig`, and `ResourceManager` for LLM endpoint coordination
 - Add `LLMRequest`, `LLMResponse` types and `LLMClient` abstract base class
 - Add `OpenAIClient` and `OpenAICompatibleClient` for OpenAI API and self-hosted models
@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add project scaffolding, design documentation, and example cookbooks
 
 ### Changed
+- **BREAKING**: Rename `InferenceModule` to `Module` for simpler PyTorch-like naming (update imports: `from plait.module import Module`)
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling
 - Standardize rate limiting units to RPM (requests per minute) across all APIs
 - Refactor batch loss API to match PyTorch semantics with auto-detection and mean reduction

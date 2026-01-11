@@ -41,7 +41,7 @@ from plait.errors import OptimizationError
 
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
-    from plait.module import InferenceModule
+    from plait.module import Module
     from plait.optimization.record import ForwardRecord
     from plait.parameter import Parameter
     from plait.resources.config import ResourceConfig
@@ -65,10 +65,10 @@ class _OptimizerLLMWrapper:
             alias: Resource alias for the LLM endpoint.
             system_prompt: System prompt for the LLM.
         """
-        from plait.module import InferenceModule, LLMInference
+        from plait.module import LLMInference, Module
 
         # Create a wrapper module class dynamically
-        class _Wrapper(InferenceModule):
+        class _Wrapper(Module):
             def __init__(inner_self) -> None:
                 super().__init__()
                 inner_self.llm = LLMInference(alias=alias, system_prompt=system_prompt)
@@ -488,7 +488,7 @@ class SFAOptimizer(Optimizer):
 
     def _build_param_to_node_mapping(
         self,
-        module_map: dict[str, InferenceModule],
+        module_map: dict[str, Module],
     ) -> dict[str, set[str]]:
         """Map parameter keys to the nodes containing them.
 
@@ -509,7 +509,7 @@ class SFAOptimizer(Optimizer):
 
     def _build_node_to_param_mapping(
         self,
-        module_map: dict[str, InferenceModule],
+        module_map: dict[str, Module],
     ) -> dict[str, list[Parameter]]:
         """Map node IDs to parameters in that node's module.
 

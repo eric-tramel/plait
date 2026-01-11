@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from plait.execution.executor import run
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.optimization.record import ForwardRecord
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ from plait.optimization.record import ForwardRecord
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class EchoModule(InferenceModule):
+class EchoModule(Module):
     """A simple module that returns its input unchanged.
 
     Works with tracing because it just passes through the Proxy.
@@ -34,7 +34,7 @@ class EchoModule(InferenceModule):
         return text
 
 
-class TransformModule(InferenceModule):
+class TransformModule(Module):
     """An atomic module that transforms input during execution.
 
     During tracing, __call__ intercepts and records the call, returning a Proxy.
@@ -50,7 +50,7 @@ class TransformModule(InferenceModule):
         return f"{text}{self.suffix}"
 
 
-class UpperTransformModule(InferenceModule):
+class UpperTransformModule(Module):
     """An atomic module that uppercases input during execution."""
 
     def forward(self, text: str) -> str:
@@ -58,7 +58,7 @@ class UpperTransformModule(InferenceModule):
         return text.upper()
 
 
-class AsyncTransformModule(InferenceModule):
+class AsyncTransformModule(Module):
     """An async module for testing."""
 
     async def forward(self, text: str) -> str:
@@ -67,7 +67,7 @@ class AsyncTransformModule(InferenceModule):
         return f"{text}_async"
 
 
-class FailingModule(InferenceModule):
+class FailingModule(Module):
     """A module that always fails."""
 
     def forward(self, text: str) -> str:
@@ -75,7 +75,7 @@ class FailingModule(InferenceModule):
         raise ValueError("Module failed intentionally")
 
 
-class LinearPipeline(InferenceModule):
+class LinearPipeline(Module):
     """A linear pipeline: a -> b -> c."""
 
     def __init__(self):
@@ -92,7 +92,7 @@ class LinearPipeline(InferenceModule):
         return c
 
 
-class SingleStepPipeline(InferenceModule):
+class SingleStepPipeline(Module):
     """A pipeline with a single transform step."""
 
     def __init__(self, suffix: str = "_processed"):
@@ -104,7 +104,7 @@ class SingleStepPipeline(InferenceModule):
         return self.transform(text)
 
 
-class UpperPipeline(InferenceModule):
+class UpperPipeline(Module):
     """A pipeline that uppercases input."""
 
     def __init__(self):
@@ -116,7 +116,7 @@ class UpperPipeline(InferenceModule):
         return self.upper(text)
 
 
-class AsyncPipeline(InferenceModule):
+class AsyncPipeline(Module):
     """A pipeline with an async transform."""
 
     def __init__(self):
@@ -128,7 +128,7 @@ class AsyncPipeline(InferenceModule):
         return self.async_transform(text)
 
 
-class ParallelPipeline(InferenceModule):
+class ParallelPipeline(Module):
     """A pipeline with parallel branches: input -> [a, b]."""
 
     def __init__(self):
@@ -143,7 +143,7 @@ class ParallelPipeline(InferenceModule):
         return {"a": a, "b": b}
 
 
-class DiamondPipeline(InferenceModule):
+class DiamondPipeline(Module):
     """A diamond pipeline: input -> [a, b] -> merge."""
 
     def __init__(self):
@@ -161,7 +161,7 @@ class DiamondPipeline(InferenceModule):
         return merged
 
 
-class NestedPipeline(InferenceModule):
+class NestedPipeline(Module):
     """A pipeline containing another pipeline."""
 
     def __init__(self):
@@ -175,7 +175,7 @@ class NestedPipeline(InferenceModule):
         return self.outer(inner_result)
 
 
-class MultiInputModule(InferenceModule):
+class MultiInputModule(Module):
     """A module that combines multiple inputs."""
 
     def __init__(self):
@@ -187,7 +187,7 @@ class MultiInputModule(InferenceModule):
         return self.combiner(text1)
 
 
-class MultiOutputPipeline(InferenceModule):
+class MultiOutputPipeline(Module):
     """A module that produces multiple outputs."""
 
     def __init__(self):
@@ -205,7 +205,7 @@ class MultiOutputPipeline(InferenceModule):
         }
 
 
-class PartialFailPipeline(InferenceModule):
+class PartialFailPipeline(Module):
     """A pipeline where one branch fails."""
 
     def __init__(self):
@@ -221,7 +221,7 @@ class PartialFailPipeline(InferenceModule):
         }
 
 
-class CascadeFailPipeline(InferenceModule):
+class CascadeFailPipeline(Module):
     """A pipeline where failure cascades."""
 
     def __init__(self):
@@ -235,7 +235,7 @@ class CascadeFailPipeline(InferenceModule):
         return self.second(first_result)
 
 
-class FailingPipeline(InferenceModule):
+class FailingPipeline(Module):
     """A pipeline with a single failing step."""
 
     def __init__(self):
@@ -247,7 +247,7 @@ class FailingPipeline(InferenceModule):
         return self.fail(text)
 
 
-class ManyParallelPipeline(InferenceModule):
+class ManyParallelPipeline(Module):
     """A pipeline with many parallel operations."""
 
     def __init__(self, count: int = 20):
@@ -259,7 +259,7 @@ class ManyParallelPipeline(InferenceModule):
         return {f"m{i}": m(text) for i, m in enumerate(self.processors)}
 
 
-class ChainedPipeline(InferenceModule):
+class ChainedPipeline(Module):
     """A pipeline that chains transforms."""
 
     def __init__(self):
@@ -273,7 +273,7 @@ class ChainedPipeline(InferenceModule):
         return self.second(first_result)
 
 
-class FanOutFanInPipeline(InferenceModule):
+class FanOutFanInPipeline(Module):
     """A pipeline with fan-out fan-in pattern."""
 
     def __init__(self):
@@ -289,7 +289,7 @@ class FanOutFanInPipeline(InferenceModule):
         return self.merge(a)
 
 
-class SharedInputPipeline(InferenceModule):
+class SharedInputPipeline(Module):
     """A pipeline where multiple branches share input."""
 
     def __init__(self):
@@ -305,7 +305,7 @@ class SharedInputPipeline(InferenceModule):
         }
 
 
-class MockLLM(InferenceModule):
+class MockLLM(Module):
     """A mock LLM module that simulates LLM behavior."""
 
     def __init__(self, response: str = "mock response"):
@@ -321,7 +321,7 @@ class MockLLM(InferenceModule):
         return self.response
 
 
-class LLMPipeline(InferenceModule):
+class LLMPipeline(Module):
     """An LLM pipeline for testing."""
 
     def __init__(self, summarizer_response: str, analyzer_response: str):
@@ -626,7 +626,7 @@ class TestRunWithMockLLM:
     async def test_run_mock_llm(self) -> None:
         """run() works with mock LLM modules."""
 
-        class SingleLLMPipeline(InferenceModule):
+        class SingleLLMPipeline(Module):
             def __init__(self):
                 super().__init__()
                 self.llm = MockLLM("Hello from LLM!")
@@ -960,11 +960,11 @@ class TestRunWithRecord:
 
         output, record = await run(module, "test", record=True)
 
-        # Should have module references for InferenceModule nodes
+        # Should have module references for Module nodes
         assert len(record.module_map) > 0
-        # All modules should be InferenceModule instances
+        # All modules should be Module instances
         for _node_id, mod in record.module_map.items():
-            assert isinstance(mod, InferenceModule)
+            assert isinstance(mod, Module)
 
     @pytest.mark.asyncio
     async def test_forward_record_node_inputs_recorded(self) -> None:

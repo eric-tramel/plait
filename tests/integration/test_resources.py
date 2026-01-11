@@ -22,7 +22,7 @@ from plait.execution.context import ExecutionSettings
 from plait.execution.executor import run
 from plait.execution.scheduler import Scheduler
 from plait.execution.state import ExecutionState
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.resources.config import EndpointConfig, ResourceConfig
 from plait.tracing.tracer import Tracer
 from plait.types import LLMResponse
@@ -57,7 +57,7 @@ def create_mock_response(content: str = "Mock response") -> LLMResponse:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class MultiEndpointPipeline(InferenceModule):
+class MultiEndpointPipeline(Module):
     """Pipeline that uses multiple LLM endpoints."""
 
     def __init__(self) -> None:
@@ -72,7 +72,7 @@ class MultiEndpointPipeline(InferenceModule):
         }
 
 
-class SequentialPipeline(InferenceModule):
+class SequentialPipeline(Module):
     """Pipeline that chains LLM calls sequentially."""
 
     def __init__(self) -> None:
@@ -86,7 +86,7 @@ class SequentialPipeline(InferenceModule):
         return analysis
 
 
-class ParallelAnalysisPipeline(InferenceModule):
+class ParallelAnalysisPipeline(Module):
     """Pipeline that runs multiple analyses in parallel."""
 
     def __init__(self) -> None:
@@ -103,7 +103,7 @@ class ParallelAnalysisPipeline(InferenceModule):
         }
 
 
-class SimpleLLMModule(InferenceModule):
+class SimpleLLMModule(Module):
     """Simple module with a single LLM call."""
 
     def __init__(self, alias: str = "fast") -> None:
@@ -426,7 +426,7 @@ class TestResourceManagerSchedulerIntegration:
                 max_tokens=100,
             )
 
-            class CustomModule(InferenceModule):
+            class CustomModule(Module):
                 def __init__(self) -> None:
                     super().__init__()
                     self.llm = llm

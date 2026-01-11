@@ -9,7 +9,7 @@ Note:
     public API exported from the top-level `plait` package.
 
     Internal usage:
-        - `InferenceModule.__call__` checks context to record calls during tracing
+        - `Module.__call__` checks context to record calls during tracing
         - `Tracer.trace()` establishes the context for graph capture
         - `branch` decorator checks context to handle conditional tracing
 

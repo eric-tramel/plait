@@ -7,7 +7,7 @@ that can be optimized during training (backward passes).
 Run with: python examples/02_parameters.py
 """
 
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.parameter import Parameter
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ from plait.parameter import Parameter
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class PromptTemplate(InferenceModule):
+class PromptTemplate(Module):
     """A module with a learnable prompt template.
 
     The template parameter can be optimized through backward passes
@@ -40,7 +40,7 @@ class PromptTemplate(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class Assistant(InferenceModule):
+class Assistant(Module):
     """An assistant with both fixed and learnable parameters."""
 
     def __init__(self, name: str, instructions: str) -> None:
@@ -67,7 +67,7 @@ class Assistant(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class Tagger(InferenceModule):
+class Tagger(Module):
     """A module that adds a tag to text."""
 
     def __init__(self, tag: str) -> None:
@@ -78,7 +78,7 @@ class Tagger(InferenceModule):
         return f"[{self.tag.value}] {text}"
 
 
-class MultiTagger(InferenceModule):
+class MultiTagger(Module):
     """A module that applies multiple tags."""
 
     def __init__(self) -> None:
@@ -99,7 +99,7 @@ class MultiTagger(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class LearnableGreeter(InferenceModule):
+class LearnableGreeter(Module):
     """A greeter with a learnable greeting style."""
 
     def __init__(self) -> None:
@@ -120,7 +120,7 @@ class LearnableGreeter(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class OptimizableAssistant(InferenceModule):
+class OptimizableAssistant(Module):
     """An assistant with multiple learnable prompts that can be saved/loaded."""
 
     def __init__(self) -> None:

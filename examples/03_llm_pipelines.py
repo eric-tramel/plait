@@ -24,7 +24,7 @@ See 05_execution.py and 07_execution_settings.py for more execution patterns.
 Run with: python examples/03_llm_pipelines.py
 """
 
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ from plait.parameter import Parameter
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class Summarizer(InferenceModule):
+class Summarizer(Module):
     """A simple summarization module."""
 
     def __init__(self) -> None:
@@ -54,7 +54,7 @@ class Summarizer(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SummarizeAndAnalyze(InferenceModule):
+class SummarizeAndAnalyze(Module):
     """A two-stage pipeline: summarize, then analyze."""
 
     def __init__(self) -> None:
@@ -81,7 +81,7 @@ class SummarizeAndAnalyze(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class MultiPerspectiveAnalysis(InferenceModule):
+class MultiPerspectiveAnalysis(Module):
     """Analyze text from multiple perspectives in parallel."""
 
     def __init__(self) -> None:
@@ -113,7 +113,7 @@ class MultiPerspectiveAnalysis(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ComprehensiveAnalyzer(InferenceModule):
+class ComprehensiveAnalyzer(Module):
     """Analyze from multiple perspectives, then synthesize."""
 
     def __init__(self) -> None:
@@ -143,7 +143,7 @@ class ComprehensiveAnalyzer(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class AdaptiveAssistant(InferenceModule):
+class AdaptiveAssistant(Module):
     """An assistant with learnable system prompts that can be optimized."""
 
     def __init__(self) -> None:
@@ -169,7 +169,7 @@ class AdaptiveAssistant(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class DocumentProcessor(InferenceModule):
+class DocumentProcessor(Module):
     """A complex document processing pipeline."""
 
     def __init__(self) -> None:

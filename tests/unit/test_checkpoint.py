@@ -665,10 +665,10 @@ class TestCheckpointIsCompatibleWith:
 
     def test_compatible_with_module_same_structure(self) -> None:
         """is_compatible_with() accepts a module and traces it internally."""
-        from plait.module import InferenceModule
+        from plait.module import Module
         from plait.tracing.tracer import Tracer
 
-        class SimpleModule(InferenceModule):
+        class SimpleModule(Module):
             def forward(self, x: str) -> str:
                 return x
 
@@ -691,10 +691,10 @@ class TestCheckpointIsCompatibleWith:
 
     def test_compatible_with_module_different_structure(self) -> None:
         """is_compatible_with() detects different module structures."""
-        from plait.module import InferenceModule
+        from plait.module import Module
         from plait.tracing.tracer import Tracer
 
-        class ModuleA(InferenceModule):
+        class ModuleA(Module):
             def __init__(self):
                 super().__init__()
                 self.child = ModuleB()
@@ -702,11 +702,11 @@ class TestCheckpointIsCompatibleWith:
             def forward(self, x: str) -> str:
                 return self.child(x)
 
-        class ModuleB(InferenceModule):
+        class ModuleB(Module):
             def forward(self, x: str) -> str:
                 return x
 
-        class ModuleC(InferenceModule):
+        class ModuleC(Module):
             def forward(self, x: str) -> str:
                 return x
 
@@ -729,9 +729,9 @@ class TestCheckpointIsCompatibleWith:
 
     def test_compatible_with_module_legacy_checkpoint(self) -> None:
         """is_compatible_with() returns True for legacy checkpoints with modules."""
-        from plait.module import InferenceModule
+        from plait.module import Module
 
-        class SimpleModule(InferenceModule):
+        class SimpleModule(Module):
             def forward(self, x: str) -> str:
                 return x
 

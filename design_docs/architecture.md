@@ -4,7 +4,7 @@
 
 plait is a PyTorch-inspired framework for building, executing, and optimizing complex LLM inference pipelines. It provides:
 
-- **Familiar API**: PyTorch-like `InferenceModule` with `forward()` and `backward()` methods
+- **Familiar API**: PyTorch-like `Module` with `forward()` and `backward()` methods
 - **Automatic DAG Capture**: Trace-based graph construction from eager-mode code
 - **Maximum Throughput**: Async execution with adaptive backpressure and resource pooling
 - **LLM-Based Optimization**: Backward passes that propagate feedback through the graph
@@ -24,7 +24,7 @@ plait is a PyTorch-inspired framework for building, executing, and optimizing co
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         User Code                                   │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │ InferenceModule │  │ LLMInference    │  │ Parameter           │  │
+│  │ Module │  │ LLMInference    │  │ Parameter           │  │
 │  │ (forward/back)  │  │ (atomic ops)    │  │ (learnable values)  │  │
 │  └────────┬────────┘  └────────┬────────┘  └──────────┬──────────┘  │
 └───────────┼─────────────────────┼─────────────────────┼─────────────┘
@@ -59,16 +59,16 @@ plait is a PyTorch-inspired framework for building, executing, and optimizing co
 
 ## Core Components
 
-### 1. InferenceModule
+### 1. Module
 
 The fundamental building block, analogous to `torch.nn.Module`:
 
 ```python
-class InferenceModule:
+class Module:
     """Base class for all inference operations."""
 
     def __init__(self):
-        self._children: dict[str, InferenceModule] = {}
+        self._children: dict[str, Module] = {}
         self._parameters: dict[str, Parameter] = {}
 
     def forward(self, *args, **kwargs) -> Any:
@@ -90,7 +90,7 @@ Key properties:
 The base operation for LLM calls:
 
 ```python
-class LLMInference(InferenceModule):
+class LLMInference(Module):
     """Atomic module for LLM API calls."""
 
     def __init__(
@@ -160,7 +160,7 @@ The traced execution graph:
 @dataclass
 class GraphNode:
     id: str
-    module: InferenceModule
+    module: Module
     dependencies: list[str]      # Input node IDs
     dependents: list[str]        # Output node IDs
 
@@ -471,7 +471,7 @@ plait/
 ├── src/
 │   └── plait/
 │       ├── __init__.py
-│       ├── module.py           # InferenceModule, LLMInference
+│       ├── module.py           # Module, LLMInference
 │       ├── parameter.py        # Parameter
 │       ├── graph.py            # InferenceGraph, GraphNode
 │       ├── tracing/

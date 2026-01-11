@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **plait** is a PyTorch-inspired framework for building, executing, and optimizing LLM inference pipelines. Key features:
 
-- **PyTorch-like API**: `InferenceModule` with `forward()` and `backward()` methods
+- **PyTorch-like API**: `Module` with `forward()` and `backward()` methods
 - **Automatic DAG capture**: Trace-based graph construction from eager-mode code
 - **Async execution**: Maximum throughput with adaptive backpressure
 - **LLM-based optimization**: Backward passes that propagate feedback to improve prompts
@@ -105,7 +105,7 @@ plait/
 ├── src/
 │   └── plait/          # Main package
 │       ├── __init__.py      # Package exports
-│       ├── module.py        # InferenceModule, LLMInference
+│       ├── module.py        # Module, LLMInference
 │       ├── parameter.py     # Parameter class
 │       ├── values.py        # Value, ValueRef for semantic values
 │       ├── functional.py    # Functional API (llm_call, structured_llm_call)
@@ -151,7 +151,7 @@ plait/
 
 The system has four main layers:
 
-1. **User Code**: `InferenceModule`, `LLMInference`, `Parameter`
+1. **User Code**: `Module`, `LLMInference`, `Parameter`
 2. **Tracing**: `Tracer`, `Proxy`, `InferenceGraph` - captures DAG from forward()
 3. **Execution**: `Scheduler`, `ExecutionState` - async execution with priority queue
 4. **Infrastructure**: LLM clients, rate limiting, checkpointing
@@ -191,7 +191,7 @@ All public functions, methods, and classes **must** have Google-style docstrings
 ```python
 def record_call(
     self,
-    module: InferenceModule,
+    module: Module,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> Proxy:

@@ -9,7 +9,7 @@ from plait.errors import RateLimitError, TransientError
 from plait.execution.scheduler import RateLimiterProtocol, Scheduler
 from plait.execution.state import ExecutionState, TaskStatus
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import InputNode
 from plait.types import LLMRequest, LLMResponse
 
@@ -429,7 +429,7 @@ class TestSchedulerImports:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class SimpleModule(InferenceModule):
+class SimpleModule(Module):
     """A simple test module that transforms input."""
 
     def forward(self, x: str) -> str:
@@ -437,7 +437,7 @@ class SimpleModule(InferenceModule):
         return f"{x}_processed"
 
 
-class AsyncModule(InferenceModule):
+class AsyncModule(Module):
     """An async test module."""
 
     async def forward(self, x: str) -> str:
@@ -446,7 +446,7 @@ class AsyncModule(InferenceModule):
         return f"{x}_async"
 
 
-class FailingModule(InferenceModule):
+class FailingModule(Module):
     """A module that always fails."""
 
     def forward(self, x: str) -> str:
@@ -454,7 +454,7 @@ class FailingModule(InferenceModule):
         raise ValueError("Test failure")
 
 
-class SlowModule(InferenceModule):
+class SlowModule(Module):
     """A module that takes some time."""
 
     async def forward(self, x: str) -> str:
@@ -903,7 +903,7 @@ class TestSchedulerExecuteDependencies:
         """execute() executes tasks only after dependencies complete."""
         execution_order: list[str] = []
 
-        class TrackingModule(InferenceModule):
+        class TrackingModule(Module):
             def __init__(self, name: str):
                 super().__init__()
                 self.name = name
@@ -1032,7 +1032,7 @@ class TestSchedulerEventSignaling:
     async def test_scheduler_wakes_on_task_completion(self) -> None:
         """Scheduler wakes up when task completes and makes new tasks ready."""
 
-        class DelayedModule(InferenceModule):
+        class DelayedModule(Module):
             async def forward(self, x: str) -> str:
                 await asyncio.sleep(0.01)  # Small delay
                 return f"{x}_delayed"
@@ -1079,7 +1079,7 @@ class TestSchedulerEventSignaling:
     async def test_scheduler_handles_concurrent_completions(self) -> None:
         """Scheduler handles multiple concurrent task completions correctly."""
 
-        class SlowishModule(InferenceModule):
+        class SlowishModule(Module):
             async def forward(self, x: str) -> str:
                 await asyncio.sleep(0.005)  # Small delay
                 return f"{x}_done"
@@ -1937,7 +1937,7 @@ class TestSchedulerRateLimitHandling:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TimeoutModule(InferenceModule):
+class TimeoutModule(Module):
     """A module that takes longer than the timeout."""
 
     async def forward(self, x: str) -> str:
@@ -2075,7 +2075,7 @@ class TestSchedulerTimeout:
     async def test_no_timeout_allows_slow_tasks(self) -> None:
         """Without timeout, slow tasks complete normally."""
 
-        class SlowerModule(InferenceModule):
+        class SlowerModule(Module):
             async def forward(self, x: str) -> str:
                 await asyncio.sleep(0.05)
                 return f"{x}_slow"
@@ -2114,7 +2114,7 @@ class TestSchedulerTimeout:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TransientFailingModule(InferenceModule):
+class TransientFailingModule(Module):
     """A module that raises TransientError a configurable number of times."""
 
     def __init__(self, fail_count: int = 1) -> None:
@@ -2720,7 +2720,7 @@ class TestSchedulerProfiler:
         """Tasks without alias are not profiled."""
         from plait.profiling import TraceProfiler
 
-        class NoAliasModule(InferenceModule):
+        class NoAliasModule(Module):
             def forward(self, x: str) -> str:
                 return f"processed: {x}"
 

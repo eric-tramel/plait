@@ -18,7 +18,7 @@ from plait.errors import TransientError
 from plait.execution.scheduler import RateLimiterProtocol, Scheduler
 from plait.execution.state import ExecutionState, TaskStatus
 from plait.graph import GraphNode, InferenceGraph, NodeRef
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.tracing.tracer import InputNode
 from plait.types import LLMRequest, LLMResponse
 
@@ -27,14 +27,14 @@ from plait.types import LLMRequest, LLMResponse
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class EchoModule(InferenceModule):
+class EchoModule(Module):
     """Simple test module that echoes input."""
 
     def forward(self, text: str) -> str:
         return f"{text}_echo"
 
 
-class TimeoutModule(InferenceModule):
+class TimeoutModule(Module):
     """A module that takes too long, designed to trigger timeout."""
 
     async def forward(self, text: str) -> str:
@@ -42,7 +42,7 @@ class TimeoutModule(InferenceModule):
         return f"{text}_done"
 
 
-class SlowModule(InferenceModule):
+class SlowModule(Module):
     """A module that takes a controllable amount of time."""
 
     def __init__(self, delay: float = 0.1) -> None:
@@ -54,7 +54,7 @@ class SlowModule(InferenceModule):
         return f"{text}_slow"
 
 
-class TransientFailingModule(InferenceModule):
+class TransientFailingModule(Module):
     """A module that fails transiently N times before succeeding."""
 
     def __init__(self, fail_count: int = 1) -> None:
@@ -71,7 +71,7 @@ class TransientFailingModule(InferenceModule):
         return f"{text}_success"
 
 
-class PermanentFailingModule(InferenceModule):
+class PermanentFailingModule(Module):
     """A module that always fails with a non-transient error."""
 
     def __init__(self) -> None:
@@ -144,7 +144,7 @@ class MockResourceManager:
 
 
 def create_graph_with_module(
-    module: InferenceModule, input_value: str = "test"
+    module: Module, input_value: str = "test"
 ) -> InferenceGraph:
     """Create a simple graph with one module."""
     input_node = GraphNode(
@@ -169,7 +169,7 @@ def create_graph_with_module(
 
 
 def create_linear_graph_with_modules(
-    modules: list[InferenceModule], input_value: str = "test"
+    modules: list[Module], input_value: str = "test"
 ) -> InferenceGraph:
     """Create a linear graph: input -> m1 -> m2 -> m3..."""
     input_node = GraphNode(

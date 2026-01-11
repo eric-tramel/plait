@@ -157,7 +157,7 @@ class TestTraceContextIntegration:
     """Integration tests for trace context with module-like behavior."""
 
     def test_simulates_module_call_behavior(self) -> None:
-        """Simulates how InferenceModule.__call__ will use the context."""
+        """Simulates how Module.__call__ will use the context."""
         tracer = NamedTracer()
         call_recorded = False
 

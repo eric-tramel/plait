@@ -1,6 +1,6 @@
 """Integration tests for Value-driven tracing."""
 
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 from plait.tracing.context import get_trace_context
 from plait.tracing.tracer import InputNode, Tracer
@@ -13,7 +13,7 @@ class TestSimpleModuleGraphWithValues:
     def test_single_llm_module(self) -> None:
         """Single LLM module produces correct graph with Values."""
 
-        class SingleLLM(InferenceModule):
+        class SingleLLM(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="model")
@@ -46,7 +46,7 @@ class TestSimpleModuleGraphWithValues:
     def test_two_stage_pipeline(self) -> None:
         """Two-stage LLM pipeline creates linear dependency chain."""
 
-        class TwoStagePipeline(InferenceModule):
+        class TwoStagePipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.stage1 = LLMInference(alias="stage1")
@@ -68,7 +68,7 @@ class TestSimpleModuleGraphWithValues:
     def test_parallel_branches(self) -> None:
         """Parallel branches create independent dependency paths."""
 
-        class ParallelBranches(InferenceModule):
+        class ParallelBranches(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = LLMInference(alias="branch_a")
@@ -93,7 +93,7 @@ class TestSimpleModuleGraphWithValues:
     def test_merge_after_parallel(self) -> None:
         """Merge node depends on both parallel branches."""
 
-        class MergePattern(InferenceModule):
+        class MergePattern(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.summarize = LLMInference(alias="summarize")
@@ -124,7 +124,7 @@ class TestOutputIdsFromValues:
     def test_single_value_output(self) -> None:
         """Single Value output produces single output ID."""
 
-        class SingleOutput(InferenceModule):
+        class SingleOutput(Module):
             def forward(self, x: Value) -> Value:
                 return x
 
@@ -136,7 +136,7 @@ class TestOutputIdsFromValues:
     def test_list_value_output(self) -> None:
         """List of Values produces multiple output IDs."""
 
-        class ListOutput(InferenceModule):
+        class ListOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = LLMInference(alias="a")
@@ -155,7 +155,7 @@ class TestOutputIdsFromValues:
     def test_dict_value_output(self) -> None:
         """Dict of Values produces output IDs for all values."""
 
-        class DictOutput(InferenceModule):
+        class DictOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.summary = LLMInference(alias="summary")
@@ -179,7 +179,7 @@ class TestOutputIdsFromValues:
     def test_nested_value_output(self) -> None:
         """Nested Value structure produces all output IDs."""
 
-        class NestedOutput(InferenceModule):
+        class NestedOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = LLMInference(alias="a")
@@ -204,7 +204,7 @@ class TestValueRefPlaceholders:
     def test_value_ref_stored_in_args(self) -> None:
         """ValueRef placeholders are stored in node args."""
 
-        class SimpleModule(InferenceModule):
+        class SimpleModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="llm")
@@ -222,7 +222,7 @@ class TestValueRefPlaceholders:
     def test_value_ref_has_correct_ref(self) -> None:
         """ValueRef placeholder has correct ref pointing to dependency."""
 
-        class SimpleModule(InferenceModule):
+        class SimpleModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="llm")
@@ -241,7 +241,7 @@ class TestValueRefPlaceholders:
     def test_chained_value_refs(self) -> None:
         """Chained calls have ValueRefs pointing to previous outputs."""
 
-        class ChainedModule(InferenceModule):
+        class ChainedModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = LLMInference(alias="step1")
@@ -266,7 +266,7 @@ class TestParameterIntegration:
     def test_parameters_collected(self) -> None:
         """Parameters are collected from module tree."""
 
-        class ModuleWithParams(InferenceModule):
+        class ModuleWithParams(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.system_prompt = Parameter("You are helpful", description="system")
@@ -284,7 +284,7 @@ class TestParameterIntegration:
     def test_nested_parameters_collected(self) -> None:
         """Nested module parameters have dotted paths."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner_prompt = Parameter("inner", description="inner prompt")
@@ -292,7 +292,7 @@ class TestParameterIntegration:
             def forward(self, x: Value) -> Value:
                 return x
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.outer_prompt = Parameter("outer", description="outer prompt")
@@ -314,7 +314,7 @@ class TestEdgeCases:
     def test_empty_input(self) -> None:
         """Module with no input arguments."""
 
-        class NoInput(InferenceModule):
+        class NoInput(Module):
             def forward(self) -> str:
                 return "constant"
 
@@ -327,7 +327,7 @@ class TestEdgeCases:
     def test_literal_output(self) -> None:
         """Module returning literal (non-Value) output."""
 
-        class LiteralOutput(InferenceModule):
+        class LiteralOutput(Module):
             def forward(self, x: Value) -> str:
                 return "literal"
 
@@ -340,7 +340,7 @@ class TestEdgeCases:
     def test_mixed_value_and_literal_output(self) -> None:
         """Module returning mix of Values and literals."""
 
-        class MixedOutput(InferenceModule):
+        class MixedOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.llm = LLMInference(alias="llm")
@@ -361,7 +361,7 @@ class TestEdgeCases:
     def test_multiple_traces_independent(self) -> None:
         """Multiple trace_values calls produce independent graphs."""
 
-        class SimpleModule(InferenceModule):
+        class SimpleModule(Module):
             def forward(self, x: Value) -> Value:
                 return x
 

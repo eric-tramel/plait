@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Basic module creation and usage.
 
-This example demonstrates how to create custom InferenceModule subclasses
+This example demonstrates how to create custom Module subclasses
 with forward() methods and use them in a PyTorch-like manner.
 
 Run with: python examples/01_basic_modules.py
 """
 
-from plait.module import InferenceModule
+from plait.module import Module
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 1: Simple Module
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextCleaner(InferenceModule):
+class TextCleaner(Module):
     """A simple module that cleans text by stripping whitespace and lowercasing."""
 
     def __init__(self) -> None:
@@ -29,7 +29,7 @@ class TextCleaner(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextFormatter(InferenceModule):
+class TextFormatter(Module):
     """A module that formats text with configurable prefix and suffix."""
 
     def __init__(self, prefix: str = "", suffix: str = "") -> None:
@@ -46,7 +46,7 @@ class TextFormatter(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextPipeline(InferenceModule):
+class TextPipeline(Module):
     """A pipeline that cleans and formats text."""
 
     def __init__(self) -> None:
@@ -65,7 +65,7 @@ class TextPipeline(InferenceModule):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextAnalyzer(InferenceModule):
+class TextAnalyzer(Module):
     """A module that analyzes text and returns multiple metrics."""
 
     def __init__(self) -> None:

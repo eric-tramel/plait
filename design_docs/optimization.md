@@ -12,7 +12,7 @@ Backward: loss.backward() → gradients accumulate → optimizer.step()
 
 plait:
 ```
-Forward:  input → InferenceModules → output
+Forward:  input → Modules → output
 Backward: feedback.backward() → feedback accumulates → optimizer.step()
 ```
 
@@ -92,7 +92,7 @@ The `description` enables generic optimization - the optimizer LLM knows *what* 
 See `parameters.md` for the full Parameter specification and lifecycle.
 
 ```python
-class CustomerSupport(InferenceModule):
+class CustomerSupport(Module):
     def __init__(self):
         super().__init__()
 
@@ -200,7 +200,7 @@ class ForwardRecord:
     graph: InferenceGraph
     node_inputs: dict[str, dict[str, Any]]   # node_id -> resolved input values
     node_outputs: dict[str, Any]              # node_id -> output value
-    module_map: dict[str, InferenceModule]    # node_id -> module instance
+    module_map: dict[str, Module]    # node_id -> module instance
 
     # Optional metadata
     execution_order: list[str] = field(default_factory=list)
@@ -1543,7 +1543,7 @@ composite = CompositeLoss([
 ### Default Behavior
 
 ```python
-class InferenceModule:
+class Module:
     async def backward(
         self,
         feedback: Feedback,
@@ -1574,7 +1574,7 @@ class InferenceModule:
 ### LLMInference Backward
 
 ```python
-class LLMInference(InferenceModule):
+class LLMInference(Module):
     async def backward(
         self,
         feedback: Feedback,
@@ -1619,7 +1619,7 @@ Suggest specific improvements to the system prompt that would address this feedb
 ### Custom Backward with Reasoning
 
 ```python
-class SmartResponder(InferenceModule):
+class SmartResponder(Module):
     """Example module with custom backward that uses optimizer's reasoning LLM."""
 
     def __init__(self):
@@ -2184,7 +2184,7 @@ Mini-batch training is the primary pattern, accumulating feedback across multipl
 
 ```python
 async def train(
-    module: InferenceModule,
+    module: Module,
     dataset: list[dict[str, Any]],
     loss_fn: Loss,
     optimizer: Optimizer,
@@ -2329,7 +2329,7 @@ With batch_size=4 and fan-out=3, a parameter could have up to 12 feedback items 
 
 ```python
 from plait import (
-    InferenceModule, LLMInference, Parameter,
+    Module, LLMInference, Parameter,
     run, train,
     SFAOptimizer,
     ResourceConfig,
@@ -2339,7 +2339,7 @@ from plait import (
 #  1. DEFINE MODULE WITH SELF-DOCUMENTING PARAMETERS
 # ═══════════════════════════════════════════════════════════════════
 
-class CustomerSupport(InferenceModule):
+class CustomerSupport(Module):
     def __init__(self):
         super().__init__()
 

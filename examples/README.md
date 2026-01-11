@@ -6,7 +6,7 @@ This directory contains practical examples demonstrating the plait API.
 
 ### [01_basic_modules.py](01_basic_modules.py)
 Basic module creation and composition. Shows how to:
-- Create custom `InferenceModule` subclasses
+- Create custom `Module` subclasses
 - Implement `forward()` methods
 - Compose modules together
 - Return multiple outputs

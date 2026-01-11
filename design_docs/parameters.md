@@ -74,7 +74,7 @@ separate optimization state.
 ## Identity and Naming
 
 - Parameter refs are stable and hierarchical: `param:<module.path.name>`.
-- `_name` is assigned by `InferenceModule.__setattr__` when a parameter is set.
+- `_name` is assigned by `Module.__setattr__` when a parameter is set.
 - `named_parameters()` yields fully qualified names used in `ref` generation.
 
 ## Module State Versioning

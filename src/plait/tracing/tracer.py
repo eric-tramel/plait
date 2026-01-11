@@ -6,9 +6,9 @@ executing actual computations.
 
 Example:
     >>> from plait.tracing.tracer import Tracer
-    >>> from plait.module import InferenceModule, LLMInference
+    >>> from plait.module import Module, LLMInference
     >>>
-    >>> class Pipeline(InferenceModule):
+    >>> class Pipeline(Module):
     ...     def __init__(self):
     ...         super().__init__()
     ...         self.llm = LLMInference(alias="fast")
@@ -40,7 +40,7 @@ from plait.values import (
 )
 
 if TYPE_CHECKING:
-    from plait.module import InferenceModule
+    from plait.module import Module
 
 
 @dataclass
@@ -177,7 +177,7 @@ class Tracer:
         # Each entry is (condition_node_id, branch_value)
         self._branch_stack: list[tuple[str, bool]] = []
 
-    def _generate_id(self, module: InferenceModule) -> str:
+    def _generate_id(self, module: Module) -> str:
         """Generate a unique node ID for a module invocation.
 
         Creates an ID by combining the module's class name with an
@@ -345,13 +345,13 @@ class Tracer:
 
     def record_call(
         self,
-        module: InferenceModule,
+        module: Module,
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ) -> Value:
         """Record a module invocation during tracing.
 
-        Called by InferenceModule.__call__ when tracing is active. Creates
+        Called by Module.__call__ when tracing is active. Creates
         a graph node representing the module call and tracks dependencies
         based on Proxy or Value objects in the arguments.
 
@@ -697,7 +697,7 @@ class Tracer:
 
     def trace(
         self,
-        module: InferenceModule,
+        module: Module,
         *args: Any,
         **kwargs: Any,
     ) -> InferenceGraph:
@@ -708,7 +708,7 @@ class Tracer:
         The trace context is set so that nested module calls are recorded.
 
         Args:
-            module: The InferenceModule to trace.
+            module: The Module to trace.
             *args: Positional arguments to pass to forward(). Each argument
                 becomes an input node in the graph.
             **kwargs: Keyword arguments to pass to forward(). Each kwarg
@@ -724,9 +724,9 @@ class Tracer:
             automatically cleaned up when tracing completes.
 
         Example:
-            >>> from plait.module import InferenceModule, LLMInference
+            >>> from plait.module import Module, LLMInference
             >>>
-            >>> class SimplePipeline(InferenceModule):
+            >>> class SimplePipeline(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.llm = LLMInference(alias="fast")
@@ -776,7 +776,7 @@ class Tracer:
 
     def trace_values(
         self,
-        module: InferenceModule,
+        module: Module,
         *args: Any,
         **kwargs: Any,
     ) -> InferenceGraph:
@@ -788,7 +788,7 @@ class Tracer:
         - Module calls return Values with refs pointing to graph nodes
 
         Args:
-            module: The InferenceModule to trace.
+            module: The Module to trace.
             *args: Positional arguments to pass to forward(). Each argument
                 is converted to a Value and bound with an input ref.
             **kwargs: Keyword arguments to pass to forward(). Each kwarg
@@ -804,9 +804,9 @@ class Tracer:
             automatically cleaned up when tracing completes.
 
         Example:
-            >>> from plait.module import InferenceModule, LLMInference
+            >>> from plait.module import Module, LLMInference
             >>>
-            >>> class SimplePipeline(InferenceModule):
+            >>> class SimplePipeline(Module):
             ...     def __init__(self):
             ...         super().__init__()
             ...         self.llm = LLMInference(alias="fast")

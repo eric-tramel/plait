@@ -28,7 +28,7 @@ import asyncio
 from pathlib import Path
 
 from plait.execution.context import ExecutionSettings
-from plait.module import InferenceModule, LLMInference
+from plait.module import LLMInference, Module
 from plait.resources.config import EndpointConfig, ResourceConfig
 
 # Single trace output location
@@ -66,7 +66,7 @@ def create_resources() -> ResourceConfig:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TextCombiner(InferenceModule):
+class TextCombiner(Module):
     """Combine summary and themes into a formatted prompt.
 
     This is needed because string formatting during tracing would convert
@@ -78,7 +78,7 @@ class TextCombiner(InferenceModule):
         return f"Summary: {summary}\n\nThemes: {themes}"
 
 
-class DocumentAnalyzer(InferenceModule):
+class DocumentAnalyzer(Module):
     """Analyze a single document through multiple stages.
 
     This pipeline demonstrates a complex DAG structure for a single document:

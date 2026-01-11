@@ -1,6 +1,6 @@
-# InferenceModule System
+# Module System
 
-The `InferenceModule` is the core abstraction in plait, directly inspired by PyTorch's `nn.Module`. It provides a familiar interface for defining composable inference pipelines.
+The `Module` is the core abstraction in plait, directly inspired by PyTorch's `nn.Module`. It provides a familiar interface for defining composable inference pipelines.
 
 ## Design Goals
 
@@ -9,7 +9,7 @@ The `InferenceModule` is the core abstraction in plait, directly inspired by PyT
 3. **Sync API, Async Execution**: Users write sync code; framework handles async
 4. **Dual-Mode Execution**: Support both direct execution and tracing
 
-## InferenceModule Base Class
+## Module Base Class
 
 ```python
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 T = TypeVar("T")
 
-class InferenceModule:
+class Module:
     """
     Base class for all inference operations.
 
@@ -36,7 +36,7 @@ class InferenceModule:
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Auto-register child modules and parameters."""
-        if isinstance(value, InferenceModule):
+        if isinstance(value, Module):
             self._children[name] = value
             value._name = name
         elif isinstance(value, Parameter):
@@ -283,21 +283,21 @@ class InferenceModule:
     # Module Introspection (PyTorch-like API)
     # ─────────────────────────────────────────────────────────────
 
-    def children(self) -> Iterator[InferenceModule]:
+    def children(self) -> Iterator[Module]:
         """Iterate over immediate child modules."""
         yield from self._children.values()
 
-    def named_children(self) -> Iterator[tuple[str, InferenceModule]]:
+    def named_children(self) -> Iterator[tuple[str, Module]]:
         """Iterate over immediate child modules with names."""
         yield from self._children.items()
 
-    def modules(self) -> Iterator[InferenceModule]:
+    def modules(self) -> Iterator[Module]:
         """Iterate over all modules in the tree (including self)."""
         yield self
         for child in self.children():
             yield from child.modules()
 
-    def named_modules(self, prefix: str = "") -> Iterator[tuple[str, InferenceModule]]:
+    def named_modules(self, prefix: str = "") -> Iterator[tuple[str, Module]]:
         """Iterate over all modules with hierarchical names."""
         yield prefix, self
         for name, child in self.named_children():
@@ -349,7 +349,7 @@ class InferenceModule:
     # Training Mode Control (PyTorch-like API)
     # ─────────────────────────────────────────────────────────────
 
-    def train(self, mode: bool = True) -> InferenceModule:
+    def train(self, mode: bool = True) -> Module:
         """
         Set the module to training mode.
 
@@ -363,7 +363,7 @@ class InferenceModule:
             child.train(mode)
         return self
 
-    def eval(self) -> InferenceModule:
+    def eval(self) -> Module:
         """
         Set the module to evaluation mode.
 
@@ -379,7 +379,7 @@ class InferenceModule:
         """Return whether the module is in training mode."""
         return getattr(self, "_training", True)
 
-    def requires_grad_(self, requires_grad: bool = True) -> InferenceModule:
+    def requires_grad_(self, requires_grad: bool = True) -> Module:
         """
         Set requires_grad for all parameters in this module tree.
 
@@ -450,7 +450,7 @@ class Parameter:
 The fundamental building block for LLM operations:
 
 ```python
-class LLMInference(InferenceModule):
+class LLMInference(Module):
     """
     Atomic module for LLM API calls.
 
@@ -533,7 +533,7 @@ implementation.
 ### Sequential Composition
 
 ```python
-class SummarizeAndAnalyze(InferenceModule):
+class SummarizeAndAnalyze(Module):
     """A simple sequential pipeline."""
 
     def __init__(self):
@@ -556,7 +556,7 @@ class SummarizeAndAnalyze(InferenceModule):
 ### Parallel Composition (Fan-out)
 
 ```python
-class MultiPerspectiveAnalysis(InferenceModule):
+class MultiPerspectiveAnalysis(Module):
     """Analyze from multiple perspectives in parallel."""
 
     def __init__(self):
@@ -586,7 +586,7 @@ class MultiPerspectiveAnalysis(InferenceModule):
 ### Fan-in Composition
 
 ```python
-class Synthesizer(InferenceModule):
+class Synthesizer(Module):
     """Combine multiple analyses into a final report."""
 
     def __init__(self):
@@ -612,7 +612,7 @@ class Synthesizer(InferenceModule):
 ### Nested Composition
 
 ```python
-class DeepPipeline(InferenceModule):
+class DeepPipeline(Module):
     """Deeply nested module composition."""
 
     def __init__(self):
@@ -634,7 +634,7 @@ The framework flattens all nested modules into a single execution graph.
 Modules with learnable parameters:
 
 ```python
-class AssistantGeneration(InferenceModule):
+class AssistantGeneration(Module):
     """
     An assistant with optimizable instructions.
 
@@ -824,7 +824,7 @@ result = await run(
 
 ```python
 # For modules that don't use LLMInference, direct calls work
-class TextProcessor(InferenceModule):
+class TextProcessor(Module):
     def forward(self, text: str) -> str:
         return text.upper()
 
@@ -842,7 +842,7 @@ from typing import TypeVar, Generic
 Input = TypeVar("Input")
 Output = TypeVar("Output")
 
-class TypedModule(InferenceModule, Generic[Input, Output]):
+class TypedModule(Module, Generic[Input, Output]):
     """Base class for type-annotated modules."""
 
     def forward(self, input: Input) -> Output:
@@ -878,12 +878,12 @@ class Classifier(TypedModule[str, list[str]]):
 
 ```python
 # Good: Single responsibility
-class Summarizer(InferenceModule):
+class Summarizer(Module):
     def forward(self, text: str) -> str:
         return self.llm(f"Summarize: {text}")
 
 # Bad: Multiple responsibilities
-class DoEverything(InferenceModule):
+class DoEverything(Module):
     def forward(self, text: str) -> dict:
         summary = self.summarizer(text)
         sentiment = self.sentiment(text)
@@ -905,7 +905,7 @@ self.llm = LLMInference(alias="llm1")
 ### 3. Document Parameters
 
 ```python
-class CustomAssistant(InferenceModule):
+class CustomAssistant(Module):
     def __init__(self, instructions: str):
         super().__init__()
         # Document what this parameter controls
@@ -918,7 +918,7 @@ class CustomAssistant(InferenceModule):
 ### 4. Consider Testability
 
 ```python
-class TestableModule(InferenceModule):
+class TestableModule(Module):
     def __init__(self, llm: LLMInference | None = None):
         super().__init__()
         # Allow dependency injection for testing

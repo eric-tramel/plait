@@ -45,7 +45,7 @@ from plait.values import ValueRef
 
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
-    from plait.module import InferenceModule
+    from plait.module import Module
     from plait.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp
 
 
@@ -97,7 +97,7 @@ class Task:
 
     Attributes:
         node_id: Unique identifier matching the GraphNode ID.
-        module: The operation to execute. Can be an InferenceModule,
+        module: The operation to execute. Can be an Module,
             InputNode, or a data access operation (GetItemOp, IterOp,
             MethodOp). May be None for special cases.
         args: Positional arguments for module.forward().
@@ -130,7 +130,7 @@ class Task:
     """
 
     node_id: str
-    module: InferenceModule | InputNode | GetItemOp | IterOp | MethodOp | None
+    module: Module | InputNode | GetItemOp | IterOp | MethodOp | None
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
     dependencies: list[str]

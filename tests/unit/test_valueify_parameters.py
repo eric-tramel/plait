@@ -1,6 +1,6 @@
 """Unit tests for Parameter lifting to Value with stable refs."""
 
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.parameter import Parameter
 from plait.values import Value, ValueKind, valueify
 
@@ -51,7 +51,7 @@ class TestParameterStableRef:
     def test_valueify_parameter_ref_format(self) -> None:
         """valueify creates ref with param: prefix."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.system_prompt = Parameter("value", description="Test")
@@ -69,12 +69,12 @@ class TestParameterStableRef:
     def test_valueify_parameter_hierarchical_name(self) -> None:
         """valueify preserves hierarchical parameter names."""
 
-        class Inner(InferenceModule):
+        class Inner(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.prompt = Parameter("value", description="Test")
 
-        class Outer(InferenceModule):
+        class Outer(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.inner = Inner()
@@ -90,7 +90,7 @@ class TestParameterMetadata:
     def test_valueify_parameter_meta_param_name(self) -> None:
         """valueify includes param_name in meta."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("value", description="Test")
@@ -143,7 +143,7 @@ class TestParameterKindOverride:
     def test_valueify_parameter_kind_override_preserves_ref(self) -> None:
         """valueify kind override preserves parameter ref."""
 
-        class TestModule(InferenceModule):
+        class TestModule(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.my_param = Parameter("value", description="Test")

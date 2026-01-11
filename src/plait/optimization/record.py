@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
-    from plait.module import InferenceModule
+    from plait.module import Module
 
 
 @dataclass
@@ -47,7 +47,7 @@ class ForwardRecord:
             that were passed to each node during execution.
         node_outputs: Dictionary mapping node_id to the output value
             produced by each node during execution.
-        module_map: Dictionary mapping node_id to the InferenceModule instance
+        module_map: Dictionary mapping node_id to the Module instance
             that was executed for that node. Used to call module.backward().
         execution_order: List of node IDs in the order they were executed.
             Useful for debugging and understanding execution flow.
@@ -78,7 +78,7 @@ class ForwardRecord:
     graph: InferenceGraph
     node_inputs: dict[str, dict[str, Any]]
     node_outputs: dict[str, Any]
-    module_map: dict[str, InferenceModule]
+    module_map: dict[str, Module]
     execution_order: list[str] = field(default_factory=list)
     timing: dict[str, float] = field(default_factory=dict)
 
@@ -110,14 +110,14 @@ class ForwardRecord:
         """
         return self.node_outputs[node_id]
 
-    def get_module(self, node_id: str) -> InferenceModule:
+    def get_module(self, node_id: str) -> Module:
         """Get the module instance for a node.
 
         Args:
             node_id: The ID of the node to get the module for.
 
         Returns:
-            The InferenceModule instance that executed for this node.
+            The Module instance that executed for this node.
 
         Raises:
             KeyError: If the node_id is not in the record.

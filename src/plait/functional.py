@@ -1,7 +1,7 @@
 """Functional, graph-aware operations on Value containers.
 
 This module provides stateless, composable functions for operating on Values
-without defining custom InferenceModule subclasses. All operations are
+without defining custom Module subclasses. All operations are
 Value-aware and return Value objects, propagating errors as values instead
 of raising exceptions.
 """

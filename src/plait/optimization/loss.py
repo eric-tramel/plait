@@ -84,14 +84,14 @@ class _LossLLMWrapper:
             system_prompt: System prompt for the LLM.
             response_format: Optional structured output format.
         """
-        from plait.module import InferenceModule, LLMInference
+        from plait.module import LLMInference, Module
 
         # Store config for property access
         self._alias = alias
         self._system_prompt_value = system_prompt
 
         # Create a wrapper module class dynamically
-        class _Wrapper(InferenceModule):
+        class _Wrapper(Module):
             def __init__(inner_self) -> None:
                 super().__init__()
                 inner_self.llm = LLMInference(

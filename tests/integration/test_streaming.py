@@ -12,10 +12,10 @@ import pytest
 
 from plait.execution.context import ExecutionSettings
 from plait.execution.types import BatchResult
-from plait.module import InferenceModule
+from plait.module import Module
 
 
-class ProcessingModule(InferenceModule):
+class ProcessingModule(Module):
     """Test module that processes text input."""
 
     def __init__(self, prefix: str = "") -> None:
@@ -28,7 +28,7 @@ class ProcessingModule(InferenceModule):
         return f"{self.prefix}{text.upper()}"
 
 
-class SlowModule(InferenceModule):
+class SlowModule(Module):
     """Test module with configurable delay per input."""
 
     def __init__(self) -> None:
@@ -39,7 +39,7 @@ class SlowModule(InferenceModule):
         return text.upper()
 
 
-class FailingModule(InferenceModule):
+class FailingModule(Module):
     """Test module that fails on certain inputs."""
 
     def __init__(self) -> None:

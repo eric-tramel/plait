@@ -13,7 +13,7 @@ import pytest
 from plait.execution.executor import run
 from plait.execution.scheduler import Scheduler
 from plait.execution.state import ExecutionState, TaskResult, TaskStatus
-from plait.module import InferenceModule
+from plait.module import Module
 from plait.tracing.tracer import Tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ from plait.tracing.tracer import Tracer
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class EchoModule(InferenceModule):
+class EchoModule(Module):
     """Test module that echoes its input with a prefix.
 
     Used for testing execution without actual LLM calls.
@@ -35,7 +35,7 @@ class EchoModule(InferenceModule):
         return f"{self.prefix}{text}"
 
 
-class ConcatModule(InferenceModule):
+class ConcatModule(Module):
     """Test module that concatenates multiple inputs.
 
     Used for testing fan-in (diamond) patterns.
@@ -49,14 +49,14 @@ class ConcatModule(InferenceModule):
         return self.separator.join(str(arg) for arg in args)
 
 
-class UppercaseModule(InferenceModule):
+class UppercaseModule(Module):
     """Test module that uppercases its input."""
 
     def forward(self, text: str) -> str:
         return text.upper()
 
 
-class DelayModule(InferenceModule):
+class DelayModule(Module):
     """Test module that adds a delay to simulate async work.
 
     Used for testing concurrent execution.
@@ -71,7 +71,7 @@ class DelayModule(InferenceModule):
         return f"delayed:{text}"
 
 
-class FailingModule(InferenceModule):
+class FailingModule(Module):
     """Test module that always fails.
 
     Used for testing error handling.
@@ -85,7 +85,7 @@ class FailingModule(InferenceModule):
         raise RuntimeError(self.error_message)
 
 
-class CountingModule(InferenceModule):
+class CountingModule(Module):
     """Test module that counts how many times it was called.
 
     Used for verifying execution ordering and call counts.
@@ -114,7 +114,7 @@ class TestLinearGraphExecution:
     async def test_single_node_execution(self) -> None:
         """Simplest case: single module execution."""
 
-        class SingleStep(InferenceModule):
+        class SingleStep(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.echo = EchoModule(prefix="echo:")
@@ -129,7 +129,7 @@ class TestLinearGraphExecution:
     async def test_two_step_linear_execution(self) -> None:
         """Two-step pipeline: A -> B."""
 
-        class TwoStep(InferenceModule):
+        class TwoStep(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = EchoModule(prefix="[1]")
@@ -147,7 +147,7 @@ class TestLinearGraphExecution:
     async def test_three_step_linear_execution(self) -> None:
         """Three-step pipeline: A -> B -> C."""
 
-        class ThreeStep(InferenceModule):
+        class ThreeStep(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = EchoModule(prefix="[1]")
@@ -168,7 +168,7 @@ class TestLinearGraphExecution:
         """Linear execution maintains dependency ordering."""
         execution_order: list[str] = []
 
-        class OrderTracker(InferenceModule):
+        class OrderTracker(Module):
             def __init__(self, name: str) -> None:
                 super().__init__()
                 self.name = name
@@ -177,7 +177,7 @@ class TestLinearGraphExecution:
                 execution_order.append(self.name)
                 return f"{self.name}:{text}"
 
-        class LinearPipeline(InferenceModule):
+        class LinearPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = OrderTracker("A")
@@ -200,7 +200,7 @@ class TestLinearGraphExecution:
     async def test_linear_with_async_module(self) -> None:
         """Linear execution works with async modules."""
 
-        class AsyncPipeline(InferenceModule):
+        class AsyncPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.delay = DelayModule(delay_ms=5)
@@ -226,7 +226,7 @@ class TestParallelGraphExecution:
     async def test_simple_parallel_execution(self) -> None:
         """Two independent branches execute from same input."""
 
-        class Parallel(InferenceModule):
+        class Parallel(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = EchoModule(prefix="A:")
@@ -248,7 +248,7 @@ class TestParallelGraphExecution:
     async def test_three_way_parallel_execution(self) -> None:
         """Three independent branches execute from same input."""
 
-        class ThreeWayParallel(InferenceModule):
+        class ThreeWayParallel(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = EchoModule(prefix="A:")
@@ -272,7 +272,7 @@ class TestParallelGraphExecution:
     async def test_parallel_with_different_processing(self) -> None:
         """Parallel branches can apply different transformations."""
 
-        class DifferentBranches(InferenceModule):
+        class DifferentBranches(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.upper = UppercaseModule()
@@ -294,7 +294,7 @@ class TestParallelGraphExecution:
         """Parallel branches execute concurrently, not sequentially."""
         import time
 
-        class SlowBranches(InferenceModule):
+        class SlowBranches(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = DelayModule(delay_ms=50)
@@ -325,7 +325,7 @@ class TestParallelGraphExecution:
     async def test_parallel_list_output(self) -> None:
         """Parallel execution with list output."""
 
-        class ListOutput(InferenceModule):
+        class ListOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = EchoModule(prefix="1:")
@@ -360,7 +360,7 @@ class TestDiamondGraphExecution:
     async def test_simple_diamond_execution(self) -> None:
         """Classic diamond: input -> (A, B) -> merger -> output."""
 
-        class Diamond(InferenceModule):
+        class Diamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = EchoModule(prefix="A:")
@@ -379,7 +379,7 @@ class TestDiamondGraphExecution:
     async def test_diamond_with_different_branch_lengths(self) -> None:
         """Diamond where branches have different depths."""
 
-        class AsymmetricDiamond(InferenceModule):
+        class AsymmetricDiamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 # Short branch: just one step
@@ -403,7 +403,7 @@ class TestDiamondGraphExecution:
     async def test_three_way_diamond(self) -> None:
         """Diamond with three branches: input -> (A, B, C) -> merger."""
 
-        class ThreeWayDiamond(InferenceModule):
+        class ThreeWayDiamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = EchoModule(prefix="A:")
@@ -424,7 +424,7 @@ class TestDiamondGraphExecution:
     async def test_nested_diamond_execution(self) -> None:
         """Diamond within a linear pipeline."""
 
-        class NestedDiamond(InferenceModule):
+        class NestedDiamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.pre = EchoModule(prefix="pre:")
@@ -448,7 +448,7 @@ class TestDiamondGraphExecution:
         """Merger waits for both branches to complete."""
         execution_order: list[str] = []
 
-        class Tracker(InferenceModule):
+        class Tracker(Module):
             def __init__(self, name: str) -> None:
                 super().__init__()
                 self.name = name
@@ -457,7 +457,7 @@ class TestDiamondGraphExecution:
                 execution_order.append(self.name)
                 return f"{self.name}:{':'.join(str(a) for a in args)}"
 
-        class TrackedDiamond(InferenceModule):
+        class TrackedDiamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.branch_a = Tracker("A")
@@ -489,7 +489,7 @@ class TestExecutionErrorHandling:
     async def test_failed_task_marks_descendants_cancelled(self) -> None:
         """When a task fails, its descendants are cancelled."""
 
-        class FailingPipeline(InferenceModule):
+        class FailingPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.first = EchoModule(prefix="first:")
@@ -522,7 +522,7 @@ class TestExecutionErrorHandling:
     async def test_error_stored_in_state(self) -> None:
         """Errors from failed tasks are stored in state."""
 
-        class SimpleFailure(InferenceModule):
+        class SimpleFailure(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.failing = FailingModule("specific error message")
@@ -545,7 +545,7 @@ class TestExecutionErrorHandling:
     async def test_parallel_failure_cancels_downstream(self) -> None:
         """In diamond, failed branch cancels merger."""
 
-        class PartialFailDiamond(InferenceModule):
+        class PartialFailDiamond(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.good_branch = EchoModule(prefix="good:")
@@ -587,7 +587,7 @@ class TestConcurrencyControl:
         current_concurrent = 0
         lock = asyncio.Lock()
 
-        class ConcurrencyTracker(InferenceModule):
+        class ConcurrencyTracker(Module):
             async def forward(self, text: str) -> str:
                 nonlocal max_observed_concurrent, current_concurrent
                 async with lock:
@@ -602,7 +602,7 @@ class TestConcurrencyControl:
 
                 return text
 
-        class HighParallelism(InferenceModule):
+        class HighParallelism(Module):
             def __init__(self) -> None:
                 super().__init__()
                 # Create many parallel branches
@@ -623,7 +623,7 @@ class TestConcurrencyControl:
         """max_concurrent=1 forces fully serial execution."""
         execution_times: list[float] = []
 
-        class TimeTracker(InferenceModule):
+        class TimeTracker(Module):
             async def forward(self, text: str) -> str:
                 import time
 
@@ -631,7 +631,7 @@ class TestConcurrencyControl:
                 await asyncio.sleep(0.01)
                 return text
 
-        class ParallelTasks(InferenceModule):
+        class ParallelTasks(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = TimeTracker()
@@ -662,7 +662,7 @@ class TestMultipleInputExecution:
     async def test_two_positional_inputs(self) -> None:
         """Module with two positional inputs executes correctly."""
 
-        class TwoInputs(InferenceModule):
+        class TwoInputs(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.concat = ConcatModule(separator=" + ")
@@ -677,7 +677,7 @@ class TestMultipleInputExecution:
     async def test_keyword_inputs(self) -> None:
         """Module with keyword inputs executes correctly."""
 
-        class KwargInputs(InferenceModule):
+        class KwargInputs(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.process = ConcatModule(separator=":")
@@ -692,7 +692,7 @@ class TestMultipleInputExecution:
     async def test_mixed_positional_and_keyword_inputs(self) -> None:
         """Module with mixed args and kwargs executes correctly."""
 
-        class MixedInputs(InferenceModule):
+        class MixedInputs(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.process_main = EchoModule(prefix="main:")
@@ -724,7 +724,7 @@ class TestCompleteExecutionFlow:
         input -> preprocess -> [A, B] -> merger -> postprocess -> output
         """
 
-        class ComplexPipeline(InferenceModule):
+        class ComplexPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.preprocess = EchoModule(prefix="pre:")
@@ -749,7 +749,7 @@ class TestCompleteExecutionFlow:
         completed: list[str] = []
         errors: list[str] = []
 
-        class SimplePipeline(InferenceModule):
+        class SimplePipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step = EchoModule(prefix="done:")
@@ -779,7 +779,7 @@ class TestCompleteExecutionFlow:
     async def test_result_values_propagate_through_graph(self) -> None:
         """Values propagate correctly through multi-step execution."""
 
-        class ValuePropagation(InferenceModule):
+        class ValuePropagation(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step1 = UppercaseModule()
@@ -799,7 +799,7 @@ class TestCompleteExecutionFlow:
     async def test_execution_state_is_complete_after_run(self) -> None:
         """ExecutionState.is_complete() returns True after successful execution."""
 
-        class SimplePipeline(InferenceModule):
+        class SimplePipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step = EchoModule(prefix="done:")
@@ -820,7 +820,7 @@ class TestCompleteExecutionFlow:
     async def test_all_completed_tasks_have_results(self) -> None:
         """All completed tasks have valid results in state."""
 
-        class MultiStep(InferenceModule):
+        class MultiStep(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = EchoModule(prefix="A:")
@@ -859,7 +859,7 @@ class TestEdgeCases:
     async def test_empty_module_returns_input(self) -> None:
         """Module that passes through input unchanged."""
 
-        class PassThrough(InferenceModule):
+        class PassThrough(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.identity = EchoModule(prefix="")
@@ -874,7 +874,7 @@ class TestEdgeCases:
     async def test_deeply_nested_modules(self) -> None:
         """Deeply nested module structure executes correctly."""
 
-        class DeepPipeline(InferenceModule):
+        class DeepPipeline(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.steps = [EchoModule(prefix=f"[{i}]") for i in range(10)]
@@ -894,7 +894,7 @@ class TestEdgeCases:
     async def test_run_function_unwraps_single_output(self) -> None:
         """run() unwraps dict when there's a single output."""
 
-        class SingleOutput(InferenceModule):
+        class SingleOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.step = EchoModule(prefix="result:")
@@ -911,7 +911,7 @@ class TestEdgeCases:
     async def test_run_function_returns_dict_for_multiple_outputs(self) -> None:
         """run() returns dict when there are multiple outputs."""
 
-        class MultiOutput(InferenceModule):
+        class MultiOutput(Module):
             def __init__(self) -> None:
                 super().__init__()
                 self.a = EchoModule(prefix="A:")
