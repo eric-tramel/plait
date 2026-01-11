@@ -8,6 +8,7 @@ Demonstrates:
 - Batch execution with list inputs
 - Concurrency control
 - Error handling
+- Container modules: Sequential, ModuleList, ModuleDict
 
 Note: Uses mock modules to show patterns without API keys.
 
@@ -16,8 +17,10 @@ Run: python examples/04_execution.py
 
 import asyncio
 import time
+from collections import OrderedDict
 from unittest.mock import MagicMock
 
+from plait import ModuleDict, ModuleList, Sequential
 from plait.execution.context import ExecutionSettings
 from plait.execution.executor import run
 from plait.execution.scheduler import Scheduler
@@ -108,6 +111,56 @@ class DiamondPipeline(Module):
         left_result = self.left(text)
         right_result = self.right(text)
         return self.combine(left_result, right_result)
+
+
+# --- Container-Based Pipelines ---
+
+
+def create_linear_pipeline() -> Sequential:
+    """Create a sequential pipeline using the Sequential container.
+
+    This is equivalent to LinearPipeline but using the container.
+    """
+    return Sequential(
+        OrderedDict(
+            [
+                ("step1", TextProcessor(prefix="[1:", suffix="]")),
+                ("step2", TextProcessor(prefix="[2:", suffix="]")),
+                ("step3", TextProcessor(prefix="[3:", suffix="]")),
+            ]
+        )
+    )
+
+
+class ParallelWithDict(Module):
+    """Fan-out using ModuleDict for named parallel branches."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.branches = ModuleDict(
+            {
+                "a": AsyncProcessor("A"),
+                "b": AsyncProcessor("B"),
+                "c": AsyncProcessor("C"),
+            }
+        )
+
+    def forward(self, text: str) -> dict[str, str]:
+        return {key: self.branches[key](text) for key in self.branches}
+
+
+class DynamicLayers(Module):
+    """Dynamic layers using ModuleList."""
+
+    def __init__(self, num_layers: int = 3) -> None:
+        super().__init__()
+        self.layers = ModuleList(
+            [AsyncProcessor(f"layer{i}", delay_ms=20) for i in range(num_layers)]
+        )
+
+    def forward(self, text: str) -> list[str]:
+        # Process through all layers in parallel
+        return [layer(text) for layer in self.layers]
 
 
 async def demo_run() -> None:
@@ -258,6 +311,43 @@ async def demo_config_priority() -> None:
     print("   -> Uses 10 (kwargs wins)")
 
 
+async def demo_containers() -> None:
+    """Demonstrate container-based pipelines."""
+    print("\n9. Container-Based Pipelines")
+    print("-" * 40)
+
+    # Sequential container
+    print("\n   Sequential container:")
+    seq_pipeline = create_linear_pipeline()
+    result = await run(seq_pipeline, "hello")
+    print(f"   Input: 'hello' -> Output: '{result}'")
+    print(
+        f"   Access by name: seq_pipeline.step1 = {type(seq_pipeline.step1).__name__}"
+    )
+    print(f"   Access by index: seq_pipeline[0] = {type(seq_pipeline[0]).__name__}")
+
+    # ModuleDict container
+    print("\n   ModuleDict container:")
+    parallel = ParallelWithDict()
+    start = time.time()
+    results = await run(parallel, "input")
+    elapsed = (time.time() - start) * 1000
+    print(f"   Branches: {list(parallel.branches.keys())}")
+    print(f"   Results: {results}")
+    print(f"   Elapsed: {elapsed:.0f}ms (parallel)")
+
+    # ModuleList container
+    print("\n   ModuleList container:")
+    dynamic = DynamicLayers(num_layers=4)
+    results = await run(dynamic, "test")
+    print(f"   Layers: {len(dynamic.layers)}")
+    print(f"   Results: {results}")
+
+    # Add a layer dynamically
+    dynamic.layers.append(AsyncProcessor("layer4", delay_ms=20))
+    print(f"   After append: {len(dynamic.layers)} layers")
+
+
 async def main() -> None:
     """Run all execution demos."""
     print("=" * 60)
@@ -272,6 +362,7 @@ async def main() -> None:
     await demo_concurrency()
     await demo_state_inspection()
     await demo_config_priority()
+    await demo_containers()
 
     print("\n" + "=" * 60)
     print("Execution Patterns Summary:")
@@ -279,6 +370,9 @@ async def main() -> None:
     print("  module.bind(resources)  - Enable await module(input)")
     print("  ExecutionSettings(...)  - Share resources across modules")
     print("  await module([a,b,c])   - Batch execution")
+    print("  Sequential(...)         - Chain modules together")
+    print("  ModuleList([...])       - Dynamic list of modules")
+    print("  ModuleDict({...})       - Named module access")
     print("=" * 60)
 
 
