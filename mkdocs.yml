@@ -3,6 +3,7 @@ site_description: PyTorch-inspired framework for LLM inference pipelines.
 site_url: https://eric-tramel.github.io/plait/
 repo_url: https://github.com/eric-tramel/plait
 repo_name: eric-tramel/plait
+site_dir: public/docs
 
 theme:
   name: material
