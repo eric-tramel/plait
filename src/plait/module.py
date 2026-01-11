@@ -75,8 +75,10 @@ class Module:
         """Set an attribute with automatic registration of modules and parameters.
 
         When a value is assigned to an attribute:
-        - If it's an Module, it's registered as a child module
+        - If it's a Module, it's registered as a child module
         - If it's a Parameter, it's registered in the parameters dict
+        - If it's a container (ParameterList, ParameterDict, ModuleList, ModuleDict),
+          it's registered appropriately for proper collection
         - The value's _name is set to the attribute name for introspection
 
         Args:
@@ -89,6 +91,12 @@ class Module:
             are not modules or parameters are set directly.
         """
         # Import here to avoid circular imports at module load time
+        from plait.containers import (
+            ModuleDict,
+            ModuleList,
+            ParameterDict,
+            ParameterList,
+        )
         from plait.parameter import Parameter
 
         if isinstance(value, Module):
@@ -99,6 +107,22 @@ class Module:
             self._parameters[name] = value
             object.__setattr__(value, "_name", name)
             object.__setattr__(value, "_parent", self)
+        elif isinstance(value, (ParameterList, ParameterDict)):
+            # Register parameter containers for iteration
+            # Set name and parent so named_parameters() works correctly
+            object.__setattr__(value, "_name", name)
+            object.__setattr__(value, "_parent", self)
+            # Update parent reference on all contained parameters
+            for param in value.parameters():
+                object.__setattr__(param, "_parent", self)
+        elif isinstance(value, (ModuleList, ModuleDict)):
+            # Register module containers as children
+            self._children[name] = value  # type: ignore[assignment]
+            object.__setattr__(value, "_name", name)
+            object.__setattr__(value, "_parent", self)
+            # Update parent reference on all contained modules
+            for mod in value.children():
+                object.__setattr__(mod, "_parent", self)
 
         object.__setattr__(self, name, value)
 
@@ -214,7 +238,8 @@ class Module:
         """Iterate over all parameters in the module tree.
 
         Recursively yields parameters from this module and all
-        descendant modules in depth-first order.
+        descendant modules in depth-first order. Also yields parameters
+        from ParameterList and ParameterDict containers.
 
         Yields:
             All Parameter objects in the subtree.
@@ -230,7 +255,23 @@ class Module:
             >>> list(module.parameters())  # doctest: +ELLIPSIS
             [Parameter(value='test', ...)]
         """
+        from plait.containers import ParameterDict, ParameterList
+
+        # Yield direct parameters
         yield from self._parameters.values()
+
+        # Yield parameters from containers
+        for attr_name in dir(self):
+            if attr_name.startswith("_"):
+                continue
+            try:
+                attr = getattr(self, attr_name)
+                if isinstance(attr, (ParameterList, ParameterDict)):
+                    yield from attr.parameters()
+            except AttributeError:
+                continue
+
+        # Recurse into child modules
         for child in self.children():
             yield from child.parameters()
 
@@ -238,7 +279,8 @@ class Module:
         """Iterate over all parameters with hierarchical dot-separated names.
 
         Recursively yields (name, parameter) pairs from this module
-        and all descendants. Names reflect the module hierarchy.
+        and all descendants. Names reflect the module hierarchy. Also
+        yields parameters from ParameterList and ParameterDict containers.
 
         Args:
             prefix: Prefix to prepend to parameter names. Used internally
@@ -264,9 +306,26 @@ class Module:
             >>> [(name, p.value) for name, p in outer.named_parameters()]
             [('bias', 'b'), ('inner.weight', 'w')]
         """
+        from plait.containers import ParameterDict, ParameterList
+
+        # Yield direct parameters
         for name, param in self._parameters.items():
             param_name = f"{prefix}.{name}" if prefix else name
             yield param_name, param
+
+        # Yield parameters from containers
+        for attr_name in dir(self):
+            if attr_name.startswith("_"):
+                continue
+            try:
+                attr = getattr(self, attr_name)
+                if isinstance(attr, (ParameterList, ParameterDict)):
+                    container_prefix = f"{prefix}.{attr_name}" if prefix else attr_name
+                    yield from attr.named_parameters(container_prefix)
+            except AttributeError:
+                continue
+
+        # Recurse into child modules
         for name, child in self.named_children():
             child_prefix = f"{prefix}.{name}" if prefix else name
             yield from child.named_parameters(child_prefix)

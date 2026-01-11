@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [#13](https://github.com/eric-tramel/plait/pull/13) Fix scheduler race condition that caused 5-second delays when tasks completed while waiting for semaphore (10x test speedup: 33s → 3.4s)
 
 ### Added
+- Add `ParameterList`, `ParameterDict`, `ModuleList`, and `ModuleDict` container classes for organizing multiple parameters and modules
 - [#14](https://github.com/eric-tramel/plait/pull/14) Consolidate examples from 9 files to 5 focused single-concept files with `make example` runner
 - [#12](https://github.com/eric-tramel/plait/pull/12) Export core classes (`Module`, `LLMInference`, `Parameter`, `ExecutionSettings`) from package root for cleaner imports
 - [#11](https://github.com/eric-tramel/plait/pull/11) Add comprehensive README with project overview, quick start, examples, and development setup
