@@ -8,15 +8,33 @@ site_dir: public/docs
 theme:
   name: material
   palette:
-    - scheme: default
-      primary: blue
-      accent: orange
+    - scheme: slate
+      primary: indigo
+      accent: amber
+  font:
+    text: Roboto
+    code: Roboto Mono
   features:
     - navigation.instant
     - navigation.tracking
     - navigation.sections
     - navigation.expand
     - content.code.copy
+    - content.code.annotate
+
+extra_css:
+  - stylesheets/custom.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
 
 plugins:
   - search
