@@ -30,7 +30,12 @@ Example:
     '[0.90] Response was helpful'
 """
 
-from plait.optimization.backward import BackwardContext, BackwardResult
+from plait.optimization.backward import (
+    AncestorContext,
+    BackwardContext,
+    BackwardResult,
+    build_ancestor_context,
+)
 from plait.optimization.feedback import Feedback, FeedbackType
 from plait.optimization.loss import (
     CompositeLoss,
@@ -55,8 +60,10 @@ from plait.optimization.record import ForwardRecord, TracedOutput
 
 __all__ = [
     # Backward pass
+    "AncestorContext",
     "BackwardContext",
     "BackwardResult",
+    "build_ancestor_context",
     # Feedback
     "Feedback",
     "FeedbackType",

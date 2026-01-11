@@ -6,6 +6,7 @@ LLM-based optimization by distributing feedback from loss functions
 to Parameters throughout the module tree.
 
 The core components are:
+- AncestorContext: Ancestor and sibling context for parameter updates
 - BackwardContext: Information available to modules during backward pass
 - BackwardResult: Result of a module's backward pass
 - _propagate_backward: Function to traverse graph in reverse topological order
@@ -40,6 +41,66 @@ if TYPE_CHECKING:
     from plait.optimization.feedback import Feedback
     from plait.optimization.optimizer import Optimizer
     from plait.optimization.record import ForwardRecord
+    from plait.parameter import Parameter
+
+
+@dataclass
+class AncestorContext:
+    """Context about ancestor and sibling values/parameters for optimization.
+
+    When updating parameters during optimizer.step(), the optimizer needs
+    visibility into the full context of values and parameters that influenced
+    the current computation. This enables coherent, context-aware updates.
+
+    Attributes:
+        ancestor_values: Dictionary mapping node IDs to their output values
+            for all ancestor nodes in the computation graph.
+        ancestor_params: Dictionary mapping parameter names to Parameter
+            objects for all parameters in ancestor nodes.
+        sibling_values: Dictionary mapping node IDs to their output values
+            for sibling nodes (nodes at the same level sharing ancestors).
+        sibling_params: Dictionary mapping parameter names to Parameter
+            objects for parameters in sibling nodes.
+
+    Example:
+        >>> # For a node in a diamond graph: input -> [A, B] -> merge
+        >>> # When updating merge's parameters:
+        >>> ctx = AncestorContext(
+        ...     ancestor_values={"input": "input text", "A": "A output", "B": "B output"},
+        ...     ancestor_params={"A.system_prompt": param_a, "B.system_prompt": param_b},
+        ...     sibling_values={},  # merge has no siblings
+        ...     sibling_params={},
+        ... )
+
+    Note:
+        - Ancestors are nodes upstream in the computation graph that
+          contributed to producing the current node's input.
+        - Siblings are nodes at the same topological level that share
+          common ancestors but don't directly depend on each other.
+        - This context enables the optimizer to make consistent updates
+          that consider how parameters interact with each other.
+    """
+
+    ancestor_values: dict[str, Any] = field(default_factory=dict)
+    ancestor_params: dict[str, Parameter] = field(default_factory=dict)
+    sibling_values: dict[str, Any] = field(default_factory=dict)
+    sibling_params: dict[str, Parameter] = field(default_factory=dict)
+
+    def has_ancestors(self) -> bool:
+        """Check if this context has any ancestor information.
+
+        Returns:
+            True if there are any ancestor values or parameters.
+        """
+        return bool(self.ancestor_values or self.ancestor_params)
+
+    def has_siblings(self) -> bool:
+        """Check if this context has any sibling information.
+
+        Returns:
+            True if there are any sibling values or parameters.
+        """
+        return bool(self.sibling_values or self.sibling_params)
 
 
 @dataclass
@@ -172,6 +233,52 @@ class BackwardResult:
 
     # Feedback for each parameter (keyed by parameter name)
     parameter_feedback: dict[str, str] = field(default_factory=dict)
+
+
+def build_ancestor_context(
+    node_id: str,
+    record: ForwardRecord,
+) -> AncestorContext:
+    """Build ancestor context for a node from a ForwardRecord.
+
+    Collects all ancestor and sibling values and parameters for a given
+    node in the computation graph. This context is used during optimizer
+    step() to provide full visibility into upstream computations.
+
+    Args:
+        node_id: The ID of the node to build context for.
+        record: The ForwardRecord containing graph, outputs, and module map.
+
+    Returns:
+        An AncestorContext with ancestor and sibling values/parameters.
+
+    Example:
+        >>> ctx = build_ancestor_context("merge_node", record)
+        >>> ctx.ancestor_values
+        {"input": "text", "a": "A output", "b": "B output"}
+    """
+    graph = record.graph
+
+    # Collect ancestor context
+    ancestor_values, ancestor_params = graph.collect_ancestor_context(
+        node_id,
+        record.node_outputs,
+        record.module_map,
+    )
+
+    # Collect sibling context
+    sibling_values, sibling_params = graph.collect_sibling_context(
+        node_id,
+        record.node_outputs,
+        record.module_map,
+    )
+
+    return AncestorContext(
+        ancestor_values=ancestor_values,
+        ancestor_params=ancestor_params,
+        sibling_values=sibling_values,
+        sibling_params=sibling_params,
+    )
 
 
 def _combine_feedback(feedbacks: list[Feedback]) -> Feedback:

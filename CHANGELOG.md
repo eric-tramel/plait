@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- [#18](https://github.com/eric-tramel/plait/pull/18) Add `AncestorContext` for exposing ancestor and sibling values/parameters to optimizer during parameter updates
+
 ### Changed
 - [#13](https://github.com/eric-tramel/plait/pull/13) Consolidate unit tests from 2187 to 1908 tests (12.7% reduction) while maintaining 93% coverage
 

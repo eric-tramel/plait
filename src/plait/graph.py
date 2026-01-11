@@ -346,6 +346,166 @@ class InferenceGraph:
 
         return result
 
+    def siblings(self, node_id: str) -> set[str]:
+        """Get all sibling nodes that share at least one ancestor.
+
+        Siblings are nodes that share common ancestors but do not
+        directly depend on each other. They are at the same conceptual
+        "level" in the graph and may run in parallel.
+
+        Args:
+            node_id: The ID of the node to find siblings for.
+
+        Returns:
+            A set of node IDs representing all siblings. Does not include
+            the node itself or its ancestors/descendants.
+
+        Raises:
+            KeyError: If node_id is not in the graph.
+
+        Example:
+            >>> # Diamond graph: input -> [a, b] -> merge
+            >>> graph.siblings("a")
+            {'b'}
+            >>> graph.siblings("b")
+            {'a'}
+
+            >>> # Linear graph has no siblings
+            >>> graph.siblings("middle")
+            set()
+        """
+        my_ancestors = self.ancestors(node_id)
+        my_descendants = self.descendants(node_id)
+
+        siblings: set[str] = set()
+        for nid in self.nodes:
+            if nid == node_id:
+                continue
+            # Skip ancestors and descendants
+            if nid in my_ancestors or nid in my_descendants:
+                continue
+            # Check if this node shares at least one ancestor with us
+            other_ancestors = self.ancestors(nid)
+            if my_ancestors & other_ancestors:
+                siblings.add(nid)
+
+        return siblings
+
+    def collect_ancestor_context(
+        self,
+        node_id: str,
+        node_outputs: dict[str, Any],
+        module_map: dict[str, Module] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Parameter]]:
+        """Collect values and parameters from all ancestor nodes.
+
+        Gathers the outputs and parameters from all nodes that this node
+        depends on (directly or transitively). This context enables
+        parameter updates to be informed by upstream values and parameters.
+
+        Args:
+            node_id: The ID of the node to collect ancestors for.
+            node_outputs: Dictionary mapping node IDs to their output values
+                from the forward pass.
+            module_map: Optional dictionary mapping node IDs to Module instances.
+                If provided, parameters from ancestor modules are collected.
+
+        Returns:
+            A tuple of (ancestor_values, ancestor_params):
+            - ancestor_values: Dict mapping ancestor node IDs to output values
+            - ancestor_params: Dict mapping "node_id.param_name" to Parameters
+
+        Raises:
+            KeyError: If node_id is not in the graph.
+
+        Example:
+            >>> values, params = graph.collect_ancestor_context(
+            ...     "merge_node",
+            ...     node_outputs={"input": "text", "a": "A out", "b": "B out"},
+            ...     module_map=module_map,
+            ... )
+            >>> values
+            {"input": "text", "a": "A out", "b": "B out"}
+        """
+        ancestor_ids = self.ancestors(node_id)
+
+        # Collect ancestor values
+        ancestor_values: dict[str, Any] = {}
+        for aid in ancestor_ids:
+            if aid in node_outputs:
+                ancestor_values[aid] = node_outputs[aid]
+
+        # Collect ancestor parameters
+        ancestor_params: dict[str, Parameter] = {}
+        if module_map is not None:
+            for aid in ancestor_ids:
+                if aid in module_map:
+                    module = module_map[aid]
+                    for name, param in module.named_parameters():
+                        # Use full path: node_id.param_name
+                        full_name = f"{aid}.{name}"
+                        ancestor_params[full_name] = param
+
+        return ancestor_values, ancestor_params
+
+    def collect_sibling_context(
+        self,
+        node_id: str,
+        node_outputs: dict[str, Any],
+        module_map: dict[str, Module] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Parameter]]:
+        """Collect values and parameters from all sibling nodes.
+
+        Gathers the outputs and parameters from sibling nodes (nodes that
+        share ancestors but don't directly depend on each other). This
+        enables parameter updates to consider parallel branches.
+
+        Args:
+            node_id: The ID of the node to collect siblings for.
+            node_outputs: Dictionary mapping node IDs to their output values
+                from the forward pass.
+            module_map: Optional dictionary mapping node IDs to Module instances.
+                If provided, parameters from sibling modules are collected.
+
+        Returns:
+            A tuple of (sibling_values, sibling_params):
+            - sibling_values: Dict mapping sibling node IDs to output values
+            - sibling_params: Dict mapping "node_id.param_name" to Parameters
+
+        Raises:
+            KeyError: If node_id is not in the graph.
+
+        Example:
+            >>> # Diamond: input -> [a, b] -> merge
+            >>> values, params = graph.collect_sibling_context(
+            ...     "a",
+            ...     node_outputs={"a": "A out", "b": "B out"},
+            ...     module_map=module_map,
+            ... )
+            >>> values
+            {"b": "B out"}
+        """
+        sibling_ids = self.siblings(node_id)
+
+        # Collect sibling values
+        sibling_values: dict[str, Any] = {}
+        for sid in sibling_ids:
+            if sid in node_outputs:
+                sibling_values[sid] = node_outputs[sid]
+
+        # Collect sibling parameters
+        sibling_params: dict[str, Parameter] = {}
+        if module_map is not None:
+            for sid in sibling_ids:
+                if sid in module_map:
+                    module = module_map[sid]
+                    for name, param in module.named_parameters():
+                        # Use full path: node_id.param_name
+                        full_name = f"{sid}.{name}"
+                        sibling_params[full_name] = param
+
+        return sibling_values, sibling_params
+
     def compute_hash(self) -> str:
         """Compute a deterministic hash of the graph structure.
 

@@ -38,6 +38,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Self
 
 from plait.errors import OptimizationError
+from plait.optimization.backward import AncestorContext, build_ancestor_context
 
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
@@ -452,6 +453,11 @@ class SFAOptimizer(Optimizer):
         # Track applied updates for visibility
         applied_updates: dict[str, str] = {}
 
+        # Build ancestor context lookup for each param
+        param_ancestor_contexts = self._build_param_ancestor_contexts(
+            param_to_nodes, self._records[0]
+        )
+
         # Process levels sequentially
         for level in levels:
             # Filter to params that need updating
@@ -471,6 +477,9 @@ class SFAOptimizer(Optimizer):
                         applied_updates=applied_updates,
                         upstream_params=self._get_upstream_params(
                             param, param_to_nodes, node_to_params, graph
+                        ),
+                        ancestor_context=param_ancestor_contexts.get(
+                            self._param_key(param)
                         ),
                     )
                     for param in params_to_update
@@ -527,6 +536,43 @@ class SFAOptimizer(Optimizer):
                 mapping[node_id] = params
 
         return mapping
+
+    def _build_param_ancestor_contexts(
+        self,
+        param_to_nodes: dict[str, set[str]],
+        record: ForwardRecord,
+    ) -> dict[str, AncestorContext]:
+        """Build ancestor contexts for all parameters.
+
+        For each parameter, collects ancestor/sibling values and parameters
+        based on the node(s) containing that parameter in the graph.
+
+        Args:
+            param_to_nodes: Mapping from param key to node IDs.
+            record: The ForwardRecord with graph and output information.
+
+        Returns:
+            Dict mapping param key to AncestorContext for that param.
+        """
+        contexts: dict[str, AncestorContext] = {}
+
+        for param in self.params:
+            key = self._param_key(param)
+            nodes = param_to_nodes.get(key, set())
+
+            if not nodes:
+                continue
+
+            # Use the earliest node (first in topological order)
+            # to get the most complete ancestor context
+            topo_order = record.graph.topological_order()
+            node_order = {nid: i for i, nid in enumerate(topo_order)}
+            earliest_node = min(nodes, key=lambda n: node_order.get(n, float("inf")))
+
+            # Build context for this node
+            contexts[key] = build_ancestor_context(earliest_node, record)
+
+        return contexts
 
     def _compute_update_levels(
         self,
@@ -638,6 +684,7 @@ class SFAOptimizer(Optimizer):
         previous_values: dict[str, str],
         applied_updates: dict[str, str],
         upstream_params: list[Parameter],
+        ancestor_context: AncestorContext | None = None,
     ) -> tuple[Parameter, str]:
         """Generate an update for a parameter with upstream visibility.
 
@@ -650,6 +697,8 @@ class SFAOptimizer(Optimizer):
             previous_values: Snapshot of all param values before step().
             applied_updates: Updates already applied in earlier levels.
             upstream_params: Parameters upstream of this one.
+            ancestor_context: Optional context with ancestor/sibling values
+                and parameters for richer context during updates.
 
         Returns:
             Tuple of (parameter, new_value).
@@ -668,6 +717,9 @@ class SFAOptimizer(Optimizer):
             applied_updates,
         )
 
+        # Build ancestor context showing pipeline values
+        ancestor_context_str = self._build_ancestor_context_str(ancestor_context)
+
         # Generate update with retry logic
         param_name = self._param_key(param)
         attempts = 0
@@ -680,6 +732,7 @@ class SFAOptimizer(Optimizer):
                 param,
                 aggregated,
                 upstream_context,
+                ancestor_context_str,
             )
 
             if self._validate_update(new_value):
@@ -818,11 +871,113 @@ consistency with these changes.
 {chr(10).join(param_blocks)}
 </upstream-updates>"""
 
+    def _build_ancestor_context_str(
+        self,
+        ancestor_context: AncestorContext | None,
+    ) -> str:
+        """Build context string showing ancestor and sibling values/params.
+
+        Args:
+            ancestor_context: Context with ancestor/sibling information.
+
+        Returns:
+            Formatted string describing the pipeline context, or empty if none.
+        """
+        if ancestor_context is None:
+            return ""
+
+        sections: list[str] = []
+
+        # Add ancestor values section
+        if ancestor_context.ancestor_values:
+            value_items = []
+            for node_id, value in ancestor_context.ancestor_values.items():
+                # Truncate long values
+                value_str = str(value)
+                if len(value_str) > 500:
+                    value_str = value_str[:500] + "..."
+                value_items.append(
+                    f'<ancestor-output node="{node_id}">{value_str}</ancestor-output>'
+                )
+
+            sections.append(
+                f"""<ancestor-values>
+<note>These are outputs from nodes earlier in the pipeline.</note>
+{chr(10).join(value_items)}
+</ancestor-values>"""
+            )
+
+        # Add ancestor params section
+        if ancestor_context.ancestor_params:
+            param_items = []
+            for name, param in ancestor_context.ancestor_params.items():
+                param_items.append(
+                    f"""<ancestor-param name="{name}">
+<description>{param.description}</description>
+<value>{param.value}</value>
+</ancestor-param>"""
+                )
+
+            sections.append(
+                f"""<ancestor-parameters>
+<note>These are parameters from nodes earlier in the pipeline.</note>
+{chr(10).join(param_items)}
+</ancestor-parameters>"""
+            )
+
+        # Add sibling values section
+        if ancestor_context.sibling_values:
+            value_items = []
+            for node_id, value in ancestor_context.sibling_values.items():
+                value_str = str(value)
+                if len(value_str) > 500:
+                    value_str = value_str[:500] + "..."
+                value_items.append(
+                    f'<sibling-output node="{node_id}">{value_str}</sibling-output>'
+                )
+
+            sections.append(
+                f"""<sibling-values>
+<note>These are outputs from parallel branches in the pipeline.</note>
+{chr(10).join(value_items)}
+</sibling-values>"""
+            )
+
+        # Add sibling params section
+        if ancestor_context.sibling_params:
+            param_items = []
+            for name, param in ancestor_context.sibling_params.items():
+                param_items.append(
+                    f"""<sibling-param name="{name}">
+<description>{param.description}</description>
+<value>{param.value}</value>
+</sibling-param>"""
+                )
+
+            sections.append(
+                f"""<sibling-parameters>
+<note>These are parameters from parallel branches in the pipeline.</note>
+{chr(10).join(param_items)}
+</sibling-parameters>"""
+            )
+
+        if not sections:
+            return ""
+
+        return f"""<pipeline-context>
+<note>
+This shows the values and parameters from the broader execution pipeline.
+Consider how your update fits within this context.
+</note>
+{chr(10).join(sections)}
+</pipeline-context>"""
+
     async def _generate_update_with_context(
         self,
         param: Parameter,
         aggregated: str,
         upstream_context: str,
+        ancestor_context_str: str = "",
     ) -> str:
         """Generate improved parameter value with upstream context.
 
@@ -830,10 +985,19 @@ consistency with these changes.
             param: The parameter to update.
             aggregated: Aggregated feedback for this parameter.
             upstream_context: Context about upstream parameter changes.
+            ancestor_context_str: Context about ancestor/sibling values and params.
 
         Returns:
             The new parameter value.
         """
+        # Build complete context section
+        context_sections = []
+        if upstream_context:
+            context_sections.append(upstream_context)
+        if ancestor_context_str:
+            context_sections.append(ancestor_context_str)
+        context_block = chr(10).join(context_sections)
+
         prompt = f"""<task>Update a parameter based on feedback</task>
 
 <parameter name="{param._name}">
@@ -845,7 +1009,7 @@ consistency with these changes.
 {aggregated}
 </aggregated-feedback>
 
-{upstream_context}
+{context_block}
 
 <update-guidelines>
 <conservatism>{self.conservatism:.1f}</conservatism>
@@ -855,6 +1019,7 @@ consistency with these changes.
 - Preserve aspects that are working well
 - Make changes proportional to the conservatism level
 - Maintain consistency with any upstream parameter changes
+- Consider how your update fits within the pipeline context
 </instructions>
 </update-guidelines>
 
