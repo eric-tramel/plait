@@ -54,59 +54,11 @@ uv add --dev <package-name>
 
 ## Development Workflow
 
-### Local PR-Style Development
-
-We develop locally, simulating a PR process. All development follows the task breakdown in `TASKS.md`. Each task (PR-XXX) represents a single, tested, reviewable increment:
-
-1. **Find the next PR** in `TASKS.md`
-2. **Create a feature branch** from `main`:
-   ```bash
-   git checkout main
-   git checkout -b feat/feature-name
-   ```
-3. **Implement** the feature with tests
-4. **Run CI** before committing:
-   ```bash
-   make ci
-   ```
-5. **Update CHANGELOG.md** under `[Unreleased]`
-6. **Commit** with PR-style message (see Git Workflow below)
-7. **Run pr-review-agent**: Validate implementation against TASKS.md and design docs
-8. **Request review**: Present the branch for GO/NOGO approval
-9. **On approval**: Rebase onto main and fast-forward merge
-
 ### Git Workflow
 
 **Branch Strategy**: We use a **rebase strategy** for integrating changes into `main`. Never merge—always rebase.
 
 **Commit Style**: Before integrating a feature branch, **squash commits** into a single, well-documented commit that represents the complete feature implementation.
-
-#### Feature Branch Workflow
-
-```bash
-# 1. Work on feature with as many commits as needed
-git add .
-git commit -m "wip: initial implementation"
-git commit -m "wip: add tests"
-git commit -m "wip: fix type errors"
-
-# 2. Before requesting review: squash all commits into one
-git rebase -i main
-# In the editor: mark all commits except first as 'squash' or 'fixup'
-
-# 3. Write a proper PR-style commit message (see format below)
-
-# 4. Run pr-review-agent to validate against TASKS.md and design docs
-
-# 5. Request GO/NOGO approval from reviewer
-
-# 6. On approval: rebase onto main and fast-forward merge
-git checkout main
-git merge --ff-only feat/feature-name
-
-# 7. Clean up feature branch
-git branch -d feat/feature-name
-```
 
 #### Commit Message Format
 
@@ -118,21 +70,6 @@ feat(module): add Parameter class for learnable values
 ## Summary
 Implement the Parameter class that holds learnable string values
 which can be optimized via backward passes.
-
-## Changes
-- Add Parameter dataclass with value, requires_grad, and feedback buffer
-- Implement accumulate_feedback() for collecting backward pass feedback
-- Implement apply_update() for optimizer-driven value updates
-- Add zero_feedback() to clear buffer without updating
-
-## Testing
-- test_parameter_creation: basic instantiation
-- test_parameter_accumulate_feedback: feedback buffer works
-- test_parameter_apply_update: value updates, buffer clears
-
-## References
-- Design: architecture.md → "Core Components" → "Parameter"
-- Task: PR-002 in TASKS.md
 ```
 
 #### Commit Prefixes
@@ -159,7 +96,7 @@ Every feature branch must meet these criteria before GO approval:
 
 ### After Making Changes
 
-**IMPORTANT**: Always run `make ci` after implementing new features or making changes. This ensures all linting, type checking, and tests pass before committing.
+**IMPORTANT**: Always run `make ci` after implementing new features or making code changes. This ensures all linting, type checking, and tests pass before committing.
 
 ## Project Structure
 
