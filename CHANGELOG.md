@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- [#11](https://github.com/eric-tramel/plait/pull/11) Add comprehensive README with project overview, quick start, examples, and development setup
 - Integrate `Value.ref` system with loss functions and backward pass for seamless value unwrapping
 - Add `OptimizationError` exception with retry logic for `SFAOptimizer` parameter updates
 - Execute graphs with `ValueRef` and error-as-value semantics for automatic error propagation
