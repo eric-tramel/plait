@@ -12,3 +12,7 @@ wheels/
 
 # Profiling output
 traces/
+
+# MkDocs output
+site/
+public/

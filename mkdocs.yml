@@ -1,0 +1,65 @@
+site_name: plait Documentation
+site_description: PyTorch-inspired framework for LLM inference pipelines.
+site_url: https://eric-tramel.github.io/plait/
+repo_url: https://github.com/eric-tramel/plait
+repo_name: eric-tramel/plait
+site_dir: public/docs
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: amber
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+
+extra_css:
+  - stylesheets/custom.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+  - API Reference:
+      - API Reference: api/reference.md
+  - Design:
+      - Overview: design/index.md
+      - Architecture: design/architecture.md
+      - Inference Module: design/inference_module.md
+      - Tracing: design/tracing.md
+      - Execution: design/execution.md
+      - Resources: design/resources.md
+      - Optimization: design/optimization.md
+      - Profiling: design/profiling.md
+      - Parameters: design/parameters.md
+      - Values: design/values.md

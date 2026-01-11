@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration lint types ci example
+.PHONY: test test-unit test-integration lint types ci example docs docs-serve
 
 ci: lint types test
 
@@ -23,3 +23,9 @@ example:
 		echo "=== Running $$f ==="; \
 		uv run python "$$f" || exit 1; \
 	done
+
+docs:
+	uv run mkdocs build
+
+docs-serve:
+	uv run mkdocs serve
