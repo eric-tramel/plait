@@ -71,11 +71,20 @@ jobs:
         run: |
           uv run pytest --cov=src/plait --cov-report=xml --cov-report=term --cov-fail-under=90
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          COVERAGE=$(uv run coverage report --format=total)
+          echo "percentage=${COVERAGE}" >> $GITHUB_OUTPUT
+
+      - name: Update coverage badge
+        uses: schneegans/dynamic-badges-action@v1.7.0
         with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-          verbose: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: 7a82abe8c7223509141ec19827a441cf
+          filename: coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.percentage }}%
+          valColorRange: ${{ steps.coverage.outputs.percentage }}
+          minColorRange: 50
+          maxColorRange: 90
