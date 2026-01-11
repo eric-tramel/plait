@@ -1,3 +1,3 @@
 # plait
 
-![Coverage](https://img.shields.io/badge/coverage-0%25-red)
+[![codecov](https://codecov.io/gh/eric-tramel/plait/graph/badge.svg)](https://codecov.io/gh/eric-tramel/plait)
