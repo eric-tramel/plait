@@ -47,7 +47,7 @@ pip install plait
 Define a pipeline as a module composition:
 
 ```python
-from plait import Module, LLMInference, Parameter, ResourceConfig, run
+from plait import Module, LLMInference, Parameter, ResourceConfig
 
 
 class SummarizeAndAnalyze(Module):
@@ -80,8 +80,9 @@ resources = ResourceConfig({
     "smart": {"model": "gpt-4o", "max_concurrent": 5},
 })
 
-# Execute the pipeline
-result = await run(SummarizeAndAnalyze(), "Your input text...", resources=resources)
+# Bind resources to the pipeline, then execute
+pipeline = SummarizeAndAnalyze().bind(resources=resources)
+result = await pipeline("Your input text...")
 ```
 
 The pipeline is traced into a DAG, and the scheduler runs nodes concurrently where dependencies allow. Independent branches execute in parallel without manual `asyncio.gather()` calls.
@@ -156,6 +157,15 @@ prod_resources = ResourceConfig({
     "fast": {"model": "gpt-4o-mini", "max_concurrent": 50, "rpm_limit": 1000},
     "smart": {"model": "gpt-4o", "max_concurrent": 20, "rpm_limit": 500},
 })
+
+# Bind resources to a pipeline
+pipeline = MyPipeline().bind(resources=dev_resources)
+result = await pipeline("input text")
+
+# Or use ExecutionSettings for shared resources across multiple pipelines
+async with ExecutionSettings(resources=prod_resources):
+    result1 = await pipeline1("input")
+    result2 = await pipeline2("input")
 ```
 
 ## Examples
