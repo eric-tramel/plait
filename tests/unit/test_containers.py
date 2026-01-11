@@ -1203,3 +1203,86 @@ class TestSlicingNoReparenting:
         assert mod_1._parent is original_parent
         assert mod_1._parent is original
         assert len(sliced._children) == 0
+
+
+class TestParameterContainerReparenting:
+    """Tests for parameter reparenting when containers attach to Module (PR #16 review)."""
+
+    def test_parameter_list_reparents_on_attach(self) -> None:
+        """Parameters in ParameterList get reparented when list is assigned to Module."""
+        from plait.parameter import Parameter
+
+        # Create parameters and put them in a list BEFORE assigning to module
+        p1 = Parameter("prompt1", description="first")
+        p2 = Parameter("prompt2", description="second")
+        param_list = ParameterList([p1, p2])
+
+        # Initially, parameters have no parent (None)
+        assert p1._parent is None
+        assert p2._parent is None
+
+        # Create a module and assign the list
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = param_list
+
+        module = TestModule()
+
+        # After assignment, parameters should have the module as parent
+        assert p1._parent is module
+        assert p2._parent is module
+
+    def test_parameter_dict_reparents_on_attach(self) -> None:
+        """Parameters in ParameterDict get reparented when dict is assigned to Module."""
+        from plait.parameter import Parameter
+
+        # Create parameters and put them in a dict BEFORE assigning to module
+        p1 = Parameter("summarize this", description="summary prompt")
+        p2 = Parameter("translate this", description="translation prompt")
+        param_dict = ParameterDict({"summarize": p1, "translate": p2})
+
+        # Initially, parameters have no parent (None)
+        assert p1._parent is None
+        assert p2._parent is None
+
+        # Create a module and assign the dict
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = param_dict
+
+        module = TestModule()
+
+        # After assignment, parameters should have the module as parent
+        assert p1._parent is module
+        assert p2._parent is module
+
+
+class TestModuleDictUpdateMapping:
+    """Tests for ModuleDict.update() accepting Mapping inputs (PR #16 review)."""
+
+    def test_update_from_another_module_dict(self) -> None:
+        """ModuleDict.update() should accept another ModuleDict."""
+        first = ModuleDict({"a": DummyModule("v1"), "b": DummyModule("v2")})
+        second = ModuleDict({"c": DummyModule("v3"), "d": DummyModule("v4")})
+
+        first.update(second)
+
+        assert len(first) == 4
+        assert "a" in first
+        assert "b" in first
+        assert "c" in first
+        assert "d" in first
+
+    def test_init_from_another_module_dict(self) -> None:
+        """ModuleDict() should accept another ModuleDict in constructor."""
+        original = ModuleDict({"x": DummyModule("vx"), "y": DummyModule("vy")})
+        copy = ModuleDict(original)
+
+        assert len(copy) == 2
+        assert "x" in copy
+        assert "y" in copy
+        # They should reference the same module objects
+        assert copy["x"] is original["x"]
+        assert copy["y"] is original["y"]

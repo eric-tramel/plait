@@ -16,7 +16,7 @@ Parameter containers (lightweight, integrate with Module):
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, cast, overload
 
 from plait.module import Module
@@ -506,7 +506,7 @@ class ModuleList(Module):
         )
 
 
-class ModuleDict(Module):
+class ModuleDict(Module, Mapping[str, Module]):
     """A dict-like container for named module access.
 
     Provides dict-like operations (keys, values, items, etc.) while
@@ -535,12 +535,13 @@ class ModuleDict(Module):
 
     def __init__(
         self,
-        modules: dict[str, Module] | Iterable[tuple[str, Module]] | None = None,
+        modules: Mapping[str, Module] | Iterable[tuple[str, Module]] | None = None,
     ) -> None:
         """Initialize the ModuleDict container.
 
         Args:
-            modules: Optional dict or iterable of (key, module) pairs.
+            modules: Optional mapping (dict, ModuleDict, etc.) or iterable of
+                (key, module) pairs.
 
         Raises:
             TypeError: If any value is not a Module instance.
@@ -697,19 +698,21 @@ class ModuleDict(Module):
 
     def update(
         self,
-        modules: dict[str, Module] | Iterable[tuple[str, Module]],
+        modules: Mapping[str, Module] | Iterable[tuple[str, Module]],
     ) -> None:
-        """Update the dict with modules from another dict or iterable.
+        """Update the dict with modules from another mapping or iterable.
 
         Args:
-            modules: Dict or iterable of (key, module) pairs.
+            modules: Mapping (dict, ModuleDict, etc.) or iterable of (key, module) pairs.
 
         Raises:
             TypeError: If any value is not a Module instance.
         """
-        if isinstance(modules, dict):
-            typed_modules = cast(dict[str, Module], modules)
-            for key, module in typed_modules.items():
+        if isinstance(modules, Mapping):
+            # Handle any Mapping (dict, ModuleDict, etc.)
+            # Cast to typed items for the type checker
+            typed_items = cast(Iterable[tuple[str, Module]], modules.items())
+            for key, module in typed_items:
                 self._add_module(key, module)
         else:
             for key, module in modules:

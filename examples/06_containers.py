@@ -372,7 +372,9 @@ def demo_parameter_containers() -> None:
     print(f"   ParameterDict keys: {list(router.task_prompts.keys())}")
     print("   Accessing by key:")
     for key in router.task_prompts:
-        print(f"      task_prompts['{key}']: '{router.task_prompts[key].value[:30]}...'")
+        print(
+            f"      task_prompts['{key}']: '{router.task_prompts[key].value[:30]}...'"
+        )
 
     # Add new task
     print("\n   Mutations:")
