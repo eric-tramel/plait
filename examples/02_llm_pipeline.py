@@ -103,8 +103,12 @@ class ComprehensiveAnalyzer(Module):
 
     def forward(self, text: str) -> str:
         analyses = self.perspectives(text)
-        combined = "\n\n".join(
-            f"## {name.title()}\n{content}" for name, content in analyses.items()
+        # Use explicit key access instead of .items() iteration
+        # (Proxy objects don't support iteration during tracing)
+        combined = (
+            f"## Technical\n{analyses['technical']}\n\n"
+            f"## Business\n{analyses['business']}\n\n"
+            f"## User\n{analyses['user']}"
         )
         return self.synthesizer(combined)
 
@@ -159,7 +163,12 @@ class DocumentProcessor(Module):
     def forward(self, document: str) -> str:
         facts = self.extractor(document)
         analyses = self.analyzer(facts)
-        combined = "\n".join(f"{k}: {v}" for k, v in analyses.items())
+        # Use explicit key access instead of .items() iteration
+        combined = (
+            f"Technical: {analyses['technical']}\n"
+            f"Business: {analyses['business']}\n"
+            f"User: {analyses['user']}"
+        )
         return self.reporter(combined)
 
 
