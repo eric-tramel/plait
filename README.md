@@ -1,3 +1,224 @@
 # plait
 
+**A PyTorch-inspired framework for building, executing, and optimizing LLM inference pipelines.**
+
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/eric-tramel/plait/actions/workflows/ci.yml/badge.svg)](https://github.com/eric-tramel/plait/actions/workflows/ci.yml)
 ![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Feric-tramel%2F7a82abe8c7223509141ec19827a441cf%2Fraw%2Fcoverage.json)
+
+---
+
+plait brings the familiar PyTorch programming model to compound AI systems. Define your LLM pipelines as modules with `forward()` methods, trace them into execution DAGs, and run them with automatic concurrency, backpressure, and resource management.
+
+## Why plait?
+
+Most LLM applications are **systems**, not single calls: they chain multiple LLM invocations, pass structured data between steps, run verifiers, and need consistent handling for retries and rate limits. In plain Python, this complexity leaks everywhere.
+
+plait moves that complexity into a shared runtime:
+
+1. **Write normal module composition** in `forward()` - no async boilerplate
+2. **Trace it into a DAG** - dependencies discovered automatically
+3. **Execute with a scheduler** - concurrent I/O, rate limiting, retries handled for you
+4. **Optimize with feedback** - backward passes propagate feedback to improve prompts
+
+## Features
+
+- **PyTorch-like API**: `InferenceModule` with `forward()` and `backward()` methods
+- **Automatic DAG capture**: Trace-based graph construction from eager-mode code
+- **Async execution**: Maximum throughput with adaptive backpressure and rate limiting
+- **Resource management**: Decouple module definitions from endpoint configuration
+- **LLM-based optimization**: Backward passes that propagate feedback to update prompts
+- **Execution profiling**: Chrome Trace Format export for performance visualization
+
+## Installation
+
+```bash
+# Install with uv (recommended)
+uv add plait
+
+# Or with pip
+pip install plait
+```
+
+**Requirements**: Python 3.13+
+
+## Quick Start
+
+Define a pipeline as a module composition:
+
+```python
+from plait import InferenceModule, LLMInference, Parameter, ResourceConfig, run
+
+
+class SummarizeAndAnalyze(InferenceModule):
+    """A two-stage pipeline: summarize, then analyze."""
+
+    def __init__(self):
+        super().__init__()
+        # Learnable instruction that can be optimized via backward passes
+        self.instructions = Parameter(
+            value="Be concise and highlight key insights.",
+            description="Controls the style of analysis output.",
+        )
+        self.summarizer = LLMInference(
+            alias="fast",
+            system_prompt="Summarize the input text concisely.",
+        )
+        self.analyzer = LLMInference(
+            alias="smart",
+            system_prompt=self.instructions,
+        )
+
+    def forward(self, text: str) -> str:
+        summary = self.summarizer(text)
+        return self.analyzer(f"Analyze this summary:\n{summary}")
+
+
+# Configure resources separately from module definition
+resources = ResourceConfig({
+    "fast": {"model": "gpt-4o-mini", "max_concurrent": 20},
+    "smart": {"model": "gpt-4o", "max_concurrent": 5},
+})
+
+# Execute the pipeline
+result = await run(SummarizeAndAnalyze(), "Your input text...", resources=resources)
+```
+
+The pipeline is traced into a DAG, and the scheduler runs nodes concurrently where dependencies allow. Independent branches execute in parallel without manual `asyncio.gather()` calls.
+
+## Core Concepts
+
+| PyTorch | plait | Purpose |
+|---------|-------|---------|
+| `nn.Module` | `InferenceModule` | Base class for operations |
+| `nn.Parameter` | `Parameter` | Learnable values (prompts, instructions) |
+| `forward()` | `forward()` | Define computation |
+| `backward()` | `backward()` | Propagate feedback |
+| `torch.fx.Tracer` | `Tracer` | Capture computation graph |
+| `torch.optim.*` | `Optimizer` | Update parameters |
+
+### InferenceModule
+
+The base class for all operations. Compose modules by assigning them as attributes:
+
+```python
+class DocumentProcessor(InferenceModule):
+    def __init__(self):
+        super().__init__()
+        self.extractor = LLMInference(alias="fast", system_prompt="Extract key facts.")
+        self.analyzer = MultiPerspectiveAnalysis()  # Another InferenceModule
+        self.reporter = LLMInference(alias="smart", system_prompt="Write a report.")
+
+    def forward(self, document: str) -> str:
+        facts = self.extractor(document)
+        analyses = self.analyzer(facts)
+        return self.reporter(str(analyses))
+```
+
+### LLMInference
+
+The atomic unit for LLM API calls. Uses aliases that are bound to endpoints at execution time:
+
+```python
+llm = LLMInference(
+    alias="reasoning",           # Bound to endpoint config at runtime
+    system_prompt="You are a helpful assistant.",
+    temperature=0.7,
+    max_tokens=500,
+)
+```
+
+### Parameter
+
+Learnable values (typically prompts or instructions) that can be optimized:
+
+```python
+instructions = Parameter(
+    value="Be concise and accurate.",
+    description="System instructions for the assistant.",
+    requires_grad=True,  # Enable optimization
+)
+```
+
+### ResourceConfig
+
+Decouple module definitions from infrastructure. The same pipeline can run against different endpoints:
+
+```python
+# Development
+dev_resources = ResourceConfig({
+    "fast": {"model": "gpt-4o-mini", "max_concurrent": 5},
+    "smart": {"model": "gpt-4o-mini", "max_concurrent": 5},
+})
+
+# Production
+prod_resources = ResourceConfig({
+    "fast": {"model": "gpt-4o-mini", "max_concurrent": 50, "rpm_limit": 1000},
+    "smart": {"model": "gpt-4o", "max_concurrent": 20, "rpm_limit": 500},
+})
+```
+
+## Examples
+
+The `examples/` directory contains runnable examples:
+
+| Example | Description |
+|---------|-------------|
+| `01_basic_modules.py` | Module creation and composition |
+| `02_parameters.py` | Learnable parameters and state |
+| `03_llm_pipelines.py` | LLM-based inference pipelines |
+| `04_tracing.py` | DAG capture and visualization |
+| `05_execution.py` | Running pipelines with resources |
+| `06_checkpointing.py` | State persistence and recovery |
+| `07_execution_settings.py` | Execution configuration |
+| `08_profiling.py` | Performance profiling |
+| `09_optimization.py` | Backward pass and prompt optimization |
+
+Run an example:
+
+```bash
+python examples/01_basic_modules.py
+```
+
+## Documentation
+
+For detailed architecture and design documentation, see the [`design_docs/`](design_docs/) directory:
+
+- [Architecture Overview](design_docs/architecture.md) - System design and component interactions
+- [InferenceModule](design_docs/inference_module.md) - Core module system
+- [Tracing](design_docs/tracing.md) - How DAGs are captured from code
+- [Execution](design_docs/execution.md) - Scheduler, state, and error handling
+- [Resources](design_docs/resources.md) - Endpoint configuration and rate limiting
+- [Optimization](design_docs/optimization.md) - Feedback propagation and learning
+
+## Development
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/eric-tramel/plait.git
+cd plait
+
+# Install dependencies with uv
+uv sync
+
+# Run all checks
+make ci
+```
+
+### Commands
+
+```bash
+make ci           # Run all checks (lint, types, test)
+make lint         # Format and lint with ruff
+make types        # Type check with ty
+make test         # Run all pytest tests
+make test-unit    # Run unit tests only
+```
+
+See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
+
+## License
+
+Apache-2.0 License - see [LICENSE](LICENSE) for details.
