@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Consolidate unit tests from 2187 to 1908 tests (12.7% reduction) while maintaining 93% coverage
+- [#13](https://github.com/eric-tramel/plait/pull/13) Consolidate unit tests from 2187 to 1908 tests (12.7% reduction) while maintaining 93% coverage
+
+### Fixed
+- [#13](https://github.com/eric-tramel/plait/pull/13) Fix scheduler race condition that caused 5-second delays when tasks completed while waiting for semaphore (10x test speedup: 33s → 3.4s)
 
 ### Added
 - [#11](https://github.com/eric-tramel/plait/pull/11) Add comprehensive README with project overview, quick start, examples, and development setup
