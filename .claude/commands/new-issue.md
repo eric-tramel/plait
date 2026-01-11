@@ -38,13 +38,13 @@ Create a new GitHub issue on the repository using the `gh` CLI based on the user
 
    Use the AskUserQuestion tool to efficiently gather this information. Skip questions where the user has already provided clear answers.
 
-4. **Create the issue using gh CLI**: Use `gh issue create` with appropriate flags:
+5. **Create the issue using gh CLI**: Use `gh issue create` with appropriate flags:
    - `--title` for the issue title
    - `--body` for the issue description (use a HEREDOC for multi-line content)
    - Add `--label` flags if the user specifies labels
    - Add `--assignee` if the user specifies an assignee
 
-5. **Issue body template**: Structure the body with:
+6. **Issue body template**: Structure the body with:
 
 ```markdown
 ## Description
@@ -68,7 +68,7 @@ Create a new GitHub issue on the repository using the `gh` CLI based on the user
 <Any additional context, constraints, or implementation hints>
 ```
 
-6. **Example command**:
+7. **Example command**:
 
 ```bash
 gh issue create --title "Add retry logic to LLM client" --body "$(cat <<'EOF'
@@ -95,7 +95,7 @@ EOF
 )"
 ```
 
-7. **Confirm creation**: The `gh` command will output the issue URL. Share this with the user.
+8. **Confirm creation**: The `gh` command will output the issue URL. Share this with the user.
 
 ## User Request
 
