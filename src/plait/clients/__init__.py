@@ -7,9 +7,10 @@ the interface that all provider-specific clients must implement.
 Supported providers:
 - OpenAI (via OpenAIClient)
 - OpenAI-compatible (via OpenAICompatibleClient) for vLLM, TGI, etc.
-- (More to come: Anthropic, Ollama, etc.)
+- Anthropic (via AnthropicClient) for Claude models
 """
 
+from plait.clients.anthropic import AnthropicClient
 from plait.clients.base import LLMClient
 from plait.clients.openai import (
     OpenAIClient,
@@ -17,4 +18,10 @@ from plait.clients.openai import (
     RateLimitError,
 )
 
-__all__ = ["LLMClient", "OpenAIClient", "OpenAICompatibleClient", "RateLimitError"]
+__all__ = [
+    "AnthropicClient",
+    "LLMClient",
+    "OpenAIClient",
+    "OpenAICompatibleClient",
+    "RateLimitError",
+]

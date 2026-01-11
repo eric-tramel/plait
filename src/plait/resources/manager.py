@@ -8,6 +8,7 @@ rate limiting, and metrics collection.
 import asyncio
 from typing import Any
 
+from plait.clients.anthropic import AnthropicClient
 from plait.clients.base import LLMClient
 from plait.clients.openai import OpenAIClient, OpenAICompatibleClient
 from plait.resources.config import EndpointConfig, ResourceConfig
@@ -142,7 +143,7 @@ class ResourceManager:
             Currently supported providers:
             - "openai": Uses OpenAIClient
             - "vllm": Uses OpenAICompatibleClient
-            - "anthropic": Not yet implemented (raises ValueError)
+            - "anthropic": Uses AnthropicClient
         """
         match endpoint.provider_api:
             case "openai":
@@ -164,9 +165,11 @@ class ResourceManager:
                     timeout=endpoint.timeout,
                 )
             case "anthropic":
-                raise ValueError(
-                    "Provider 'anthropic' is not yet supported. "
-                    "AnthropicClient will be added in a future release."
+                return AnthropicClient(
+                    model=endpoint.model,
+                    base_url=endpoint.base_url,
+                    api_key=endpoint.get_api_key(),
+                    timeout=endpoint.timeout,
                 )
             case _:
                 raise ValueError(f"Unknown provider: {endpoint.provider_api}")

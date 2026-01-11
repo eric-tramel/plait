@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `AnthropicClient` for Anthropic Claude models with full support for tools, extended thinking, and rate limit handling
+
 ### Changed
 - [#13](https://github.com/eric-tramel/plait/pull/13) Consolidate unit tests from 2187 to 1908 tests (12.7% reduction) while maintaining 93% coverage
 

@@ -238,19 +238,52 @@ class TestResourceManagerCreateClient:
         with pytest.raises(ValueError, match="vllm endpoint requires base_url"):
             ResourceManager(config)
 
-    def test_create_anthropic_client_not_supported(self) -> None:
-        """Raises ValueError for anthropic provider (not yet implemented)."""
+    @patch("plait.resources.manager.AnthropicClient")
+    def test_create_anthropic_client(self, mock_client_class: MagicMock) -> None:
+        """Creates AnthropicClient for anthropic provider."""
+        mock_client = MagicMock(spec=LLMClient)
+        mock_client_class.return_value = mock_client
+
         config = ResourceConfig(
             endpoints={
                 "claude": EndpointConfig(
                     provider_api="anthropic",
                     model="claude-sonnet-4-20250514",
+                    api_key="sk-ant-test-key",
+                    timeout=60.0,
                 ),
             }
         )
+        manager = ResourceManager(config)
 
-        with pytest.raises(ValueError, match="anthropic.*not yet supported"):
-            ResourceManager(config)
+        mock_client_class.assert_called_once_with(
+            model="claude-sonnet-4-20250514",
+            base_url=None,
+            api_key="sk-ant-test-key",
+            timeout=60.0,
+        )
+        assert manager.clients["claude"] is mock_client
+
+    @patch("plait.resources.manager.AnthropicClient")
+    def test_create_anthropic_client_with_base_url(
+        self, mock_client_class: MagicMock
+    ) -> None:
+        """Creates AnthropicClient with custom base_url."""
+        config = ResourceConfig(
+            endpoints={
+                "proxy": EndpointConfig(
+                    provider_api="anthropic",
+                    model="claude-sonnet-4-20250514",
+                    base_url="https://my-proxy.example.com",
+                    api_key="sk-ant-proxy-key",
+                ),
+            }
+        )
+        ResourceManager(config)
+
+        mock_client_class.assert_called_once()
+        call_kwargs = mock_client_class.call_args.kwargs
+        assert call_kwargs["base_url"] == "https://my-proxy.example.com"
 
     @patch("plait.resources.manager.OpenAIClient")
     def test_create_unknown_provider_raises(self, mock_client_class: MagicMock) -> None:
