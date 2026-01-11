@@ -1,6 +1,6 @@
 ---
-description: Create a new GitHub issue using the gh CLI
-allowed-tools: Bash(gh issue:*), AskUserQuestion, Task
+description: Create a new GitHub issue using the gh CLI (project)
+allowed-tools: Bash(gh issue:*), AskUserQuestion, Task, WebSearch
 argument-hint: <issue title or description>
 ---
 
@@ -18,7 +18,19 @@ Create a new GitHub issue on the repository using the `gh` CLI based on the user
    - Note any PRs that addressed similar concerns
    - These will be linked in the new issue body
 
-3. **Interview the user**: Before creating the issue, ask clarifying questions to gather necessary details:
+3. **Research with web search** (RECOMMENDED): Use WebSearch to gather relevant information that can improve the issue quality:
+   - Search for best practices related to the feature or problem being addressed
+   - Look up documentation for relevant libraries, APIs, or patterns
+   - Find examples of how similar problems have been solved in other projects
+   - Research any technical concepts mentioned in the user's request
+   - Use this research to inform the acceptance criteria and implementation notes
+
+   This step is especially valuable for:
+   - Technical features requiring integration with external tools or APIs
+   - Best practices for common patterns (retry logic, caching, rate limiting, etc.)
+   - Understanding conventions or standards the implementation should follow
+
+4. **Interview the user**: Before creating the issue, ask clarifying questions to gather necessary details:
    - What problem does this solve or what value does it add?
    - Are there specific implementation constraints or preferences?
    - What are the key acceptance criteria from the user's perspective?
