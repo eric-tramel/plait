@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from inf_engine.optimization.record import ForwardRecord, TracedOutput
+from plait.optimization.record import ForwardRecord, TracedOutput
 
 
 @pytest.fixture

@@ -10,15 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from inf_engine.clients.base import LLMClient
-from inf_engine.execution.context import ExecutionSettings, get_execution_settings
-from inf_engine.execution.scheduler import RateLimiterProtocol, Scheduler
-from inf_engine.execution.state import ExecutionState, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import LLMInference
-from inf_engine.profiling import TraceProfiler
-from inf_engine.tracing.tracer import InputNode
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.clients.base import LLMClient
+from plait.execution.context import ExecutionSettings, get_execution_settings
+from plait.execution.scheduler import RateLimiterProtocol, Scheduler
+from plait.execution.state import ExecutionState, TaskStatus
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import LLMInference
+from plait.profiling import TraceProfiler
+from plait.tracing.tracer import InputNode
+from plait.types import LLMRequest, LLMResponse
 
 
 class MockLLMClient(LLMClient):
@@ -97,7 +97,7 @@ class TestTraceFileGeneration:
 
         content = json.loads(output_path.read_text())
         metadata = content["metadata"]
-        assert "inf_engine_version" in metadata
+        assert "plait_version" in metadata
         assert "start_time" in metadata
         assert "total_events" in metadata
 

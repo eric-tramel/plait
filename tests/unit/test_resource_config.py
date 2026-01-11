@@ -2,7 +2,7 @@
 
 import pytest
 
-from inf_engine.resources.config import (
+from plait.resources.config import (
     AnthropicEndpointConfig,
     EndpointConfig,
     NvidiaBuildEndpointConfig,

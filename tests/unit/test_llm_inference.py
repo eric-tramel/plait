@@ -7,8 +7,8 @@ the forward() method behavior.
 
 import pytest
 
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
 
 
 class TestLLMInferenceCreation:
@@ -519,9 +519,9 @@ class TestLLMInferenceBackward:
     @staticmethod
     def _make_context(inputs: dict, output: str = "LLM response") -> "BackwardContext":
         """Create a BackwardContext for testing."""
-        from inf_engine.graph import InferenceGraph
-        from inf_engine.optimization.backward import BackwardContext
-        from inf_engine.optimization.feedback import Feedback
+        from plait.graph import InferenceGraph
+        from plait.optimization.backward import BackwardContext
+        from plait.optimization.feedback import Feedback
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         return BackwardContext(
@@ -544,7 +544,7 @@ class TestLLMInferenceBackward:
         """LLMInference.backward() generates feedback for input prompt."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         llm = LLMInference(alias="test")
         feedback = Feedback(content="Response was too verbose", score=0.6)
@@ -561,7 +561,7 @@ class TestLLMInferenceBackward:
         """No parameter feedback when system_prompt is not learnable."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         llm = LLMInference(alias="test", system_prompt="Fixed prompt")
         feedback = Feedback(content="Needs improvement", score=0.5)
@@ -576,7 +576,7 @@ class TestLLMInferenceBackward:
         """No parameter feedback when system_prompt is None."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         llm = LLMInference(alias="test")  # No system_prompt
         feedback = Feedback(content="Test", score=0.7)
@@ -590,7 +590,7 @@ class TestLLMInferenceBackward:
         """Parameter feedback generated when system_prompt is learnable."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         learnable_prompt = Parameter(
             value="You are a helpful assistant.",
@@ -621,7 +621,7 @@ class TestLLMInferenceBackward:
         """Parameter feedback includes score when present."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         llm = LLMInference(
             alias="test",
@@ -638,7 +638,7 @@ class TestLLMInferenceBackward:
         """Parameter feedback truncates very long inputs/outputs."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         llm = LLMInference(
             alias="test",
@@ -662,7 +662,7 @@ class TestLLMInferenceBackward:
         """Input feedback preserves the original feedback type."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback, FeedbackType
+        from plait.optimization.feedback import Feedback, FeedbackType
 
         llm = LLMInference(alias="test")
         feedback = Feedback(
@@ -679,4 +679,4 @@ class TestLLMInferenceBackward:
 
 # Import for type hints
 if True:  # Avoid circular import at runtime
-    from inf_engine.optimization.backward import BackwardContext
+    from plait.optimization.backward import BackwardContext

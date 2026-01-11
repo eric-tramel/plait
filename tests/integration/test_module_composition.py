@@ -6,8 +6,8 @@ Tests verify that modules can be composed together in various patterns
 across the module hierarchy.
 """
 
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Fixtures: Composable Modules

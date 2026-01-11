@@ -660,14 +660,14 @@ class CheckpointManager:
 
 ## Module Execution
 
-inf-engine provides two execution APIs: bound execution (recommended) and explicit `run()`.
+plait provides two execution APIs: bound execution (recommended) and explicit `run()`.
 
 ### Bound Execution (Recommended)
 
 The simplest way to execute modules is to bind resources and call directly:
 
 ```python
-from inf_engine import ResourceConfig
+from plait import ResourceConfig
 
 # Configure resources
 resources = ResourceConfig({
@@ -699,7 +699,7 @@ This approach:
 For advanced scenarios (checkpointing, custom schedulers, shared settings across multiple modules), use the `ExecutionSettings` context manager:
 
 ```python
-from inf_engine import ExecutionSettings, ResourceConfig
+from plait import ExecutionSettings, ResourceConfig
 
 resources = ResourceConfig({...})
 
@@ -970,7 +970,7 @@ print(result)
 
 ## Error Handling
 
-inf-engine handles errors at two distinct levels:
+plait handles errors at two distinct levels:
 
 ### Error Handling Levels
 
@@ -1071,7 +1071,7 @@ async def _execute_task(self, state: ExecutionState, task: Task, ...) -> None:
 
 ## Execution Patterns
 
-inf-engine provides multiple execution patterns optimized for different use cases: synchronous scripts, async applications, and streaming servers.
+plait provides multiple execution patterns optimized for different use cases: synchronous scripts, async applications, and streaming servers.
 
 ### Pattern Overview
 

@@ -33,11 +33,11 @@ from pathlib import Path
 from tempfile import mkdtemp
 from unittest.mock import MagicMock
 
-from inf_engine.execution.checkpoint import Checkpoint, CheckpointManager
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.execution.executor import run
-from inf_engine.execution.state import TaskResult
-from inf_engine.module import InferenceModule
+from plait.execution.checkpoint import Checkpoint, CheckpointManager
+from plait.execution.context import ExecutionSettings
+from plait.execution.executor import run
+from plait.execution.state import TaskResult
+from plait.module import InferenceModule
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example Modules
@@ -112,7 +112,7 @@ async def example_basic_checkpointing() -> None:
     print("=" * 70)
 
     # Create a temporary directory for checkpoints
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_checkpoints_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_checkpoints_"))
 
     try:
         pipeline = DataPipeline()
@@ -166,7 +166,7 @@ async def example_checkpoint_manager() -> None:
     print("Example 2: Using CheckpointManager Directly")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_manager_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_manager_"))
 
     try:
         # Create a checkpoint manager
@@ -240,7 +240,7 @@ async def example_checkpoint_compatibility() -> None:
     print("Example 3: Checkpoint Compatibility Checking")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_compat_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_compat_"))
 
     try:
         # Run the original pipeline
@@ -299,7 +299,7 @@ async def example_inspect_checkpoint() -> None:
     print("Example 4: Inspecting Checkpoint Files")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_inspect_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_inspect_"))
 
     try:
         # Run a pipeline with parallel branches
@@ -356,7 +356,7 @@ async def example_auto_execution_id() -> None:
     print("Example 5: Auto-Generated Execution IDs")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_auto_id_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_auto_id_"))
 
     try:
         pipeline = DataPipeline()
@@ -401,7 +401,7 @@ async def example_execution_settings_checkpointing() -> None:
     print("Example 6: Checkpointing with ExecutionSettings")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_context_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_context_"))
     mock_resources = MagicMock(name="resources")
 
     try:
@@ -453,7 +453,7 @@ async def example_bind_checkpointing() -> None:
     print("Example 7: Checkpointing with bind()")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_bound_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_bound_"))
     mock_resources = MagicMock(name="resources")
 
     try:

@@ -11,15 +11,15 @@ import asyncio
 
 import pytest
 
-from inf_engine.clients.base import LLMClient
-from inf_engine.errors import RateLimitError
-from inf_engine.execution.scheduler import Scheduler
-from inf_engine.execution.state import ExecutionState, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import LLMInference
-from inf_engine.resources.rate_limit import RateLimiter
-from inf_engine.tracing.tracer import InputNode
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.clients.base import LLMClient
+from plait.errors import RateLimitError
+from plait.execution.scheduler import Scheduler
+from plait.execution.state import ExecutionState, TaskStatus
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import LLMInference
+from plait.resources.rate_limit import RateLimiter
+from plait.tracing.tracer import InputNode
+from plait.types import LLMRequest, LLMResponse
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Helpers

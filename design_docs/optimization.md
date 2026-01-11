@@ -10,7 +10,7 @@ Forward:  input → layers → output
 Backward: loss.backward() → gradients accumulate → optimizer.step()
 ```
 
-inf-engine:
+plait:
 ```
 Forward:  input → InferenceModules → output
 Backward: feedback.backward() → feedback accumulates → optimizer.step()
@@ -28,7 +28,7 @@ for x, y in batch:
     loss.backward()           # Gradients accumulate in .grad
 optimizer.step()              # Single update from all gradients
 
-# inf-engine
+# plait
 module.train()
 optimizer.zero_feedback()
 for example in batch:
@@ -2171,7 +2171,7 @@ This matches PyTorch semantics exactly:
 loss = criterion(model(batch_x), batch_y)  # Single scalar (reduced)
 loss.backward()                             # Gradients flow to all samples
 
-# inf-engine
+# plait
 feedback = await loss_fn(outputs)          # Single Feedback (reduced)
 await feedback.backward()                   # Feedback flows to all samples
 ```
@@ -2328,7 +2328,7 @@ With batch_size=4 and fan-out=3, a parameter could have up to 12 feedback items 
 ## Complete Example
 
 ```python
-from inf_engine import (
+from plait import (
     InferenceModule, LLMInference, Parameter,
     run, train,
     SFAOptimizer,

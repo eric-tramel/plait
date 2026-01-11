@@ -1,10 +1,10 @@
 """Integration tests for Value-driven tracing."""
 
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
-from inf_engine.tracing.context import get_trace_context
-from inf_engine.tracing.tracer import InputNode, Tracer
-from inf_engine.values import Value, ValueRef
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
+from plait.tracing.context import get_trace_context
+from plait.tracing.tracer import InputNode, Tracer
+from plait.values import Value, ValueRef
 
 
 class TestSimpleModuleGraphWithValues:

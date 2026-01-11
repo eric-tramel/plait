@@ -146,7 +146,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - When `record=False` (default): returns output as before
   - When `record=True`: returns `(output, ForwardRecord)` tuple for backward propagation
   - ExecutionState tracks node inputs and execution order when recording is enabled
-- Add `src/inf_engine/optimization/` package with optimization infrastructure
+- Add `src/plait/optimization/` package with optimization infrastructure
 - Project scaffolding and development tooling
 - Design documentation in `design_docs/`
 - Development plan and task breakdown
@@ -190,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `visualize_graph()` function for DOT format graph output
 - Add `EndpointConfig` dataclass for LLM endpoint configuration
 - Add `ResourceConfig` dataclass for managing multiple LLM endpoints
-- Add shared `inf_engine.types` module for core types used across packages
+- Add shared `plait.types` module for core types used across packages
   - `LLMRequest`: prompt, system_prompt, temperature, max_tokens, tools, tool_choice, extra_body
   - `LLMResponse`: content, tokens, finish_reason, reasoning, tool_calls, timing metrics
 - Add `LLMClient` abstract base class for LLM provider clients
@@ -214,7 +214,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Per-endpoint semaphores provide concurrency control for LLM calls
   - `_build_llm_request()` helper builds LLMRequest from module config and args
 - Add custom error types for error handling and recovery
-  - `InfEngineError`: Base exception for all inf-engine errors
+  - `InfEngineError`: Base exception for all plait errors
   - `RateLimitError`: Raised when API rate limits are hit, with optional `retry_after`
   - `ExecutionError`: Raised on task execution failures, with optional `node_id` and `cause`
 - Add `RateLimiter` with token bucket algorithm for endpoint rate control

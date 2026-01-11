@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from inf_engine.resources.rate_limit import RateLimiter
+from plait.resources.rate_limit import RateLimiter
 
 
 class TestRateLimiterCreation:

@@ -4,14 +4,14 @@ import asyncio
 
 import pytest
 
-from inf_engine.clients.base import LLMClient
-from inf_engine.errors import RateLimitError, TransientError
-from inf_engine.execution.scheduler import RateLimiterProtocol, Scheduler
-from inf_engine.execution.state import ExecutionState, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule
-from inf_engine.tracing.tracer import InputNode
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.clients.base import LLMClient
+from plait.errors import RateLimitError, TransientError
+from plait.execution.scheduler import RateLimiterProtocol, Scheduler
+from plait.execution.state import ExecutionState, TaskStatus
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule
+from plait.tracing.tracer import InputNode
+from plait.types import LLMRequest, LLMResponse
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Scheduler Initialization Tests
@@ -413,13 +413,13 @@ class TestSchedulerImports:
 
     def test_import_from_execution_package(self) -> None:
         """Scheduler can be imported from execution package."""
-        from inf_engine.execution import Scheduler as SchedulerFromPackage
+        from plait.execution import Scheduler as SchedulerFromPackage
 
         assert SchedulerFromPackage is Scheduler
 
     def test_import_from_scheduler_module(self) -> None:
         """Scheduler can be imported from scheduler module."""
-        from inf_engine.execution.scheduler import Scheduler as SchedulerFromModule
+        from plait.execution.scheduler import Scheduler as SchedulerFromModule
 
         assert SchedulerFromModule is Scheduler
 
@@ -1253,7 +1253,7 @@ class TestSchedulerBuildLLMRequest:
 
     def test_build_request_from_positional_args(self) -> None:
         """_build_llm_request extracts prompt from positional args."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler()
         module = LLMInference(alias="test", temperature=0.7)
@@ -1265,7 +1265,7 @@ class TestSchedulerBuildLLMRequest:
 
     def test_build_request_from_kwargs(self) -> None:
         """_build_llm_request extracts prompt from kwargs."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler()
         module = LLMInference(alias="test")
@@ -1276,7 +1276,7 @@ class TestSchedulerBuildLLMRequest:
 
     def test_build_request_with_system_prompt(self) -> None:
         """_build_llm_request includes system prompt from module."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler()
         module = LLMInference(
@@ -1291,7 +1291,7 @@ class TestSchedulerBuildLLMRequest:
 
     def test_build_request_with_max_tokens(self) -> None:
         """_build_llm_request includes max_tokens from module."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler()
         module = LLMInference(alias="test", max_tokens=100)
@@ -1302,7 +1302,7 @@ class TestSchedulerBuildLLMRequest:
 
     def test_build_request_no_prompt_raises(self) -> None:
         """_build_llm_request raises ValueError when no prompt provided."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler()
         module = LLMInference(alias="test")
@@ -1312,7 +1312,7 @@ class TestSchedulerBuildLLMRequest:
 
     def test_build_request_with_response_format(self) -> None:
         """_build_llm_request includes response_format from module."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         class MyFormat:
             pass
@@ -1331,7 +1331,7 @@ class TestSchedulerExecuteLLM:
     @pytest.mark.asyncio
     async def test_execute_llm_calls_client(self) -> None:
         """_execute_llm calls the client's complete method."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = MockLLMClient(response_content="Hello back!")
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1347,7 +1347,7 @@ class TestSchedulerExecuteLLM:
     @pytest.mark.asyncio
     async def test_execute_llm_uses_semaphore(self) -> None:
         """_execute_llm respects per-endpoint semaphore."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = MockLLMClient()
         semaphore = asyncio.Semaphore(2)
@@ -1366,7 +1366,7 @@ class TestSchedulerExecuteLLM:
     @pytest.mark.asyncio
     async def test_execute_llm_without_semaphore(self) -> None:
         """_execute_llm works when no semaphore is configured."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = MockLLMClient()
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1381,7 +1381,7 @@ class TestSchedulerExecuteLLM:
     @pytest.mark.asyncio
     async def test_execute_llm_no_resource_manager_raises(self) -> None:
         """_execute_llm raises RuntimeError when no ResourceManager."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler()  # No resource manager
         module = LLMInference(alias="fast")
@@ -1392,7 +1392,7 @@ class TestSchedulerExecuteLLM:
     @pytest.mark.asyncio
     async def test_execute_llm_unknown_alias_raises(self) -> None:
         """_execute_llm raises KeyError for unknown alias."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_manager = MockResourceManager(clients={})
         scheduler = Scheduler(resource_manager=mock_manager)
@@ -1408,7 +1408,7 @@ class TestSchedulerExecuteWithLLM:
     @pytest.mark.asyncio
     async def test_execute_graph_with_llm_module(self) -> None:
         """execute() handles graphs containing LLMInference modules."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = MockLLMClient(response_content="LLM output")
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1444,7 +1444,7 @@ class TestSchedulerExecuteWithLLM:
     @pytest.mark.asyncio
     async def test_execute_mixed_graph(self) -> None:
         """execute() handles graphs with both LLM and non-LLM modules."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = MockLLMClient(response_content="LLM says hello")
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1491,7 +1491,7 @@ class TestSchedulerExecuteWithLLM:
     @pytest.mark.asyncio
     async def test_execute_llm_without_resource_manager_fails(self) -> None:
         """execute() fails gracefully when LLM module has no ResourceManager."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         scheduler = Scheduler(max_concurrent=10)  # No resource manager
 
@@ -1525,7 +1525,7 @@ class TestSchedulerExecuteWithLLM:
     @pytest.mark.asyncio
     async def test_execute_parallel_llm_modules(self) -> None:
         """execute() runs parallel LLM modules concurrently."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = MockLLMClient(response_content="parallel result")
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1611,7 +1611,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_triggers_requeue(self) -> None:
         """RateLimitError causes task to be requeued, not failed."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         # Client fails once, then succeeds
         mock_client = RateLimitingMockClient(fail_count=1)
@@ -1650,7 +1650,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_triggers_backoff(self) -> None:
         """RateLimitError triggers backoff on the rate limiter."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=1)
         mock_limiter = MockRateLimiter()
@@ -1690,7 +1690,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_passes_retry_after_to_backoff(self) -> None:
         """RateLimitError passes retry_after value to backoff."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=1, retry_after=30.0)
         mock_limiter = MockRateLimiter()
@@ -1730,7 +1730,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_increments_retry_count(self) -> None:
         """RateLimitError increments the task's retry_count."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=2)  # Fail twice
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1765,7 +1765,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_without_rate_limiter_still_requeues(self) -> None:
         """RateLimitError causes requeue even without rate limiter configured."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=1)
         # No rate_limiters configured
@@ -1802,7 +1802,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_does_not_call_on_error(self) -> None:
         """RateLimitError does not invoke on_error callback."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=1)
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1843,7 +1843,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_rate_limit_cancels_descendants_before_retry(self) -> None:
         """RateLimitError causes descendants to be blocked until retry completes."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=1)
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -1892,7 +1892,7 @@ class TestSchedulerRateLimitHandling:
     @pytest.mark.asyncio
     async def test_multiple_rate_limits_multiple_backoffs(self) -> None:
         """Multiple RateLimitErrors cause multiple backoff calls."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = RateLimitingMockClient(fail_count=3)  # Fail three times
         mock_limiter = MockRateLimiter()
@@ -2406,7 +2406,7 @@ class TestSchedulerTransientRetry:
                     model="mock-model",
                 )
 
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         mock_client = TransientLLMClient(fail_count=1)
         mock_manager = MockResourceManager(clients={"fast": mock_client})
@@ -2461,7 +2461,7 @@ class TestSchedulerProfiler:
 
     def test_init_with_profiler(self) -> None:
         """Scheduler can be created with a profiler."""
-        from inf_engine.profiling import TraceProfiler
+        from plait.profiling import TraceProfiler
 
         profiler = TraceProfiler()
         scheduler = Scheduler(profiler=profiler)
@@ -2471,8 +2471,8 @@ class TestSchedulerProfiler:
     @pytest.mark.asyncio
     async def test_profiler_records_task_start(self) -> None:
         """Profiler task_start is called when task begins."""
-        from inf_engine.module import LLMInference
-        from inf_engine.profiling import TraceProfiler
+        from plait.module import LLMInference
+        from plait.profiling import TraceProfiler
 
         class MockLLMClient(LLMClient):
             async def complete(self, request: LLMRequest) -> LLMResponse:
@@ -2532,8 +2532,8 @@ class TestSchedulerProfiler:
     @pytest.mark.asyncio
     async def test_profiler_records_task_failure(self) -> None:
         """Profiler task_failed is called when task fails."""
-        from inf_engine.module import LLMInference
-        from inf_engine.profiling import TraceProfiler
+        from plait.module import LLMInference
+        from plait.profiling import TraceProfiler
 
         class FailingLLMClient(LLMClient):
             async def complete(self, request: LLMRequest) -> LLMResponse:
@@ -2586,8 +2586,8 @@ class TestSchedulerProfiler:
     @pytest.mark.asyncio
     async def test_profiler_records_rate_limit(self) -> None:
         """Profiler records rate limit events."""
-        from inf_engine.module import LLMInference
-        from inf_engine.profiling import TraceProfiler
+        from plait.module import LLMInference
+        from plait.profiling import TraceProfiler
 
         call_count = 0
 
@@ -2657,8 +2657,8 @@ class TestSchedulerProfiler:
     @pytest.mark.asyncio
     async def test_profiler_records_timeout(self) -> None:
         """Profiler records timeout failures."""
-        from inf_engine.module import LLMInference
-        from inf_engine.profiling import TraceProfiler
+        from plait.module import LLMInference
+        from plait.profiling import TraceProfiler
 
         class SlowLLMClient(LLMClient):
             async def complete(self, request: LLMRequest) -> LLMResponse:
@@ -2718,7 +2718,7 @@ class TestSchedulerProfiler:
     @pytest.mark.asyncio
     async def test_no_profiling_without_alias(self) -> None:
         """Tasks without alias are not profiled."""
-        from inf_engine.profiling import TraceProfiler
+        from plait.profiling import TraceProfiler
 
         class NoAliasModule(InferenceModule):
             def forward(self, x: str) -> str:

@@ -2,8 +2,8 @@
 
 import pytest
 
-from inf_engine.optimization.feedback import Feedback, FeedbackType
-from inf_engine.optimization.record import ForwardRecord
+from plait.optimization.feedback import Feedback, FeedbackType
+from plait.optimization.record import ForwardRecord
 
 
 class TestFeedbackType:
@@ -207,8 +207,8 @@ class TestFeedbackBackward:
     @pytest.mark.asyncio
     async def test_backward_with_mock_record(self) -> None:
         """backward() succeeds when record is attached (stub implementation)."""
-        from inf_engine.graph import InferenceGraph
-        from inf_engine.optimization.record import ForwardRecord
+        from plait.graph import InferenceGraph
+        from plait.optimization.record import ForwardRecord
 
         # Create a minimal ForwardRecord
         graph = InferenceGraph(
@@ -232,8 +232,8 @@ class TestFeedbackBackward:
     @pytest.mark.asyncio
     async def test_backward_with_optimizer_argument(self) -> None:
         """backward() accepts optimizer parameter when record is attached."""
-        from inf_engine.graph import InferenceGraph
-        from inf_engine.optimization.record import ForwardRecord
+        from plait.graph import InferenceGraph
+        from plait.optimization.record import ForwardRecord
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         record = ForwardRecord(
@@ -259,8 +259,8 @@ class TestFeedbackBackward:
     @pytest.mark.asyncio
     async def test_backward_with_multiple_records(self) -> None:
         """backward() propagates to all attached records."""
-        from inf_engine.graph import InferenceGraph
-        from inf_engine.optimization.record import ForwardRecord
+        from plait.graph import InferenceGraph
+        from plait.optimization.record import ForwardRecord
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
 
@@ -301,8 +301,8 @@ class TestFeedbackEquality:
 
     def test_private_fields_not_compared(self) -> None:
         """Private fields (_records, _optimizer) are not included in equality."""
-        from inf_engine.graph import InferenceGraph
-        from inf_engine.optimization.record import ForwardRecord
+        from plait.graph import InferenceGraph
+        from plait.optimization.record import ForwardRecord
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         record = ForwardRecord(
@@ -327,7 +327,7 @@ class TestFeedbackEquality:
 
 def _create_record() -> ForwardRecord:
     """Create a minimal ForwardRecord for testing."""
-    from inf_engine.graph import InferenceGraph
+    from plait.graph import InferenceGraph
 
     graph = InferenceGraph(
         nodes={},
@@ -378,7 +378,7 @@ class TestFeedbackAggregatedRecords:
             feedback._records.append(rec)
 
         # Patch the propagate function
-        import inf_engine.optimization.backward as backward_module
+        import plait.optimization.backward as backward_module
 
         original_propagate = backward_module._propagate_backward
 

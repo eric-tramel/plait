@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from inf_engine.graph import GraphNode, InferenceGraph
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.optimization.optimizer import Optimizer, SFAOptimizer
-from inf_engine.optimization.record import ForwardRecord
-from inf_engine.parameter import Parameter
+from plait.graph import GraphNode, InferenceGraph
+from plait.module import InferenceModule, LLMInference
+from plait.optimization.optimizer import Optimizer, SFAOptimizer
+from plait.optimization.record import ForwardRecord
+from plait.parameter import Parameter
 
 
 def create_mock_record(
@@ -1123,7 +1123,7 @@ class TestOptimizerExportFromPackage:
 
     def test_exports_from_optimization_package(self) -> None:
         """Optimizer and SFAOptimizer are exported from optimization package."""
-        from inf_engine.optimization import Optimizer, SFAOptimizer
+        from plait.optimization import Optimizer, SFAOptimizer
 
         params = [Parameter("test", description="test")]
         optimizer = SFAOptimizer(params)
@@ -1214,7 +1214,7 @@ class TestSFAOptimizerRetryBehavior:
     @pytest.mark.asyncio
     async def test_step_raises_after_exhausting_retries(self) -> None:
         """step() raises OptimizationError after exhausting retries."""
-        from inf_engine.errors import OptimizationError
+        from plait.errors import OptimizationError
 
         param = Parameter("test", description="test param")
         param._name = "my_param"
@@ -1265,7 +1265,7 @@ class TestSFAOptimizerRetryBehavior:
     @pytest.mark.asyncio
     async def test_step_with_zero_retries_fails_immediately(self) -> None:
         """step() fails immediately with max_retries=0 on empty response."""
-        from inf_engine.errors import OptimizationError
+        from plait.errors import OptimizationError
 
         param = Parameter("test", description="test param")
         param._name = "param"
@@ -1326,14 +1326,14 @@ class TestOptimizationErrorExport:
 
     def test_optimization_error_import(self) -> None:
         """OptimizationError can be imported from errors module."""
-        from inf_engine.errors import OptimizationError
+        from plait.errors import OptimizationError
 
         error = OptimizationError("test error")
         assert str(error) == "test error"
 
     def test_optimization_error_with_parameter_name(self) -> None:
         """OptimizationError stores parameter_name attribute."""
-        from inf_engine.errors import OptimizationError
+        from plait.errors import OptimizationError
 
         error = OptimizationError(
             "Failed to update parameter",
@@ -1343,7 +1343,7 @@ class TestOptimizationErrorExport:
 
     def test_optimization_error_with_attempts(self) -> None:
         """OptimizationError stores attempts attribute."""
-        from inf_engine.errors import OptimizationError
+        from plait.errors import OptimizationError
 
         error = OptimizationError(
             "Failed after retries",
@@ -1351,9 +1351,9 @@ class TestOptimizationErrorExport:
         )
         assert error.attempts == 3
 
-    def test_optimization_error_inherits_from_inf_engine_error(self) -> None:
+    def test_optimization_error_inherits_from_plait_error(self) -> None:
         """OptimizationError inherits from InfEngineError."""
-        from inf_engine.errors import InfEngineError, OptimizationError
+        from plait.errors import InfEngineError, OptimizationError
 
         error = OptimizationError("test")
         assert isinstance(error, InfEngineError)

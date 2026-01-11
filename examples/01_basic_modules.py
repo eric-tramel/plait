@@ -7,7 +7,7 @@ with forward() methods and use them in a PyTorch-like manner.
 Run with: python examples/01_basic_modules.py
 """
 
-from inf_engine.module import InferenceModule
+from plait.module import InferenceModule
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 1: Simple Module
@@ -86,7 +86,7 @@ class TextAnalyzer(InferenceModule):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("inf-engine: Basic Modules Example")
+    print("plait: Basic Modules Example")
     print("=" * 60)
 
     # Example 1: Simple module

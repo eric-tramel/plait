@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inf_engine.execution.context import ExecutionSettings, get_execution_settings
-from inf_engine.module import InferenceModule
+from plait.execution.context import ExecutionSettings, get_execution_settings
+from plait.module import InferenceModule
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Helpers
@@ -57,7 +57,7 @@ class ChainModule(InferenceModule):
 @pytest.fixture(autouse=True)
 def clean_context() -> None:
     """Ensure execution settings context is clean before each test."""
-    from inf_engine.execution.context import _execution_settings
+    from plait.execution.context import _execution_settings
 
     current = get_execution_settings()
     while current is not None:
@@ -82,7 +82,7 @@ class TestSharedExecutionSettings:
         module2 = UpperModule()
         shared_resources = MagicMock(name="shared_resources")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["result1", "result2"]
 
             with ExecutionSettings(resources=shared_resources):
@@ -101,7 +101,7 @@ class TestSharedExecutionSettings:
         module2 = UpperModule()
         shared_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["result1", "result2"]
 
             with ExecutionSettings(resources=shared_resources, max_concurrent=42):
@@ -130,7 +130,7 @@ class TestConfigurationPriority:
 
         module.bind(resources=bound_resources, max_concurrent=50)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=context_resources, max_concurrent=100):
@@ -149,7 +149,7 @@ class TestConfigurationPriority:
         module = EchoModule()
         context_resources = MagicMock(name="context")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=context_resources, max_concurrent=75):
@@ -168,7 +168,7 @@ class TestConfigurationPriority:
 
         module.bind(resources=bound_resources, max_concurrent=30)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=context_resources, max_concurrent=100):
@@ -194,7 +194,7 @@ class TestNestedContexts:
         outer_resources = MagicMock(name="outer")
         inner_resources = MagicMock(name="inner")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=outer_resources, max_concurrent=100):
@@ -212,7 +212,7 @@ class TestNestedContexts:
         outer_resources = MagicMock(name="outer")
         inner_resources = MagicMock(name="inner")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["inner_result", "outer_result"]
 
             with ExecutionSettings(resources=outer_resources, max_concurrent=100):
@@ -242,7 +242,7 @@ class TestCheckpointDirectory:
         mock_resources = MagicMock()
         checkpoint_dir = tmp_path / "checkpoints"
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(
@@ -263,7 +263,7 @@ class TestCheckpointDirectory:
 
         module.bind(resources=mock_resources, checkpoint_dir=bound_dir)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(
@@ -289,7 +289,7 @@ class TestAsyncContext:
         module = EchoModule()
         mock_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "async_result"
 
             async with ExecutionSettings(resources=mock_resources):
@@ -331,7 +331,7 @@ class TestMixedBindingAndContext:
 
         module.bind(resources=bound_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=context_resources):
@@ -351,7 +351,7 @@ class TestMixedBindingAndContext:
 
         bound.bind(resources=bound_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["unbound_result", "bound_result"]
 
             with ExecutionSettings(resources=context_resources):
@@ -398,7 +398,7 @@ class TestEdgeCases:
         resources1 = MagicMock(name="r1")
         resources2 = MagicMock(name="r2")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["result1", "result2"]
 
             with ExecutionSettings(resources=resources1):
@@ -476,7 +476,7 @@ class TestMultiplePipelines:
         checkpoint_dir = tmp_path / "shared_checkpoints"
         mock_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["result1", "result2"]
 
             with ExecutionSettings(
@@ -504,7 +504,7 @@ class TestMultiplePipelines:
         module = EchoModule()
         mock_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["r1", "r2", "r3"]
 
             with ExecutionSettings(resources=mock_resources, max_concurrent=25):
@@ -524,7 +524,7 @@ class TestMultiplePipelines:
         resources1 = MagicMock(name="r1")
         resources2 = MagicMock(name="r2")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["result1", "result2"]
 
             with ExecutionSettings(resources=resources1, max_concurrent=10):

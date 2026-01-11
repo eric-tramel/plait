@@ -1,6 +1,6 @@
 """Unit tests for LLMRequest and LLMResponse types."""
 
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.types import LLMRequest, LLMResponse
 
 
 class TestLLMRequest:

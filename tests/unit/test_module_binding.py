@@ -13,14 +13,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inf_engine.execution.context import ExecutionSettings, get_execution_settings
-from inf_engine.module import InferenceModule, LLMInference
+from plait.execution.context import ExecutionSettings, get_execution_settings
+from plait.module import InferenceModule, LLMInference
 
 
 @pytest.fixture(autouse=True)
 def clean_context() -> None:
     """Ensure execution settings context is clean before each test."""
-    from inf_engine.execution.context import _execution_settings
+    from plait.execution.context import _execution_settings
 
     current = get_execution_settings()
     while current is not None:
@@ -192,7 +192,7 @@ class TestCallWithResources:
         mock_resources = MagicMock()
 
         # Mock the run() function to return a predictable result
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "EXECUTED_HELLO"
 
             module.bind(resources=mock_resources)
@@ -218,7 +218,7 @@ class TestExecuteBoundConfigPriority:
 
         module.bind(resources=mock_resources, max_concurrent=10)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             # Pass max_concurrent at call time
@@ -236,7 +236,7 @@ class TestExecuteBoundConfigPriority:
 
         module.bind(resources=mock_resources, max_concurrent=25)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(max_concurrent=50):
@@ -252,7 +252,7 @@ class TestExecuteBoundConfigPriority:
         module = SimpleModule()
         mock_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=mock_resources, max_concurrent=75):
@@ -270,7 +270,7 @@ class TestExecuteBoundConfigPriority:
 
         module.bind(resources=bound_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=context_resources):
@@ -285,7 +285,7 @@ class TestExecuteBoundConfigPriority:
         module = SimpleModule()
         context_resources = MagicMock(name="context")
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(resources=context_resources):
@@ -301,7 +301,7 @@ class TestExecuteBoundConfigPriority:
         mock_resources = MagicMock()
         checkpoint_dir = tmp_path / "checkpoints"
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "result"
 
             with ExecutionSettings(
@@ -329,7 +329,7 @@ class TestBatchExecution:
 
         module.bind(resources=mock_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             # Return different results for each call
             mock_run.side_effect = ["RESULT1", "RESULT2", "RESULT3"]
 
@@ -348,7 +348,7 @@ class TestBatchExecution:
 
         module.bind(resources=mock_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["R1", "R2"]
 
             await module(["input1", "input2"])
@@ -365,7 +365,7 @@ class TestBatchExecution:
 
         module.bind(resources=mock_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             results = await module([])
 
             assert results == []
@@ -389,7 +389,7 @@ class TestBatchExecution:
             await asyncio.sleep(0.05)  # 50ms simulated delay
             return "result"
 
-        with patch("inf_engine.execution.executor.run", side_effect=slow_run):
+        with patch("plait.execution.executor.run", side_effect=slow_run):
             start = time.monotonic()
             results = await module(["a", "b", "c"])
             elapsed = time.monotonic() - start
@@ -418,9 +418,9 @@ class TestTracingContextBehavior:
 
     def test_trace_context_takes_precedence(self) -> None:
         """Trace context takes precedence over bound resources."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
-        from inf_engine.values import Value
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
+        from plait.values import Value
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -435,9 +435,9 @@ class TestTracingContextBehavior:
 
     def test_trace_context_takes_precedence_over_execution_settings(self) -> None:
         """Trace context takes precedence over ExecutionSettings."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
-        from inf_engine.values import Value
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
+        from plait.values import Value
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -507,7 +507,7 @@ class TestLLMInferenceBinding:
 
         llm.bind(resources=mock_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "LLM response"
 
             result = await llm("Hello!")
@@ -530,7 +530,7 @@ class TestBindingIntegration:
         module = SimpleModule()
         mock_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.return_value = "EXECUTED"
 
             # Bind and execute
@@ -561,7 +561,7 @@ class TestBindingIntegration:
         module2 = SimpleModule()
         shared_resources = MagicMock()
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             mock_run.side_effect = ["RESULT1", "RESULT2"]
 
             with ExecutionSettings(resources=shared_resources, max_concurrent=30):
@@ -589,7 +589,7 @@ class TestRunSync:
         mock_resources = MagicMock()
         module.bind(resources=mock_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
 
             async def async_return(*args: Any, **kwargs: Any) -> str:
                 return "SYNC_RESULT"
@@ -614,7 +614,7 @@ class TestRunSync:
             call_count += 1
             return f"RESULT_{call_count}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             results = module.run_sync(["a", "b", "c"])
 
             assert list(results) == ["RESULT_1", "RESULT_2", "RESULT_3"]
@@ -635,7 +635,7 @@ class TestRunSync:
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return "CONTEXT_RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(resources=mock_resources):
                 result = module.run_sync("hello")
 
@@ -660,7 +660,7 @@ class TestRunSync:
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return) as m:
+        with patch("plait.execution.executor.run", side_effect=async_return) as m:
             module.run_sync("hello", max_concurrent=5)
 
             call_kwargs = m.call_args.kwargs
@@ -672,7 +672,7 @@ class TestRunSync:
         mock_resources = MagicMock()
         module.bind(resources=mock_resources)
 
-        with patch("inf_engine.execution.executor.run") as mock_run:
+        with patch("plait.execution.executor.run") as mock_run:
             result = module.run_sync([])
 
             assert result == []
@@ -697,7 +697,7 @@ class TestStreamingExecution:
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return f"RESULT_{args[1]}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["a", "b", "c"])
 
@@ -709,7 +709,7 @@ class TestStreamingExecution:
     @pytest.mark.asyncio
     async def test_streaming_yields_batch_results(self) -> None:
         """Streaming mode yields BatchResult objects."""
-        from inf_engine.execution.types import BatchResult
+        from plait.execution.types import BatchResult
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -718,7 +718,7 @@ class TestStreamingExecution:
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return f"RESULT_{args[1]}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["a", "b", "c"])
 
@@ -743,7 +743,7 @@ class TestStreamingExecution:
             inp = args[1]
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["hello", "world"])
 
@@ -781,7 +781,7 @@ class TestStreamingExecution:
                 raise ValueError("Test error")
             return f"RESULT_{call_count}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["a", "b", "c"])
 
@@ -820,7 +820,7 @@ class TestStreamingExecution:
             await asyncio.sleep(delays.get(inp, 0))
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(
                 resources=mock_resources, streaming=True, preserve_order=True
             ):
@@ -849,7 +849,7 @@ class TestStreamingExecution:
             await asyncio.sleep(delays.get(inp, 0))
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(
                 resources=mock_resources, streaming=True, preserve_order=False
             ):
@@ -898,7 +898,7 @@ class TestStreamingExecution:
             completed.append(inp)
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(
                 resources=mock_resources, streaming=True, preserve_order=False
             ):
@@ -929,7 +929,7 @@ class TestStreamingExecution:
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(
                 resources=mock_resources, streaming=True, on_progress=on_progress
             ):
@@ -962,7 +962,7 @@ class TestStreamingExecution:
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             with ExecutionSettings(
                 resources=mock_resources, streaming=False, on_progress=on_progress
             ):
@@ -984,14 +984,14 @@ class TestStreamBatchMethod:
     @pytest.mark.asyncio
     async def test_stream_batch_yields_all_inputs(self) -> None:
         """_stream_batch yields a result for each input."""
-        from inf_engine.execution.types import BatchResult
+        from plait.execution.types import BatchResult
 
         module = SimpleModule()
 
         async def async_return(*args: Any, **kwargs: Any) -> str:
             return f"RESULT_{args[1]}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             results = []
             async for r in module._stream_batch(
                 inputs=["x", "y", "z"],
@@ -1018,7 +1018,7 @@ class TestStreamBatchMethod:
             received_args.append(args)
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_return):
+        with patch("plait.execution.executor.run", side_effect=async_return):
             results = []
             async for r in module._stream_batch(
                 inputs=["a"],
@@ -1103,7 +1103,7 @@ class TestTrainingModeExecution:
     @pytest.mark.asyncio
     async def test_training_mode_returns_traced_output(self) -> None:
         """Training mode returns TracedOutput wrapper."""
-        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+        from plait.optimization.record import ForwardRecord, TracedOutput
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1118,9 +1118,7 @@ class TestTrainingModeExecution:
                 return ("RESULT", mock_record)
             return "RESULT"
 
-        with patch(
-            "inf_engine.execution.executor.run", side_effect=async_run_with_record
-        ):
+        with patch("plait.execution.executor.run", side_effect=async_run_with_record):
             result = await module("hello")
 
         # Should be TracedOutput
@@ -1131,7 +1129,7 @@ class TestTrainingModeExecution:
     @pytest.mark.asyncio
     async def test_eval_mode_returns_raw_value(self) -> None:
         """Eval mode returns raw value, not TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1142,7 +1140,7 @@ class TestTrainingModeExecution:
         async def async_run(*args: Any, **kwargs: Any) -> str:
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+        with patch("plait.execution.executor.run", side_effect=async_run):
             result = await module("hello")
 
         # Should be raw value, not TracedOutput
@@ -1152,7 +1150,7 @@ class TestTrainingModeExecution:
     @pytest.mark.asyncio
     async def test_training_mode_passes_record_true(self) -> None:
         """Training mode passes record=True to run()."""
-        from inf_engine.optimization.record import ForwardRecord
+        from plait.optimization.record import ForwardRecord
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1168,7 +1166,7 @@ class TestTrainingModeExecution:
                 return ("RESULT", mock_record)
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+        with patch("plait.execution.executor.run", side_effect=async_run):
             await module("hello")
 
         # Should have passed record=True
@@ -1178,7 +1176,7 @@ class TestTrainingModeExecution:
     @pytest.mark.asyncio
     async def test_training_mode_batch_returns_traced_outputs(self) -> None:
         """Training mode with batch input returns list of TracedOutput."""
-        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+        from plait.optimization.record import ForwardRecord, TracedOutput
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1195,7 +1193,7 @@ class TestTrainingModeExecution:
                 return (f"RESULT_{call_count}", mock_record)
             return f"RESULT_{call_count}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+        with patch("plait.execution.executor.run", side_effect=async_run):
             results = await module(["a", "b", "c"])
 
         # Should be a list of TracedOutput
@@ -1207,8 +1205,8 @@ class TestTrainingModeExecution:
     @pytest.mark.asyncio
     async def test_training_mode_streaming_returns_traced_outputs(self) -> None:
         """Training mode with streaming returns TracedOutput in BatchResults."""
-        from inf_engine.execution.types import BatchResult
-        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+        from plait.execution.types import BatchResult
+        from plait.optimization.record import ForwardRecord, TracedOutput
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1225,7 +1223,7 @@ class TestTrainingModeExecution:
                 return (f"RESULT_{call_count}", mock_record)
             return f"RESULT_{call_count}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+        with patch("plait.execution.executor.run", side_effect=async_run):
             with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["a", "b", "c"])
 
@@ -1262,7 +1260,7 @@ class TestTrainingModeMethodChaining:
     @pytest.mark.asyncio
     async def test_fluent_training_workflow(self) -> None:
         """Test complete fluent API workflow."""
-        from inf_engine.optimization.record import ForwardRecord, TracedOutput
+        from plait.optimization.record import ForwardRecord, TracedOutput
 
         mock_resources = MagicMock()
         mock_record = MagicMock(spec=ForwardRecord)
@@ -1272,7 +1270,7 @@ class TestTrainingModeMethodChaining:
                 return ("TRAINED_RESULT", mock_record)
             return "EVAL_RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=async_run):
+        with patch("plait.execution.executor.run", side_effect=async_run):
             # Fluent API: create, bind, train, execute
             module = SimpleModule().bind(resources=mock_resources).train()
             result = await module("input")

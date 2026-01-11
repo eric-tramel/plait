@@ -1,7 +1,7 @@
 """Unit tests for functional error propagation and resolution."""
 
-import inf_engine.functional as F
-from inf_engine.values import Value, ValueKind, valueify
+import plait.functional as F
+from plait.values import Value, ValueKind, valueify
 
 
 class TestErrorResolution:

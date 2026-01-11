@@ -9,11 +9,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from inf_engine.resources import EndpointMetrics, ResourceMetrics
-from inf_engine.resources.config import EndpointConfig, ResourceConfig
-from inf_engine.resources.metrics import EndpointMetrics as EndpointMetricsDirect
-from inf_engine.resources.metrics import ResourceMetrics as ResourceMetricsDirect
-from inf_engine.types import LLMResponse
+from plait.resources import EndpointMetrics, ResourceMetrics
+from plait.resources.config import EndpointConfig, ResourceConfig
+from plait.resources.metrics import EndpointMetrics as EndpointMetricsDirect
+from plait.resources.metrics import ResourceMetrics as ResourceMetricsDirect
+from plait.types import LLMResponse
 
 
 class TestEndpointMetricsCreation:
@@ -538,20 +538,20 @@ class TestResourceMetricsImports:
     """Tests for ResourceMetrics imports."""
 
     def test_import_from_resources_package(self) -> None:
-        """ResourceMetrics can be imported from inf_engine.resources."""
-        from inf_engine.resources import ResourceMetrics as ImportedMetrics
+        """ResourceMetrics can be imported from plait.resources."""
+        from plait.resources import ResourceMetrics as ImportedMetrics
 
         assert ImportedMetrics is ResourceMetricsDirect
 
     def test_import_endpoint_metrics_from_resources_package(self) -> None:
-        """EndpointMetrics can be imported from inf_engine.resources."""
-        from inf_engine.resources import EndpointMetrics as ImportedEndpointMetrics
+        """EndpointMetrics can be imported from plait.resources."""
+        from plait.resources import EndpointMetrics as ImportedEndpointMetrics
 
         assert ImportedEndpointMetrics is EndpointMetricsDirect
 
     def test_resources_module_exports(self) -> None:
         """resources module __all__ includes metrics types."""
-        import inf_engine.resources as resources_module
+        import plait.resources as resources_module
 
         assert "ResourceMetrics" in resources_module.__all__
         assert "EndpointMetrics" in resources_module.__all__

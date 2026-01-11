@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**inf-engine** is a PyTorch-inspired framework for building, executing, and optimizing LLM inference pipelines. Key features:
+**plait** is a PyTorch-inspired framework for building, executing, and optimizing LLM inference pipelines. Key features:
 
 - **PyTorch-like API**: `InferenceModule` with `forward()` and `backward()` methods
 - **Automatic DAG capture**: Trace-based graph construction from eager-mode code
@@ -164,9 +164,9 @@ Every feature branch must meet these criteria before GO approval:
 ## Project Structure
 
 ```
-inf-engine/
+plait/
 ├── src/
-│   └── inf_engine/          # Main package
+│   └── plait/          # Main package
 │       ├── __init__.py      # Package exports
 │       ├── module.py        # InferenceModule, LLMInference
 │       ├── parameter.py     # Parameter class

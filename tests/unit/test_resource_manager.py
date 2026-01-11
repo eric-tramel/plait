@@ -9,18 +9,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inf_engine.clients.base import LLMClient
-from inf_engine.resources import ResourceManager
-from inf_engine.resources.config import EndpointConfig, ResourceConfig
-from inf_engine.resources.manager import ResourceManager as ResourceManagerDirect
-from inf_engine.resources.metrics import ResourceMetrics
-from inf_engine.resources.rate_limit import RateLimiter
+from plait.clients.base import LLMClient
+from plait.resources import ResourceManager
+from plait.resources.config import EndpointConfig, ResourceConfig
+from plait.resources.manager import ResourceManager as ResourceManagerDirect
+from plait.resources.metrics import ResourceMetrics
+from plait.resources.rate_limit import RateLimiter
 
 
 class TestResourceManagerInit:
     """Tests for ResourceManager initialization."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_with_empty_config(self, mock_client_class: MagicMock) -> None:
         """ResourceManager initializes with empty config."""
         config = ResourceConfig(endpoints={})
@@ -30,7 +30,7 @@ class TestResourceManagerInit:
         assert manager.clients == {}
         assert manager.semaphores == {}
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_stores_config(self, mock_client_class: MagicMock) -> None:
         """ResourceManager stores the provided config."""
         config = ResourceConfig(
@@ -45,7 +45,7 @@ class TestResourceManagerInit:
 
         assert manager.config is config
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_creates_clients(self, mock_client_class: MagicMock) -> None:
         """ResourceManager creates clients for each endpoint."""
         mock_client = MagicMock(spec=LLMClient)
@@ -69,7 +69,7 @@ class TestResourceManagerInit:
         assert "smart" in manager.clients
         assert len(manager.clients) == 2
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_creates_semaphores_when_max_concurrent_set(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -88,7 +88,7 @@ class TestResourceManagerInit:
         assert "fast" in manager.semaphores
         assert isinstance(manager.semaphores["fast"], asyncio.Semaphore)
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_no_semaphore_when_max_concurrent_none(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -106,7 +106,7 @@ class TestResourceManagerInit:
 
         assert "fast" not in manager.semaphores
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_semaphore_has_correct_value(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -130,7 +130,7 @@ class TestResourceManagerInit:
 class TestResourceManagerCreateClient:
     """Tests for ResourceManager._create_client method."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_create_openai_client(self, mock_client_class: MagicMock) -> None:
         """Creates OpenAIClient for openai provider."""
         mock_client = MagicMock(spec=LLMClient)
@@ -156,7 +156,7 @@ class TestResourceManagerCreateClient:
         )
         assert manager.clients["fast"] is mock_client
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_create_openai_client_with_base_url(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -177,7 +177,7 @@ class TestResourceManagerCreateClient:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["base_url"] == "https://my-proxy.example.com/v1"
 
-    @patch("inf_engine.resources.manager.OpenAICompatibleClient")
+    @patch("plait.resources.manager.OpenAICompatibleClient")
     def test_create_vllm_client(self, mock_client_class: MagicMock) -> None:
         """Creates OpenAICompatibleClient for vllm provider."""
         mock_client = MagicMock(spec=LLMClient)
@@ -203,7 +203,7 @@ class TestResourceManagerCreateClient:
         )
         assert manager.clients["local"] is mock_client
 
-    @patch("inf_engine.resources.manager.OpenAICompatibleClient")
+    @patch("plait.resources.manager.OpenAICompatibleClient")
     def test_create_vllm_client_with_api_key(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -252,7 +252,7 @@ class TestResourceManagerCreateClient:
         with pytest.raises(ValueError, match="anthropic.*not yet supported"):
             ResourceManager(config)
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_create_unknown_provider_raises(self, mock_client_class: MagicMock) -> None:
         """Raises ValueError for unknown provider."""
         config = ResourceConfig(
@@ -271,7 +271,7 @@ class TestResourceManagerCreateClient:
 class TestResourceManagerGetClient:
     """Tests for ResourceManager.get_client method."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_client_returns_client(self, mock_client_class: MagicMock) -> None:
         """get_client returns the client for an alias."""
         mock_client = MagicMock(spec=LLMClient)
@@ -289,7 +289,7 @@ class TestResourceManagerGetClient:
 
         assert manager.get_client("fast") is mock_client
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_client_raises_for_unknown_alias(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -304,7 +304,7 @@ class TestResourceManagerGetClient:
 class TestResourceManagerGetSemaphore:
     """Tests for ResourceManager.get_semaphore method."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_semaphore_returns_semaphore(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -323,7 +323,7 @@ class TestResourceManagerGetSemaphore:
         semaphore = manager.get_semaphore("fast")
         assert isinstance(semaphore, asyncio.Semaphore)
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_semaphore_returns_none_when_not_set(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -341,7 +341,7 @@ class TestResourceManagerGetSemaphore:
 
         assert manager.get_semaphore("fast") is None
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_semaphore_returns_none_for_unknown_alias(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -355,7 +355,7 @@ class TestResourceManagerGetSemaphore:
 class TestResourceManagerContains:
     """Tests for ResourceManager.__contains__ method."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_contains_returns_true_for_existing_alias(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -372,7 +372,7 @@ class TestResourceManagerContains:
 
         assert "fast" in manager
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_contains_returns_false_for_missing_alias(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -382,7 +382,7 @@ class TestResourceManagerContains:
 
         assert "unknown" not in manager
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_contains_handles_unhashable_types(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -397,20 +397,20 @@ class TestResourceManagerImports:
     """Tests for ResourceManager imports."""
 
     def test_import_from_resources_package(self) -> None:
-        """ResourceManager can be imported from inf_engine.resources."""
-        from inf_engine.resources import ResourceManager as ImportedManager
+        """ResourceManager can be imported from plait.resources."""
+        from plait.resources import ResourceManager as ImportedManager
 
         assert ImportedManager is ResourceManagerDirect
 
     def test_import_from_manager_module(self) -> None:
-        """ResourceManager can be imported from inf_engine.resources.manager."""
-        from inf_engine.resources.manager import ResourceManager as ImportedManager
+        """ResourceManager can be imported from plait.resources.manager."""
+        from plait.resources.manager import ResourceManager as ImportedManager
 
         assert ImportedManager is ResourceManagerDirect
 
     def test_resources_module_exports_manager(self) -> None:
         """resources module __all__ includes ResourceManager."""
-        import inf_engine.resources as resources_module
+        import plait.resources as resources_module
 
         assert "ResourceManager" in resources_module.__all__
 
@@ -418,7 +418,7 @@ class TestResourceManagerImports:
 class TestResourceManagerApiKeyResolution:
     """Tests for API key resolution via EndpointConfig.get_api_key()."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     @patch.dict("os.environ", {"MY_API_KEY": "resolved-key"})
     def test_resolves_api_key_from_environment(
         self, mock_client_class: MagicMock
@@ -438,7 +438,7 @@ class TestResourceManagerApiKeyResolution:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["api_key"] == "resolved-key"
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_uses_literal_api_key_when_not_env_var(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -457,7 +457,7 @@ class TestResourceManagerApiKeyResolution:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["api_key"] == "sk-literal-key"
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_passes_none_when_api_key_not_set(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -480,7 +480,7 @@ class TestResourceManagerApiKeyResolution:
 class TestResourceManagerRateLimiterInit:
     """Tests for ResourceManager rate limiter initialization."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_creates_rate_limiters_when_rate_limit_set(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -499,7 +499,7 @@ class TestResourceManagerRateLimiterInit:
         assert "fast" in manager.rate_limiters
         assert isinstance(manager.rate_limiters["fast"], RateLimiter)
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_no_rate_limiter_when_rate_limit_none(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -517,7 +517,7 @@ class TestResourceManagerRateLimiterInit:
 
         assert "fast" not in manager.rate_limiters
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_rate_limiter_has_correct_rpm(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -537,7 +537,7 @@ class TestResourceManagerRateLimiterInit:
         assert limiter.rpm == 1200.0
         assert limiter.max_rpm == 1200.0
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_creates_rate_limiters_for_multiple_endpoints(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -569,7 +569,7 @@ class TestResourceManagerRateLimiterInit:
         assert manager.rate_limiters["fast"].rpm == 600.0
         assert manager.rate_limiters["smart"].rpm == 300.0
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_empty_rate_limiters_for_empty_config(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -583,7 +583,7 @@ class TestResourceManagerRateLimiterInit:
 class TestResourceManagerGetRateLimiter:
     """Tests for ResourceManager.get_rate_limiter method."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_rate_limiter_returns_limiter(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -603,7 +603,7 @@ class TestResourceManagerGetRateLimiter:
         assert isinstance(limiter, RateLimiter)
         assert limiter.rpm == 600.0
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_rate_limiter_returns_none_when_not_set(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -621,7 +621,7 @@ class TestResourceManagerGetRateLimiter:
 
         assert manager.get_rate_limiter("fast") is None
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_rate_limiter_returns_none_for_unknown_alias(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -635,7 +635,7 @@ class TestResourceManagerGetRateLimiter:
 class TestResourceManagerCombinedResources:
     """Tests for ResourceManager with semaphores and rate limiters together."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_creates_both_semaphore_and_rate_limiter(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -657,7 +657,7 @@ class TestResourceManagerCombinedResources:
         assert isinstance(manager.semaphores["fast"], asyncio.Semaphore)
         assert isinstance(manager.rate_limiters["fast"], RateLimiter)
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_only_semaphore_no_rate_limiter(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -677,7 +677,7 @@ class TestResourceManagerCombinedResources:
         assert "fast" in manager.semaphores
         assert "fast" not in manager.rate_limiters
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_only_rate_limiter_no_semaphore(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -701,7 +701,7 @@ class TestResourceManagerCombinedResources:
 class TestResourceManagerMetrics:
     """Tests for ResourceManager metrics integration."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_init_creates_metrics(self, mock_client_class: MagicMock) -> None:
         """ResourceManager creates ResourceMetrics during initialization."""
         config = ResourceConfig(endpoints={})
@@ -710,7 +710,7 @@ class TestResourceManagerMetrics:
         assert hasattr(manager, "metrics")
         assert isinstance(manager.metrics, ResourceMetrics)
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_metrics_is_empty_initially(self, mock_client_class: MagicMock) -> None:
         """ResourceManager metrics starts with no recorded data."""
         config = ResourceConfig(
@@ -730,7 +730,7 @@ class TestResourceManagerMetrics:
 class TestResourceManagerGetStats:
     """Tests for ResourceManager.get_stats method."""
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_stats_empty_config(self, mock_client_class: MagicMock) -> None:
         """get_stats returns empty dict for empty config."""
         config = ResourceConfig(endpoints={})
@@ -738,7 +738,7 @@ class TestResourceManagerGetStats:
 
         assert manager.get_stats() == {}
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_stats_returns_metrics(self, mock_client_class: MagicMock) -> None:
         """get_stats includes metrics for each endpoint."""
         config = ResourceConfig(
@@ -757,7 +757,7 @@ class TestResourceManagerGetStats:
         assert "metrics" in stats["fast"]
         assert stats["fast"]["metrics"]["total_requests"] == 0
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_stats_includes_semaphore_info(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -778,7 +778,7 @@ class TestResourceManagerGetStats:
         assert stats["fast"]["available"] == 10
         assert stats["fast"]["max"] == 10
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_stats_no_semaphore_info_when_not_configured(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -799,7 +799,7 @@ class TestResourceManagerGetStats:
         assert "available" not in stats["fast"]
         assert "max" not in stats["fast"]
 
-    @patch("inf_engine.resources.manager.OpenAIClient")
+    @patch("plait.resources.manager.OpenAIClient")
     def test_get_stats_multiple_endpoints(self, mock_client_class: MagicMock) -> None:
         """get_stats returns stats for all endpoints."""
         config = ResourceConfig(

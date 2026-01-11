@@ -1,6 +1,6 @@
 # Resource Management
 
-Resource management in inf-engine separates module definitions from infrastructure configuration. Modules declare what they need via aliases; the resource layer binds these to actual endpoints.
+Resource management in plait separates module definitions from infrastructure configuration. Modules declare what they need via aliases; the resource layer binds these to actual endpoints.
 
 ## Design Goals
 
@@ -151,7 +151,7 @@ max_inflight_graphs: 20
 ```
 
 ```python
-from inf_engine import ResourceConfig
+from plait import ResourceConfig
 
 resources = ResourceConfig.from_yaml("config/resources.yaml")
 ```

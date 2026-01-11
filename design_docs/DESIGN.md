@@ -1,4 +1,4 @@
-# inf-engine Design
+# plait Design
 
 An async DAG execution engine optimized for LLM workloads with:
 - **Priority Queue** as the central scheduler
@@ -317,7 +317,7 @@ async def run(op: Op, *args: Any, **kwargs: Any) -> Any:
 ## File Structure
 
 ```
-inf-engine/
+plait/
 ├── src/
 │   ├── op.py           # Op base class
 │   ├── values.py       # Value, ValueKind, helpers

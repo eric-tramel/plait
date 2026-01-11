@@ -42,7 +42,7 @@ The output is a JSON file compatible with:
     }
   ],
   "metadata": {
-    "inf_engine_version": "0.1.0",
+    "plait_version": "0.1.0",
     "start_time": "2024-01-15T10:30:00Z"
   }
 }
@@ -80,7 +80,7 @@ Timeline:
 Profiling is enabled through the `ExecutionSettings` context manager:
 
 ```python
-from inf_engine import ExecutionSettings, ResourceConfig
+from plait import ExecutionSettings, ResourceConfig
 
 resources = ResourceConfig({
     "fast": {"model": "gpt-4o-mini", "max_concurrent": 20},
@@ -523,7 +523,7 @@ class TraceProfiler:
         output = {
             "traceEvents": trace_events,
             "metadata": {
-                "inf_engine_version": "0.1.0",
+                "plait_version": "0.1.0",
                 "start_time": self._start_wall_time,
                 "total_events": len(trace_events),
             },
@@ -688,7 +688,7 @@ class ExecutionSettings:
 ### Programmatic Analysis
 
 ```python
-from inf_engine.profiling import TraceAnalyzer
+from plait.profiling import TraceAnalyzer
 
 # Load and analyze a trace
 analyzer = TraceAnalyzer.from_file("./traces/run_001.json")
@@ -711,7 +711,7 @@ for endpoint, stats in analyzer.endpoint_stats().items():
 ## Example: Complete Profiling Flow
 
 ```python
-from inf_engine import InferenceModule, LLMInference, ExecutionSettings, ResourceConfig
+from plait import InferenceModule, LLMInference, ExecutionSettings, ResourceConfig
 
 class AnalysisPipeline(InferenceModule):
     def __init__(self):

@@ -10,9 +10,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.execution.types import BatchResult
-from inf_engine.module import InferenceModule
+from plait.execution.context import ExecutionSettings
+from plait.execution.types import BatchResult
+from plait.module import InferenceModule
 
 
 class ProcessingModule(InferenceModule):
@@ -55,7 +55,7 @@ class FailingModule(InferenceModule):
 @pytest.fixture(autouse=True)
 def clean_context() -> None:
     """Ensure execution settings context is clean."""
-    from inf_engine.execution.context import _execution_settings, get_execution_settings
+    from plait.execution.context import _execution_settings, get_execution_settings
 
     current = get_execution_settings()
     while current is not None:
@@ -80,7 +80,7 @@ class TestStreamingFullFlow:
             result = args[0].forward(args[1])
             return result
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["hello", "world", "test"])
 
@@ -113,7 +113,7 @@ class TestStreamingFullFlow:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return args[0].forward(args[1])
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(resources=mock_resources, streaming=True):
                 inputs = ["good1", "bad1", "good2", "bad2", "good3"]
                 result = await module._execute_bound(inputs)
@@ -161,7 +161,7 @@ class TestStreamingCancellation:
             completed.append(inp)
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=slow_run):
+        with patch("plait.execution.executor.run", side_effect=slow_run):
             async with ExecutionSettings(
                 resources=mock_resources, streaming=True, preserve_order=False
             ):
@@ -195,7 +195,7 @@ class TestStreamingCancellation:
             await asyncio.sleep(delay)
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=very_slow_run):
+        with patch("plait.execution.executor.run", side_effect=very_slow_run):
             async with ExecutionSettings(
                 resources=mock_resources, streaming=True, preserve_order=False
             ):
@@ -226,7 +226,7 @@ class TestProgressTracking:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return args[1].upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(
                 resources=mock_resources,
                 streaming=True,
@@ -264,7 +264,7 @@ class TestProgressTracking:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return args[0].forward(args[1])
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(
                 resources=mock_resources,
                 streaming=True,
@@ -298,7 +298,7 @@ class TestPreserveOrder:
             await asyncio.sleep(delays.get(inp, 0))
             return inp.upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=delayed_run):
+        with patch("plait.execution.executor.run", side_effect=delayed_run):
             async with ExecutionSettings(
                 resources=mock_resources,
                 streaming=True,
@@ -328,7 +328,7 @@ class TestStreamingResourceIntegration:
             received_resources.append(kwargs.get("resources"))
             return args[1].upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(
                 resources=context_resources,
                 streaming=True,
@@ -358,7 +358,7 @@ class TestStreamingResourceIntegration:
             received_resources.append(kwargs.get("resources"))
             return args[1].upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(
                 resources=context_resources,
                 streaming=True,
@@ -387,7 +387,7 @@ class TestStreamingEdgeCases:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return args[1].upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(["only"])
 
@@ -413,7 +413,7 @@ class TestStreamingEdgeCases:
         batch_size = 100
         inputs = [f"item_{i}" for i in range(batch_size)]
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             async with ExecutionSettings(resources=mock_resources, streaming=True):
                 result = await module._execute_bound(inputs)
 
@@ -456,7 +456,7 @@ class TestStreamingEdgeCases:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return args[1].upper()
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             # streaming=False (default)
             async with ExecutionSettings(resources=mock_resources):
                 results = await module._execute_bound(["a", "b", "c"])

@@ -1,10 +1,10 @@
 """Unit tests for ValueRef resolution during execution."""
 
-from inf_engine.execution.state import ExecutionState, TaskResult
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule
-from inf_engine.tracing.tracer import InputNode
-from inf_engine.values import Value, ValueKind, ValueRef
+from plait.execution.state import ExecutionState, TaskResult
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule
+from plait.tracing.tracer import InputNode
+from plait.values import Value, ValueKind, ValueRef
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper modules for testing

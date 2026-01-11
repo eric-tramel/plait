@@ -1,6 +1,6 @@
-# inf-engine Design Documentation
+# plait Design Documentation
 
-inf-engine is a PyTorch-inspired framework for building, executing, and
+plait is a PyTorch-inspired framework for building, executing, and
 optimizing **compound AI systems**: multi-step LLM pipelines that need
 concurrency, backpressure, observability, and (optionally) feedback-driven
 parameter updates.
@@ -22,7 +22,7 @@ In plain Python, that complexity tends to leak everywhere:
 - “Learning” (updating prompts/instructions from feedback) is difficult without a
   stable record of what happened in the forward pass.
 
-inf-engine’s core idea is to keep authoring simple and familiar, and move the
+plait’s core idea is to keep authoring simple and familiar, and move the
 complexity into a shared runtime:
 1) write normal module composition in `forward()`, 2) trace it into a DAG,
 3) execute it with a scheduler + resource manager, and 4) optionally propagate
@@ -31,7 +31,7 @@ feedback backward to update `Parameter`s.
 ### Quick Anchor Example
 
 ```python
-from inf_engine import InferenceModule, LLMInference, Parameter, ResourceConfig, run
+from plait import InferenceModule, LLMInference, Parameter, ResourceConfig, run
 
 
 class SummarizeThenAnalyze(InferenceModule):
@@ -109,7 +109,7 @@ structured inputs/outputs and partial failures.
 
 ### A functional API for stateless, graph-aware operations
 
-`inf_engine.functional` is the `torch.nn.functional` analogue: a catalog of
+`plait.functional` is the `torch.nn.functional` analogue: a catalog of
 stateless, graph-aware operations on `Value`s (rendering, parsing, selection,
 coercion, numeric and collection ops, response metadata extractors, and an atomic
 LLM transport op). These functions define consistent coercion and error
@@ -175,7 +175,7 @@ If you’re new to the design, read these in order:
 
 ## PyTorch Parallels
 
-| PyTorch | inf-engine | Purpose |
+| PyTorch | plait | Purpose |
 |---------|------------|---------|
 | `nn.Module` | `InferenceModule` | Base class for operations |
 | `nn.Parameter` | `Parameter` | Learnable values (state) |
@@ -187,13 +187,13 @@ If you’re new to the design, read these in order:
 ## Code Map (High-Level)
 
 ```
-inf-engine/
+plait/
 ├── src/
-│   └── inf_engine/
+│   └── plait/
 │       ├── module.py           # InferenceModule, LLMInference
 │       ├── parameter.py        # Parameter
 │       ├── values.py           # Value, ValueKind, helpers
-│       ├── functional.py       # inf_engine.functional
+│       ├── functional.py       # plait.functional
 │       ├── graph.py            # InferenceGraph, GraphNode
 │       ├── tracing/            # Tracer + trace context (+ legacy proxy)
 │       ├── execution/          # Scheduler, ExecutionState, checkpoints

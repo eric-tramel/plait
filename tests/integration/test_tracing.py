@@ -5,10 +5,10 @@ Tests verify full tracing scenarios including nested modules,
 shared inputs, dict outputs, and complete tracing flows.
 """
 
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
-from inf_engine.tracing.proxy import Proxy
-from inf_engine.tracing.tracer import Tracer
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
+from plait.tracing.proxy import Proxy
+from plait.tracing.tracer import Tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Nested Module Tracing Tests
@@ -618,7 +618,7 @@ class TestCompleteTracingFlow:
         assert graph1.nodes is not graph2.nodes
 
         # Input values should differ
-        from inf_engine.tracing.tracer import InputNode
+        from plait.tracing.tracer import InputNode
 
         input1 = graph1.nodes["input:input_0"].module
         input2 = graph2.nodes["input:input_0"].module

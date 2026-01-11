@@ -15,8 +15,8 @@ custom `InferenceModule` subclasses.
 ## Usage
 
 ```python
-import inf_engine.functional as F
-from inf_engine.values import Value, ValueKind, valueify
+import plait.functional as F
+from plait.values import Value, ValueKind, valueify
 
 template = Value(ValueKind.FSTRING, "Summarize: {text}")
 vars = Value(ValueKind.STRUCTURED, {"text": "long doc"})

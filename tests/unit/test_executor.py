@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from inf_engine.execution.executor import run
-from inf_engine.module import InferenceModule
-from inf_engine.optimization.record import ForwardRecord
+from plait.execution.executor import run
+from plait.module import InferenceModule
+from plait.optimization.record import ForwardRecord
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Modules
@@ -603,13 +603,13 @@ class TestRunImports:
 
     def test_import_from_executor_module(self) -> None:
         """run can be imported from executor module."""
-        from inf_engine.execution.executor import run as run_from_module
+        from plait.execution.executor import run as run_from_module
 
         assert run_from_module is run
 
     def test_import_from_execution_package(self) -> None:
         """run can be imported from execution package."""
-        from inf_engine.execution import run as run_from_package
+        from plait.execution import run as run_from_package
 
         assert run_from_package is run
 
@@ -764,7 +764,7 @@ class TestRunCheckpointing:
         self, tmp_path: Path
     ) -> None:
         """run() checkpoint contains all completed nodes."""
-        from inf_engine.execution.checkpoint import Checkpoint
+        from plait.execution.checkpoint import Checkpoint
 
         module = LinearPipeline()
 
@@ -777,7 +777,7 @@ class TestRunCheckpointing:
     @pytest.mark.asyncio
     async def test_run_checkpoint_contains_graph_hash(self, tmp_path: Path) -> None:
         """run() checkpoint includes the graph hash."""
-        from inf_engine.execution.checkpoint import Checkpoint
+        from plait.execution.checkpoint import Checkpoint
 
         module = LinearPipeline()
 
@@ -826,7 +826,7 @@ class TestRunCheckpointing:
         self, tmp_path: Path
     ) -> None:
         """run() with parallel branches creates checkpoints correctly."""
-        from inf_engine.execution.checkpoint import Checkpoint
+        from plait.execution.checkpoint import Checkpoint
 
         module = ParallelPipeline()
 

@@ -1,8 +1,8 @@
 """Unit tests for the GraphNode and InferenceGraph data structures."""
 
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
 
 
 class TestNodeRef:
@@ -1322,7 +1322,7 @@ class TestVisualizeGraph:
 
     def test_visualize_empty_graph(self) -> None:
         """visualize_graph handles empty graph."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         dot = visualize_graph(graph)
@@ -1333,7 +1333,7 @@ class TestVisualizeGraph:
 
     def test_visualize_single_node(self) -> None:
         """visualize_graph renders single input node correctly."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         node = GraphNode(
             id="input:text",
@@ -1358,7 +1358,7 @@ class TestVisualizeGraph:
 
     def test_visualize_input_node_shape(self) -> None:
         """Input nodes are rendered with box shape."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         input_node = GraphNode(
             id="input:x",
@@ -1387,7 +1387,7 @@ class TestVisualizeGraph:
 
     def test_visualize_output_node_shape(self) -> None:
         """Output nodes are rendered with doubleoctagon shape."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         input_node = GraphNode(
             id="input:x",
@@ -1416,7 +1416,7 @@ class TestVisualizeGraph:
 
     def test_visualize_intermediate_node_shape(self) -> None:
         """Intermediate nodes are rendered with ellipse shape."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         input_node = GraphNode(
             id="input:x",
@@ -1453,7 +1453,7 @@ class TestVisualizeGraph:
 
     def test_visualize_edges(self) -> None:
         """visualize_graph renders edges for dependencies."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         input_node = GraphNode(
             id="input:x",
@@ -1482,7 +1482,7 @@ class TestVisualizeGraph:
 
     def test_visualize_diamond_graph(self) -> None:
         """visualize_graph renders diamond graph with multiple edges."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         input_node = GraphNode(
             id="input",
@@ -1536,7 +1536,7 @@ class TestVisualizeGraph:
 
     def test_visualize_with_branch_condition(self) -> None:
         """visualize_graph shows branch condition in label."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         node = GraphNode(
             id="conditional",
@@ -1560,7 +1560,7 @@ class TestVisualizeGraph:
 
     def test_visualize_uses_node_id_when_no_module_name(self) -> None:
         """visualize_graph uses node_id as label when module_name is empty."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         node = GraphNode(
             id="unnamed_node",
@@ -1581,7 +1581,7 @@ class TestVisualizeGraph:
 
     def test_visualize_is_valid_dot_syntax(self) -> None:
         """visualize_graph output is valid DOT syntax structure."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         input_node = GraphNode(
             id="input:x",
@@ -1616,7 +1616,7 @@ class TestVisualizeGraph:
 
     def test_visualize_complex_graph(self) -> None:
         """visualize_graph handles complex graph structure."""
-        from inf_engine.graph import visualize_graph
+        from plait.graph import visualize_graph
 
         # Create a more complex graph with multiple paths
         nodes = {
@@ -1775,7 +1775,7 @@ class TestInferenceGraphComputeHash:
 
     def test_compute_hash_independent_of_node_ids(self) -> None:
         """Hash is independent of node ID naming."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         # Graph 1 with node IDs "input:x" and "LLM_1"
         llm1 = LLMInference(alias="fast")
@@ -1827,7 +1827,7 @@ class TestInferenceGraphComputeHash:
 
     def test_compute_hash_differs_for_different_module_config(self) -> None:
         """Hash differs when module configuration differs."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         # Graph 1: temperature=0.5
         llm1 = LLMInference(alias="fast", temperature=0.5)
@@ -1879,7 +1879,7 @@ class TestInferenceGraphComputeHash:
 
     def test_compute_hash_differs_for_different_alias(self) -> None:
         """Hash differs when module alias differs."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         # Graph 1: alias="fast"
         llm1 = LLMInference(alias="fast")
@@ -1931,7 +1931,7 @@ class TestInferenceGraphComputeHash:
 
     def test_compute_hash_same_for_same_system_prompt(self) -> None:
         """Hash is same for modules with same system_prompt."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         prompt = "You are a helpful assistant."
 
@@ -1983,7 +1983,7 @@ class TestInferenceGraphComputeHash:
 
     def test_compute_hash_differs_for_different_system_prompt(self) -> None:
         """Hash differs when system_prompt differs."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         llm1 = LLMInference(alias="fast", system_prompt="Prompt A")
         input1 = GraphNode(

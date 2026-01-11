@@ -9,11 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from inf_engine.graph import GraphNode, InferenceGraph
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.optimization.optimizer import SFAOptimizer
-from inf_engine.optimization.record import ForwardRecord
-from inf_engine.parameter import Parameter
+from plait.graph import GraphNode, InferenceGraph
+from plait.module import InferenceModule, LLMInference
+from plait.optimization.optimizer import SFAOptimizer
+from plait.optimization.record import ForwardRecord
+from plait.parameter import Parameter
 
 
 def create_pipeline_record(

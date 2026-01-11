@@ -18,20 +18,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.execution.executor import run
-from inf_engine.execution.scheduler import Scheduler
-from inf_engine.execution.state import ExecutionState
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.resources.config import EndpointConfig, ResourceConfig
-from inf_engine.tracing.tracer import Tracer
-from inf_engine.types import LLMResponse
+from plait.execution.context import ExecutionSettings
+from plait.execution.executor import run
+from plait.execution.scheduler import Scheduler
+from plait.execution.state import ExecutionState
+from plait.module import InferenceModule, LLMInference
+from plait.resources.config import EndpointConfig, ResourceConfig
+from plait.tracing.tracer import Tracer
+from plait.types import LLMResponse
 
 
 @pytest.fixture(autouse=True)
 def clean_context() -> None:
     """Ensure execution settings context is clean before each test."""
-    from inf_engine.execution.context import _execution_settings, get_execution_settings
+    from plait.execution.context import _execution_settings, get_execution_settings
 
     current = get_execution_settings()
     while current is not None:
@@ -146,12 +146,12 @@ class TestMultipleAliases:
         async def mock_complete(request: Any) -> LLMResponse:
             return create_mock_response(f"Response for: {request.prompt}")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = mock_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -199,7 +199,7 @@ class TestMultipleAliases:
             "gpt-4o": "Smart and detailed response!",
         }
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             # Create separate mock clients per endpoint
             fast_client = AsyncMock()
             fast_client.complete = AsyncMock(
@@ -214,7 +214,7 @@ class TestMultipleAliases:
             # Return different clients based on call order
             MockClient.side_effect = [fast_client, smart_client]
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -270,12 +270,12 @@ class TestConcurrentRequests:
                 current_concurrent -= 1
             return create_mock_response("Done")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = slow_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -311,12 +311,12 @@ class TestConcurrentRequests:
             await asyncio.sleep(delay_per_request)
             return create_mock_response("Done")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = delayed_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -364,12 +364,12 @@ class TestResourceManagerSchedulerIntegration:
             requests_received.append(request)
             return create_mock_response(f"Processed: {request.prompt}")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = tracking_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -409,12 +409,12 @@ class TestResourceManagerSchedulerIntegration:
             captured_request = request
             return create_mock_response("Done")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = capture_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -470,7 +470,7 @@ class TestExecutionSettingsResourceIntegration:
             assert kwargs.get("resources") is mock_resources
             return "Executed with resources"
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run_func):
+        with patch("plait.execution.executor.run", side_effect=mock_run_func):
             async with ExecutionSettings(resources=mock_resources):
                 result = await module("test input")
 
@@ -491,7 +491,7 @@ class TestExecutionSettingsResourceIntegration:
             received_resources.append(kwargs.get("resources"))
             return "Done"
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run_func):
+        with patch("plait.execution.executor.run", side_effect=mock_run_func):
             async with ExecutionSettings(resources=context_resources):
                 await module("test")
 
@@ -512,7 +512,7 @@ class TestExecutionSettingsResourceIntegration:
             received_resources.append(kwargs.get("resources"))
             return "Done"
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run_func):
+        with patch("plait.execution.executor.run", side_effect=mock_run_func):
             async with ExecutionSettings(resources=mock_resources):
                 await module1("input 1")
                 await module2("input 2")
@@ -545,7 +545,7 @@ class TestBatchExecutionWithResources:
             assert kwargs.get("resources") is mock_resources
             return f"Result_{call_count}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run_func):
+        with patch("plait.execution.executor.run", side_effect=mock_run_func):
             async with ExecutionSettings(resources=mock_resources):
                 results = await module(["a", "b", "c"])
 
@@ -567,7 +567,7 @@ class TestBatchExecutionWithResources:
             await asyncio.sleep(delay)
             return "Done"
 
-        with patch("inf_engine.execution.executor.run", side_effect=slow_run):
+        with patch("plait.execution.executor.run", side_effect=slow_run):
             async with ExecutionSettings(resources=mock_resources):
                 start = time.monotonic()
                 await module(["a", "b", "c", "d", "e"])
@@ -614,12 +614,12 @@ class TestEndToEndPipelines:
                 call_order.append("step2")
                 return create_mock_response("Analysis complete")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = tracking_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -646,12 +646,12 @@ class TestEndToEndPipelines:
         async def mock_complete(request: Any) -> LLMResponse:
             return create_mock_response(f"Response: {request.prompt}")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = mock_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -681,11 +681,11 @@ class TestResourceErrorHandling:
             }
         )
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -717,12 +717,12 @@ class TestResourceErrorHandling:
         async def failing_complete(request: Any) -> LLMResponse:
             raise RuntimeError("API error: Connection refused")
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             mock_client.complete = failing_complete
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 
@@ -813,11 +813,11 @@ class TestConfigurationExamples:
             }
         )
 
-        with patch("inf_engine.resources.manager.OpenAIClient") as MockClient:
+        with patch("plait.resources.manager.OpenAIClient") as MockClient:
             mock_client = AsyncMock()
             MockClient.return_value = mock_client
 
-            from inf_engine.resources.manager import ResourceManager
+            from plait.resources.manager import ResourceManager
 
             manager = ResourceManager(config)
 

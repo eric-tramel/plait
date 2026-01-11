@@ -17,7 +17,7 @@ The pipeline analyzes a batch of tech articles through multiple stages:
 
 Prerequisites:
 - Set OPENAI_API_KEY environment variable
-- pip install openai (included in inf-engine dependencies)
+- pip install openai (included in plait dependencies)
 
 Run with: python examples/08_profiling.py
 """
@@ -27,9 +27,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.resources.config import EndpointConfig, ResourceConfig
+from plait.execution.context import ExecutionSettings
+from plait.module import InferenceModule, LLMInference
+from plait.resources.config import EndpointConfig, ResourceConfig
 
 # Single trace output location
 TRACE_PATH = Path("traces/profiling_example.json")

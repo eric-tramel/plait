@@ -1,7 +1,7 @@
 """Unit tests for structured functional operations."""
 
-import inf_engine.functional as F
-from inf_engine.values import ValueKind, valueify
+import plait.functional as F
+from plait.values import ValueKind, valueify
 
 
 class TestSelect:

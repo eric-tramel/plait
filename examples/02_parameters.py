@@ -7,8 +7,8 @@ that can be optimized during training (backward passes).
 Run with: python examples/02_parameters.py
 """
 
-from inf_engine.module import InferenceModule
-from inf_engine.parameter import Parameter
+from plait.module import InferenceModule
+from plait.parameter import Parameter
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 1: Module with a Learnable Parameter
@@ -144,7 +144,7 @@ class OptimizableAssistant(InferenceModule):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("inf-engine: Parameters Example")
+    print("plait: Parameters Example")
     print("=" * 60)
 
     # Example 1: Learnable parameter

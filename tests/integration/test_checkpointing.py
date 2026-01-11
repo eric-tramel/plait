@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from inf_engine.execution.checkpoint import Checkpoint, CheckpointManager
-from inf_engine.execution.executor import run
-from inf_engine.execution.scheduler import Scheduler
-from inf_engine.execution.state import ExecutionState, TaskResult
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule
-from inf_engine.tracing.tracer import InputNode
+from plait.execution.checkpoint import Checkpoint, CheckpointManager
+from plait.execution.executor import run
+from plait.execution.scheduler import Scheduler
+from plait.execution.state import ExecutionState, TaskResult
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule
+from plait.tracing.tracer import InputNode
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Helpers

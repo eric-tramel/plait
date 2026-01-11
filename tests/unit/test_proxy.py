@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from inf_engine.tracing.proxy import Proxy
-from inf_engine.tracing.tracer import Tracer
+from plait.tracing.proxy import Proxy
+from plait.tracing.tracer import Tracer
 
 
 class MockingTracer(Tracer):
@@ -250,7 +250,7 @@ class TestProxyKeys:
 
     def test_proxy_keys_creates_node(self) -> None:
         """keys() creates a method node in the graph."""
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})
@@ -278,7 +278,7 @@ class TestProxyValues:
 
     def test_proxy_values_creates_node(self) -> None:
         """values() creates a method node in the graph."""
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})
@@ -306,7 +306,7 @@ class TestProxyItems:
 
     def test_proxy_items_creates_node(self) -> None:
         """items() creates a method node in the graph."""
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})

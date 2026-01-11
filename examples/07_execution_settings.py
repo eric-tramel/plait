@@ -21,9 +21,9 @@ from pathlib import Path
 from tempfile import mkdtemp
 from unittest.mock import MagicMock
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.execution.executor import run
-from inf_engine.module import InferenceModule
+from plait.execution.context import ExecutionSettings
+from plait.execution.executor import run
+from plait.module import InferenceModule
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Modules for Examples
@@ -134,7 +134,7 @@ async def example_bind_with_config() -> None:
     print("=" * 70)
 
     mock_resources = MagicMock(name="resources")
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_bind_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_bind_"))
 
     try:
         # Bind with additional configuration
@@ -370,7 +370,7 @@ async def example_shared_checkpointing() -> None:
     print("Example 8: Shared Checkpointing with ExecutionSettings")
     print("=" * 70)
 
-    checkpoint_dir = Path(mkdtemp(prefix="inf_engine_shared_"))
+    checkpoint_dir = Path(mkdtemp(prefix="plait_shared_"))
     mock_resources = MagicMock(name="resources")
 
     try:

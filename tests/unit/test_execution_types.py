@@ -2,8 +2,8 @@
 
 import time
 
-from inf_engine.execution.state import Task, TaskResult, TaskStatus
-from inf_engine.module import LLMInference
+from plait.execution.state import Task, TaskResult, TaskStatus
+from plait.module import LLMInference
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TaskStatus Tests

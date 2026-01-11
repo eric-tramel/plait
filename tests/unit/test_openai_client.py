@@ -13,13 +13,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from inf_engine.clients import OpenAIClient, OpenAICompatibleClient, RateLimitError
-from inf_engine.clients.openai import OpenAIClient as OpenAIClientDirect
-from inf_engine.clients.openai import (
+from plait.clients import OpenAIClient, OpenAICompatibleClient, RateLimitError
+from plait.clients.openai import OpenAIClient as OpenAIClientDirect
+from plait.clients.openai import (
     OpenAICompatibleClient as OpenAICompatibleClientDirect,
 )
-from inf_engine.clients.openai import RateLimitError as RateLimitErrorDirect
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.clients.openai import RateLimitError as RateLimitErrorDirect
+from plait.types import LLMRequest, LLMResponse
 
 
 class TestRateLimitError:
@@ -56,21 +56,21 @@ class TestRateLimitError:
 class TestOpenAIClientInit:
     """Tests for OpenAIClient initialization."""
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_model(self, mock_client_class: MagicMock) -> None:
         """Client initializes with model name."""
         client = OpenAIClient(model="gpt-4o")
         assert client.model == "gpt-4o"
         mock_client_class.assert_called_once()
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_custom_base_url(self, mock_client_class: MagicMock) -> None:
         """Client passes custom base_url to AsyncOpenAI."""
         OpenAIClient(model="gpt-4o", base_url="https://custom.api/v1")
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["base_url"] == "https://custom.api/v1"
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_api_key(self, mock_client_class: MagicMock) -> None:
         """Client passes api_key to AsyncOpenAI."""
         OpenAIClient(model="gpt-4o", api_key="sk-test-key")
@@ -78,21 +78,21 @@ class TestOpenAIClientInit:
         assert call_kwargs["api_key"] == "sk-test-key"
 
     @patch.dict("os.environ", {"OPENAI_API_KEY": "sk-env-key"})
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_api_key_from_env(self, mock_client_class: MagicMock) -> None:
         """Client uses OPENAI_API_KEY from environment if not provided."""
         OpenAIClient(model="gpt-4o")
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["api_key"] == "sk-env-key"
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_custom_timeout(self, mock_client_class: MagicMock) -> None:
         """Client passes custom timeout to AsyncOpenAI."""
         OpenAIClient(model="gpt-4o", timeout=60.0)
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["timeout"] == 60.0
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_default_timeout(self, mock_client_class: MagicMock) -> None:
         """Client uses default 300s timeout."""
         OpenAIClient(model="gpt-4o")
@@ -133,7 +133,7 @@ class TestOpenAIClientComplete:
     @pytest.fixture
     def mock_openai(self):
         """Create a mock OpenAI client."""
-        with patch("inf_engine.clients.openai.openai.AsyncOpenAI") as mock_class:
+        with patch("plait.clients.openai.openai.AsyncOpenAI") as mock_class:
             mock_instance = MagicMock()
             mock_instance.chat = MagicMock()
             mock_instance.chat.completions = MagicMock()
@@ -391,7 +391,7 @@ class TestOpenAIClientRateLimit:
     @pytest.fixture
     def mock_openai(self):
         """Create a mock OpenAI client."""
-        with patch("inf_engine.clients.openai.openai.AsyncOpenAI") as mock_class:
+        with patch("plait.clients.openai.openai.AsyncOpenAI") as mock_class:
             mock_instance = MagicMock()
             mock_instance.chat = MagicMock()
             mock_instance.chat.completions = MagicMock()
@@ -485,32 +485,32 @@ class TestOpenAIClientImports:
     """Tests for module imports."""
 
     def test_import_from_clients_package(self) -> None:
-        """OpenAIClient can be imported from inf_engine.clients."""
-        from inf_engine.clients import OpenAIClient as ImportedClient
+        """OpenAIClient can be imported from plait.clients."""
+        from plait.clients import OpenAIClient as ImportedClient
 
         assert ImportedClient is OpenAIClientDirect
 
     def test_import_rate_limit_error_from_clients(self) -> None:
-        """RateLimitError can be imported from inf_engine.clients."""
-        from inf_engine.clients import RateLimitError as ImportedError
+        """RateLimitError can be imported from plait.clients."""
+        from plait.clients import RateLimitError as ImportedError
 
         assert ImportedError is RateLimitErrorDirect
 
     def test_import_from_openai_module(self) -> None:
-        """OpenAIClient can be imported from inf_engine.clients.openai."""
-        from inf_engine.clients.openai import OpenAIClient as ImportedClient
+        """OpenAIClient can be imported from plait.clients.openai."""
+        from plait.clients.openai import OpenAIClient as ImportedClient
 
         assert ImportedClient is OpenAIClientDirect
 
     def test_clients_module_exports_openai_client(self) -> None:
         """clients module __all__ includes OpenAIClient."""
-        import inf_engine.clients as clients_module
+        import plait.clients as clients_module
 
         assert "OpenAIClient" in clients_module.__all__
 
     def test_clients_module_exports_rate_limit_error(self) -> None:
         """clients module __all__ includes RateLimitError."""
-        import inf_engine.clients as clients_module
+        import plait.clients as clients_module
 
         assert "RateLimitError" in clients_module.__all__
 
@@ -518,7 +518,7 @@ class TestOpenAIClientImports:
 class TestOpenAICompatibleClientInit:
     """Tests for OpenAICompatibleClient initialization."""
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_requires_base_url(self, mock_client_class: MagicMock) -> None:
         """Client requires base_url parameter."""
         client = OpenAICompatibleClient(
@@ -529,7 +529,7 @@ class TestOpenAICompatibleClientInit:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["base_url"] == "http://localhost:8000/v1"
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_defaults_api_key_to_not_needed(
         self, mock_client_class: MagicMock
     ) -> None:
@@ -541,7 +541,7 @@ class TestOpenAICompatibleClientInit:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["api_key"] == "not-needed"
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_custom_api_key(self, mock_client_class: MagicMock) -> None:
         """Client accepts custom api_key when needed."""
         OpenAICompatibleClient(
@@ -552,7 +552,7 @@ class TestOpenAICompatibleClientInit:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["api_key"] == "internal-key"
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_custom_timeout(self, mock_client_class: MagicMock) -> None:
         """Client accepts custom timeout."""
         OpenAICompatibleClient(
@@ -563,7 +563,7 @@ class TestOpenAICompatibleClientInit:
         call_kwargs = mock_client_class.call_args.kwargs
         assert call_kwargs["timeout"] == 600.0
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_init_with_default_timeout(self, mock_client_class: MagicMock) -> None:
         """Client uses default 300s timeout."""
         OpenAICompatibleClient(
@@ -580,7 +580,7 @@ class TestOpenAICompatibleClientComplete:
     @pytest.fixture
     def mock_openai(self):
         """Create a mock OpenAI client."""
-        with patch("inf_engine.clients.openai.openai.AsyncOpenAI") as mock_class:
+        with patch("plait.clients.openai.openai.AsyncOpenAI") as mock_class:
             mock_instance = MagicMock()
             mock_instance.chat = MagicMock()
             mock_instance.chat.completions = MagicMock()
@@ -662,11 +662,11 @@ class TestOpenAICompatibleClientInheritance:
 
     def test_is_llm_client(self) -> None:
         """OpenAICompatibleClient is an LLMClient."""
-        from inf_engine.clients import LLMClient
+        from plait.clients import LLMClient
 
         assert issubclass(OpenAICompatibleClient, LLMClient)
 
-    @patch("inf_engine.clients.openai.openai.AsyncOpenAI")
+    @patch("plait.clients.openai.openai.AsyncOpenAI")
     def test_instance_is_openai_client(self, mock_client_class: MagicMock) -> None:
         """OpenAICompatibleClient instance is also OpenAIClient."""
         client = OpenAICompatibleClient(
@@ -680,19 +680,19 @@ class TestOpenAICompatibleClientImports:
     """Tests for OpenAICompatibleClient imports."""
 
     def test_import_from_clients_package(self) -> None:
-        """OpenAICompatibleClient can be imported from inf_engine.clients."""
-        from inf_engine.clients import OpenAICompatibleClient as ImportedClient
+        """OpenAICompatibleClient can be imported from plait.clients."""
+        from plait.clients import OpenAICompatibleClient as ImportedClient
 
         assert ImportedClient is OpenAICompatibleClientDirect
 
     def test_import_from_openai_module(self) -> None:
-        """OpenAICompatibleClient can be imported from inf_engine.clients.openai."""
-        from inf_engine.clients.openai import OpenAICompatibleClient as ImportedClient
+        """OpenAICompatibleClient can be imported from plait.clients.openai."""
+        from plait.clients.openai import OpenAICompatibleClient as ImportedClient
 
         assert ImportedClient is OpenAICompatibleClientDirect
 
     def test_clients_module_exports_compatible_client(self) -> None:
         """clients module __all__ includes OpenAICompatibleClient."""
-        import inf_engine.clients as clients_module
+        import plait.clients as clients_module
 
         assert "OpenAICompatibleClient" in clients_module.__all__

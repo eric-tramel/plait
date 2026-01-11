@@ -4,9 +4,9 @@ Tests the stable ref format (param:<name>) and ValueKind inference
 when lifting Parameters to Values via valueify().
 """
 
-from inf_engine.module import InferenceModule
-from inf_engine.parameter import Parameter
-from inf_engine.values import (
+from plait.module import InferenceModule
+from plait.parameter import Parameter
+from plait.values import (
     ValueKind,
     ValueRef,
     collect_refs,

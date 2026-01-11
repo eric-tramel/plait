@@ -2,10 +2,10 @@
 
 import pytest
 
-from inf_engine.graph import GraphNode, InferenceGraph
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.optimization.record import ForwardRecord
-from inf_engine.tracing.tracer import InputNode
+from plait.graph import GraphNode, InferenceGraph
+from plait.module import InferenceModule, LLMInference
+from plait.optimization.record import ForwardRecord
+from plait.tracing.tracer import InputNode
 
 
 class TestForwardRecordCreation:

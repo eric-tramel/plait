@@ -11,8 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.module import InferenceModule, LLMInference
+from plait.execution.context import ExecutionSettings
+from plait.module import InferenceModule, LLMInference
 
 
 class SlowModule(InferenceModule):
@@ -52,7 +52,7 @@ class TestBatchExecutionConcurrency:
             # Return the input uppercased
             return str(args[1]).upper() if len(args) > 1 else "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=slow_run):
+        with patch("plait.execution.executor.run", side_effect=slow_run):
             start = time.monotonic()
             results = await module(["a", "b", "c", "d", "e"])
             total_time = time.monotonic() - start
@@ -96,7 +96,7 @@ class TestBatchExecutionConcurrency:
             await asyncio.sleep(delays[idx % len(delays)])
             return f"RESULT_{idx}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=varied_delay_run):
+        with patch("plait.execution.executor.run", side_effect=varied_delay_run):
             results = await module(["a", "b", "c", "d", "e"])
 
         # Despite different completion times, order should be preserved
@@ -116,7 +116,7 @@ class TestBatchExecutionConcurrency:
         async def quick_run(*args: Any, **kwargs: Any) -> str:
             return f"RESULT_{args[1]}" if len(args) > 1 else "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=quick_run):
+        with patch("plait.execution.executor.run", side_effect=quick_run):
             inputs = [f"input_{i}" for i in range(num_inputs)]
             results = await module(inputs)
 
@@ -142,7 +142,7 @@ class TestRunSyncIntegration:
         async def simple_run(*args: Any, **kwargs: Any) -> str:
             return "SYNC_EXECUTED"
 
-        with patch("inf_engine.execution.executor.run", side_effect=simple_run):
+        with patch("plait.execution.executor.run", side_effect=simple_run):
             result = module.run_sync("hello")
 
         assert result == "SYNC_EXECUTED"
@@ -160,7 +160,7 @@ class TestRunSyncIntegration:
             call_count += 1
             return f"RESULT_{call_count}"
 
-        with patch("inf_engine.execution.executor.run", side_effect=counting_run):
+        with patch("plait.execution.executor.run", side_effect=counting_run):
             results = module.run_sync(["a", "b", "c"])
 
         # All items processed
@@ -176,7 +176,7 @@ class TestRunSyncIntegration:
         async def context_run(*args: Any, **kwargs: Any) -> str:
             return "CONTEXT_EXECUTED"
 
-        with patch("inf_engine.execution.executor.run", side_effect=context_run):
+        with patch("plait.execution.executor.run", side_effect=context_run):
             with ExecutionSettings(resources=mock_resources):
                 result = module.run_sync("hello")
 
@@ -201,7 +201,7 @@ class TestBoundModuleExecution:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return "LLM response"
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             result = await llm("Hello!")
 
         assert result == "LLM response"
@@ -227,7 +227,7 @@ class TestBoundModuleExecution:
         async def mock_run(*args: Any, **kwargs: Any) -> str:
             return "PIPELINE_OUTPUT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=mock_run):
+        with patch("plait.execution.executor.run", side_effect=mock_run):
             result = await pipeline("input")
 
         assert result == "PIPELINE_OUTPUT"
@@ -247,7 +247,7 @@ class TestBoundModuleExecution:
         async def run_check(*args: Any, **kwargs: Any) -> str:
             return "RESULT"
 
-        with patch("inf_engine.execution.executor.run", side_effect=run_check) as m:
+        with patch("plait.execution.executor.run", side_effect=run_check) as m:
             await module1("input1")
             await module2("input2")
 

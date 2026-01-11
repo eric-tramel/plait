@@ -1,7 +1,7 @@
 """Additional tests for structured functional operations."""
 
-import inf_engine.functional as F
-from inf_engine.values import Value, ValueKind, valueify
+import plait.functional as F
+from plait.values import Value, ValueKind, valueify
 
 
 def test_merge_structured_dicts() -> None:

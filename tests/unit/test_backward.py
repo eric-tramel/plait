@@ -6,17 +6,17 @@ Tests cover _propagate_backward() and _combine_feedback() functions.
 
 import pytest
 
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule
-from inf_engine.optimization.backward import (
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule
+from plait.optimization.backward import (
     BackwardContext,
     BackwardResult,
     _combine_feedback,
     _propagate_backward,
 )
-from inf_engine.optimization.feedback import Feedback, FeedbackType
-from inf_engine.optimization.record import ForwardRecord
-from inf_engine.parameter import Parameter
+from plait.optimization.feedback import Feedback, FeedbackType
+from plait.optimization.record import ForwardRecord
+from plait.parameter import Parameter
 
 
 class MockModule(InferenceModule):
@@ -422,7 +422,7 @@ class TestResolveInputNode:
 
     def test_resolve_node_ref_from_args(self) -> None:
         """Resolves NodeRef from positional arguments."""
-        from inf_engine.optimization.backward import _resolve_input_node
+        from plait.optimization.backward import _resolve_input_node
 
         # Create a graph with node that has NodeRef in args
         input_node = GraphNode(
@@ -459,7 +459,7 @@ class TestResolveInputNode:
 
     def test_resolve_node_ref_from_kwargs(self) -> None:
         """Resolves NodeRef from keyword arguments."""
-        from inf_engine.optimization.backward import _resolve_input_node
+        from plait.optimization.backward import _resolve_input_node
 
         input_node = GraphNode(
             id="input:x",
@@ -495,8 +495,8 @@ class TestResolveInputNode:
 
     def test_resolve_value_ref_from_args(self) -> None:
         """Resolves ValueRef from positional arguments."""
-        from inf_engine.optimization.backward import _resolve_input_node
-        from inf_engine.values import ValueRef
+        from plait.optimization.backward import _resolve_input_node
+        from plait.values import ValueRef
 
         input_node = GraphNode(
             id="input:x",
@@ -532,8 +532,8 @@ class TestResolveInputNode:
 
     def test_resolve_value_ref_from_kwargs(self) -> None:
         """Resolves ValueRef from keyword arguments."""
-        from inf_engine.optimization.backward import _resolve_input_node
-        from inf_engine.values import ValueRef
+        from plait.optimization.backward import _resolve_input_node
+        from plait.values import ValueRef
 
         input_node = GraphNode(
             id="input:x",
@@ -569,8 +569,8 @@ class TestResolveInputNode:
 
     def test_resolve_single_value_ref_arg(self) -> None:
         """Single ValueRef arg resolves by name even if not index."""
-        from inf_engine.optimization.backward import _resolve_input_node
-        from inf_engine.values import ValueRef
+        from plait.optimization.backward import _resolve_input_node
+        from plait.values import ValueRef
 
         input_node = GraphNode(
             id="input:x",
@@ -606,7 +606,7 @@ class TestResolveInputNode:
 
     def test_resolve_returns_none_for_missing(self) -> None:
         """Returns None when input cannot be resolved."""
-        from inf_engine.optimization.backward import _resolve_input_node
+        from plait.optimization.backward import _resolve_input_node
 
         module_node = GraphNode(
             id="module_1",

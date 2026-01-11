@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from inf_engine.execution.context import ExecutionSettings, get_execution_settings
+from plait.execution.context import ExecutionSettings, get_execution_settings
 
 
 @pytest.fixture(autouse=True)
@@ -14,7 +14,7 @@ def clean_context() -> None:
     This fixture runs automatically before each test to prevent
     context leakage between tests.
     """
-    from inf_engine.execution.context import _execution_settings
+    from plait.execution.context import _execution_settings
 
     # Reset context to None if any stale settings exist
     current = get_execution_settings()
@@ -563,7 +563,7 @@ class TestProfileConfiguration:
             profiler = settings.get_profiler()
             assert profiler is not None
             # Verify it's the right type
-            from inf_engine.profiling import TraceProfiler
+            from plait.profiling import TraceProfiler
 
             assert isinstance(profiler, TraceProfiler)
 

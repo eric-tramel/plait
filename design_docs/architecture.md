@@ -1,8 +1,8 @@
-# inf-engine Architecture
+# plait Architecture
 
 ## Overview
 
-inf-engine is a PyTorch-inspired framework for building, executing, and optimizing complex LLM inference pipelines. It provides:
+plait is a PyTorch-inspired framework for building, executing, and optimizing complex LLM inference pipelines. It provides:
 
 - **Familiar API**: PyTorch-like `InferenceModule` with `forward()` and `backward()` methods
 - **Automatic DAG Capture**: Trace-based graph construction from eager-mode code
@@ -233,7 +233,7 @@ class ResourceManager:
 
 ### Module Execution API
 
-inf-engine provides multiple execution patterns optimized for different use cases.
+plait provides multiple execution patterns optimized for different use cases.
 
 #### Execution Patterns Overview
 
@@ -467,9 +467,9 @@ test-all:       # All tests
 ## File Structure
 
 ```
-inf-engine/
+plait/
 ├── src/
-│   └── inf_engine/
+│   └── plait/
 │       ├── __init__.py
 │       ├── module.py           # InferenceModule, LLMInference
 │       ├── parameter.py        # Parameter

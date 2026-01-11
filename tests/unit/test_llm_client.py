@@ -9,9 +9,9 @@ must follow, including:
 
 import pytest
 
-from inf_engine.clients import LLMClient
-from inf_engine.clients.base import LLMClient as LLMClientBase
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.clients import LLMClient
+from plait.clients.base import LLMClient as LLMClientBase
+from plait.types import LLMRequest, LLMResponse
 
 
 class MockLLMClient(LLMClient):
@@ -150,19 +150,19 @@ class TestLLMClientImport:
     """Tests for LLMClient module imports."""
 
     def test_import_from_clients_package(self) -> None:
-        """LLMClient can be imported from inf_engine.clients."""
-        from inf_engine.clients import LLMClient as ImportedClient
+        """LLMClient can be imported from plait.clients."""
+        from plait.clients import LLMClient as ImportedClient
 
         assert ImportedClient is LLMClientBase
 
     def test_import_from_base_module(self) -> None:
-        """LLMClient can be imported from inf_engine.clients.base."""
-        from inf_engine.clients.base import LLMClient as ImportedClient
+        """LLMClient can be imported from plait.clients.base."""
+        from plait.clients.base import LLMClient as ImportedClient
 
         assert ImportedClient is LLMClientBase
 
     def test_clients_module_exports(self) -> None:
         """clients module __all__ includes LLMClient."""
-        import inf_engine.clients as clients_module
+        import plait.clients as clients_module
 
         assert "LLMClient" in clients_module.__all__

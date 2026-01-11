@@ -34,12 +34,12 @@ import asyncio
 import time
 from unittest.mock import MagicMock
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.execution.executor import run
-from inf_engine.execution.scheduler import Scheduler
-from inf_engine.execution.state import ExecutionState, TaskResult
-from inf_engine.module import InferenceModule
-from inf_engine.tracing.tracer import Tracer
+from plait.execution.context import ExecutionSettings
+from plait.execution.executor import run
+from plait.execution.scheduler import Scheduler
+from plait.execution.state import ExecutionState, TaskResult
+from plait.module import InferenceModule
+from plait.tracing.tracer import Tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mock Modules for Examples
@@ -577,7 +577,7 @@ async def demo_batch_execution() -> None:
 async def main() -> None:
     """Run all execution demos."""
     print("=" * 60)
-    print("inf-engine: Execution Examples")
+    print("plait: Execution Examples")
     print("=" * 60)
 
     # Basic run() examples

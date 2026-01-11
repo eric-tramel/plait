@@ -6,13 +6,13 @@ including structured select operations and error propagation through graphs.
 
 import pytest
 
-import inf_engine.functional as F
-from inf_engine.execution.scheduler import Scheduler
-from inf_engine.execution.state import ExecutionState
-from inf_engine.graph import GraphNode, InferenceGraph
-from inf_engine.module import InferenceModule
-from inf_engine.tracing.tracer import InputNode
-from inf_engine.values import Value, ValueKind, ValueRef
+import plait.functional as F
+from plait.execution.scheduler import Scheduler
+from plait.execution.state import ExecutionState
+from plait.graph import GraphNode, InferenceGraph
+from plait.module import InferenceModule
+from plait.tracing.tracer import InputNode
+from plait.values import Value, ValueKind, ValueRef
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper modules for testing

@@ -1,6 +1,6 @@
-# inf-engine Examples
+# plait Examples
 
-This directory contains practical examples demonstrating the inf-engine API.
+This directory contains practical examples demonstrating the plait API.
 
 ## Examples
 
@@ -98,8 +98,8 @@ uv run python examples/07_execution_settings.py
 For production code, use `bind()` or `ExecutionSettings`:
 
 ```python
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.resources.config import ResourceConfig, EndpointConfig
+from plait.execution.context import ExecutionSettings
+from plait.resources.config import ResourceConfig, EndpointConfig
 
 # Configure resources
 resources = ResourceConfig(

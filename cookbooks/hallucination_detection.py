@@ -58,16 +58,16 @@ from rich.progress import (
 from rich.table import Table
 from rich.text import Text
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.optimization import (
+from plait.execution.context import ExecutionSettings
+from plait.module import InferenceModule, LLMInference
+from plait.optimization import (
     SFAOptimizer,
     VerifierLoss,
 )
-from inf_engine.optimization.backward import BackwardResult
-from inf_engine.optimization.feedback import Feedback
-from inf_engine.parameter import Parameter
-from inf_engine.resources.config import (
+from plait.optimization.backward import BackwardResult
+from plait.optimization.feedback import Feedback
+from plait.parameter import Parameter
+from plait.resources.config import (
     OpenAIEndpointConfig,
     ResourceConfig,
 )
@@ -643,7 +643,7 @@ async def train_hallucination_detector() -> None:
     console.print()
     console.print(
         Panel.fit(
-            "[bold cyan]inf-engine: Hallucination Detection Training[/bold cyan]\n\n"
+            "[bold cyan]plait: Hallucination Detection Training[/bold cyan]\n\n"
             "Training a hallucination detector on HaluBench dataset\n"
             "[dim]Batch size: 32 | Forward: gpt-4o-mini | Optimizer: gpt-5.2[/dim]",
             border_style="cyan",

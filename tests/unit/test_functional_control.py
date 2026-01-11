@@ -3,8 +3,8 @@
 import asyncio
 from types import SimpleNamespace
 
-import inf_engine.functional as F
-from inf_engine.values import Value, ValueKind, valueify
+import plait.functional as F
+from plait.values import Value, ValueKind, valueify
 
 
 def test_with_meta_merges() -> None:

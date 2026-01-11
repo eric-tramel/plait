@@ -1,11 +1,11 @@
 """Unit tests for the Tracer class."""
 
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
-from inf_engine.tracing.context import get_trace_context
-from inf_engine.tracing.proxy import Proxy
-from inf_engine.tracing.tracer import InputNode, Tracer
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
+from plait.tracing.context import get_trace_context
+from plait.tracing.proxy import Proxy
+from plait.tracing.tracer import InputNode, Tracer
 
 
 class TestTracerInstantiation:
@@ -87,7 +87,7 @@ class TestTracerIdGeneration:
         tracer = Tracer()
 
         # Create a custom module subclass
-        from inf_engine.module import InferenceModule
+        from plait.module import InferenceModule
 
         class CustomModule(InferenceModule):
             def forward(self, x: str) -> str:
@@ -102,7 +102,7 @@ class TestTracerIdGeneration:
         """Different module types get their own IDs with shared counter."""
         tracer = Tracer()
 
-        from inf_engine.module import InferenceModule
+        from plait.module import InferenceModule
 
         class ModuleA(InferenceModule):
             def forward(self, x: str) -> str:
@@ -430,7 +430,7 @@ class TestRecordCall:
 
     def test_record_call_returns_value(self) -> None:
         """record_call returns a Value object."""
-        from inf_engine.values import Value
+        from plait.values import Value
 
         tracer = Tracer()
         module = LLMInference(alias="test")
@@ -607,7 +607,7 @@ class TestRecordCall:
 
     def test_record_call_with_custom_module_class(self) -> None:
         """record_call works with custom module subclasses."""
-        from inf_engine.module import InferenceModule
+        from plait.module import InferenceModule
 
         class CustomProcessor(InferenceModule):
             def forward(self, x: str) -> str:
@@ -850,7 +850,7 @@ class TestRecordGetitem:
 
         tracer.record_getitem(input_proxy, "my_key")
 
-        from inf_engine.tracing.tracer import GetItemOp
+        from plait.tracing.tracer import GetItemOp
 
         node = tracer.nodes["getitem_1"]
         assert isinstance(node.module, GetItemOp)
@@ -863,7 +863,7 @@ class TestRecordGetitem:
 
         tracer.record_getitem(input_proxy, 0)
 
-        from inf_engine.tracing.tracer import GetItemOp
+        from plait.tracing.tracer import GetItemOp
 
         node = tracer.nodes["getitem_1"]
         assert isinstance(node.module, GetItemOp)
@@ -942,7 +942,7 @@ class TestRecordIter:
 
         tracer.record_iter(input_proxy)
 
-        from inf_engine.tracing.tracer import IterOp
+        from plait.tracing.tracer import IterOp
 
         node = tracer.nodes["iter_1"]
         assert isinstance(node.module, IterOp)
@@ -996,7 +996,7 @@ class TestRecordMethod:
 
         tracer.record_method(input_proxy, "items")
 
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         node = tracer.nodes["method_1"]
         assert isinstance(node.module, MethodOp)
@@ -1004,7 +1004,7 @@ class TestRecordMethod:
 
     def test_record_method_keys(self) -> None:
         """record_method works with 'keys'."""
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})
@@ -1018,7 +1018,7 @@ class TestRecordMethod:
 
     def test_record_method_values(self) -> None:
         """record_method works with 'values'."""
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})
@@ -1032,7 +1032,7 @@ class TestRecordMethod:
 
     def test_record_method_items(self) -> None:
         """record_method works with 'items'."""
-        from inf_engine.tracing.tracer import MethodOp
+        from plait.tracing.tracer import MethodOp
 
         tracer = Tracer()
         input_proxy = tracer._create_input_node("data", {"a": 1})

@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from inf_engine.profiling import (
+from plait.profiling import (
     EndpointStats,
     ProfilerStatistics,
     TraceEvent,
@@ -432,7 +432,7 @@ class TestTraceProfilerExport:
 
         content = json.loads(output_path.read_text())
         metadata = content["metadata"]
-        assert "inf_engine_version" in metadata
+        assert "plait_version" in metadata
         assert "start_time" in metadata
         assert "total_events" in metadata
 

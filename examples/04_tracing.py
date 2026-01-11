@@ -8,10 +8,10 @@ directed acyclic graph (DAG) that can be analyzed and executed efficiently.
 Run with: python examples/04_tracing.py
 """
 
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
-from inf_engine.tracing.proxy import Proxy
-from inf_engine.tracing.tracer import Tracer
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
+from plait.tracing.proxy import Proxy
+from plait.tracing.tracer import Tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 1: Basic Tracing
@@ -246,7 +246,7 @@ def demo_node_inspection() -> None:
     for input_id in graph.input_ids:
         node = graph.nodes[input_id]
         # Access the stored input value
-        from inf_engine.tracing.tracer import InputNode
+        from plait.tracing.tracer import InputNode
 
         if isinstance(node.module, InputNode):
             value = node.module.value
@@ -290,7 +290,7 @@ def demo_multiple_traces() -> None:
     print(f"      Graph 2: {len(graph2.nodes)} nodes")
 
     # Show that input values differ
-    from inf_engine.tracing.tracer import InputNode
+    from plait.tracing.tracer import InputNode
 
     input1 = graph1.nodes["input:input_0"].module
     input2 = graph2.nodes["input:input_0"].module
@@ -365,7 +365,7 @@ def demo_graph_visualization() -> None:
     print("\n8. Graph Visualization (DOT Format)")
     print("-" * 40)
 
-    from inf_engine.graph import visualize_graph
+    from plait.graph import visualize_graph
 
     # Create a diamond pattern pipeline for visualization
     module = DiamondPipeline()
@@ -396,7 +396,7 @@ def demo_graph_visualization() -> None:
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("inf-engine: Tracing and DAG Capture Examples")
+    print("plait: Tracing and DAG Capture Examples")
     print("=" * 60)
 
     demo_basic_tracing()

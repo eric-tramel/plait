@@ -6,9 +6,9 @@ Tests cover BackwardContext creation, reason() method, and BackwardResult.
 
 import pytest
 
-from inf_engine.graph import InferenceGraph
-from inf_engine.optimization.backward import BackwardContext, BackwardResult
-from inf_engine.optimization.feedback import Feedback
+from plait.graph import InferenceGraph
+from plait.optimization.backward import BackwardContext, BackwardResult
+from plait.optimization.feedback import Feedback
 
 
 class TestBackwardContextCreation:
@@ -38,7 +38,7 @@ class TestBackwardContextCreation:
 
     def test_backward_context_with_reasoning_llm(self) -> None:
         """BackwardContext can be created with optional reasoning_llm."""
-        from inf_engine.module import LLMInference
+        from plait.module import LLMInference
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         feedback = Feedback(content="Needs work", score=0.4)

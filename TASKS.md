@@ -1,6 +1,6 @@
 # TASKS.md
 
-A line-by-line breakdown of PRs to implement inf-engine, in order.
+A line-by-line breakdown of PRs to implement plait, in order.
 
 Each PR represents a single, tested, reviewable increment of functionality.
 
@@ -41,15 +41,22 @@ make ci
 # 5. Update CHANGELOG
 # Add entry under [Unreleased]
 
-# 6. Commit
+# 6. Open new issues for discovered work
+# If you discover bugs, TODOs, or follow-up work during implementation,
+# use /new-issue to create tracking issues
+
+# 7. Commit
 git add .
 git commit -m "feat: description"
 
-# 7. Push and create PR
+# 8. Push and create PR
 git push -u origin feat/feature-name
 gh pr create --title "PR-XXX: Description" --body "..."
 
-# 8. After review and merge
+# 9. After review and merge
 git checkout main
 git pull
+
+# 10. Close the issue
+# If this PR was fixing an issue, suggest /close-issue to close it
 ```

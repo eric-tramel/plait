@@ -1,6 +1,6 @@
 # InferenceModule System
 
-The `InferenceModule` is the core abstraction in inf-engine, directly inspired by PyTorch's `nn.Module`. It provides a familiar interface for defining composable inference pipelines.
+The `InferenceModule` is the core abstraction in plait, directly inspired by PyTorch's `nn.Module`. It provides a familiar interface for defining composable inference pipelines.
 
 ## Design Goals
 
@@ -173,8 +173,8 @@ class InferenceModule:
         - Batch input: returns list[T]
         """
         import asyncio
-        from inf_engine.execution import run
-        from inf_engine.execution.context import get_execution_settings
+        from plait.execution import run
+        from plait.execution.context import get_execution_settings
 
         # Get context settings
         settings = get_execution_settings()
@@ -241,8 +241,8 @@ class InferenceModule:
             BatchResult for each completed input.
         """
         import asyncio
-        from inf_engine.execution import run
-        from inf_engine.execution.context import get_execution_settings
+        from plait.execution import run
+        from plait.execution.context import get_execution_settings
 
         settings = get_execution_settings()
         preserve_order = settings.preserve_order if settings else False
@@ -703,7 +703,7 @@ What specific changes to the instructions would improve the output?
 
 ## Module Execution
 
-inf-engine provides multiple execution patterns. See `execution.md` → "Execution Patterns" for complete details.
+plait provides multiple execution patterns. See `execution.md` → "Execution Patterns" for complete details.
 
 ### Execution Patterns Overview
 
@@ -722,7 +722,7 @@ inf-engine provides multiple execution patterns. See `execution.md` → "Executi
 Bind resources to a module once, then call it directly:
 
 ```python
-from inf_engine import ResourceConfig
+from plait import ResourceConfig
 
 # Configure resources
 resources = ResourceConfig({
@@ -802,7 +802,7 @@ See `optimization.md` → "Batch Training API" for complete training documentati
 For cases requiring custom configuration per-call:
 
 ```python
-from inf_engine import run, ResourceConfig
+from plait import run, ResourceConfig
 
 # Configure resources
 resources = ResourceConfig({...})

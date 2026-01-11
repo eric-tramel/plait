@@ -51,17 +51,17 @@ import os
 import sys
 from pathlib import Path
 
-from inf_engine.execution.context import ExecutionSettings
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.optimization import (
+from plait.execution.context import ExecutionSettings
+from plait.module import InferenceModule, LLMInference
+from plait.optimization import (
     CompositeLoss,
     LLMRubricLoss,
     RubricLevel,
     SFAOptimizer,
     VerifierLoss,
 )
-from inf_engine.parameter import Parameter
-from inf_engine.resources.config import OpenAIEndpointConfig, ResourceConfig
+from plait.parameter import Parameter
+from plait.resources.config import OpenAIEndpointConfig, ResourceConfig
 
 # =============================================================================
 # Multi-Step Research Pipeline
@@ -257,7 +257,7 @@ async def train_research_pipeline() -> None:
         sys.exit(1)
 
     print("=" * 70)
-    print("inf-engine: Multi-Step Pipeline Optimization")
+    print("plait: Multi-Step Pipeline Optimization")
     print("=" * 70)
     print("\nOptimizing a 3-step research pipeline:")
     print("  Query Analyzer -> Researcher -> Synthesizer")

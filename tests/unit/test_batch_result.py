@@ -2,7 +2,7 @@
 
 import pytest
 
-from inf_engine.execution.types import BatchResult
+from plait.execution.types import BatchResult
 
 
 class TestBatchResultCreation:

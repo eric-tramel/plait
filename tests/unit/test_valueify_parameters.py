@@ -1,8 +1,8 @@
 """Unit tests for Parameter lifting to Value with stable refs."""
 
-from inf_engine.module import InferenceModule
-from inf_engine.parameter import Parameter
-from inf_engine.values import Value, ValueKind, valueify
+from plait.module import InferenceModule
+from plait.parameter import Parameter
+from plait.values import Value, ValueKind, valueify
 
 
 class TestValueifyParameter:
@@ -176,7 +176,7 @@ class TestInputRefFormat:
 
     def test_input_ref_in_collect_refs(self) -> None:
         """collect_refs works with input: refs."""
-        from inf_engine.values import collect_refs
+        from plait.values import collect_refs
 
         v = Value(ValueKind.TEXT, "user input", ref="input:query")
         refs = collect_refs(v)

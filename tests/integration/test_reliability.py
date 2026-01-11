@@ -13,14 +13,14 @@ import time
 
 import pytest
 
-from inf_engine.clients.base import LLMClient
-from inf_engine.errors import TransientError
-from inf_engine.execution.scheduler import RateLimiterProtocol, Scheduler
-from inf_engine.execution.state import ExecutionState, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.tracing.tracer import InputNode
-from inf_engine.types import LLMRequest, LLMResponse
+from plait.clients.base import LLMClient
+from plait.errors import TransientError
+from plait.execution.scheduler import RateLimiterProtocol, Scheduler
+from plait.execution.state import ExecutionState, TaskStatus
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import InferenceModule, LLMInference
+from plait.tracing.tracer import InputNode
+from plait.types import LLMRequest, LLMResponse
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Helpers

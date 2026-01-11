@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from inf_engine.graph import InferenceGraph
-from inf_engine.optimization.feedback import Feedback, FeedbackType
-from inf_engine.optimization.loss import (
+from plait.graph import InferenceGraph
+from plait.optimization.feedback import Feedback, FeedbackType
+from plait.optimization.loss import (
     CompositeLoss,
     ContrastiveLoss,
     HumanFeedbackLoss,
@@ -25,7 +25,7 @@ from inf_engine.optimization.loss import (
     RubricResponse,
     VerifierLoss,
 )
-from inf_engine.optimization.record import ForwardRecord
+from plait.optimization.record import ForwardRecord
 
 
 class TestLossABC:
@@ -257,7 +257,7 @@ class TestLossCallSignature:
     @pytest.mark.asyncio
     async def test_call_with_traced_output(self) -> None:
         """Loss extracts value and record from TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss()
         record = ForwardRecord(
@@ -305,7 +305,7 @@ class TestMultipleLossInstances:
     @pytest.mark.asyncio
     async def test_independent_records(self) -> None:
         """Each loss call with TracedOutput has independent records."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss()
         record1 = ForwardRecord(
@@ -392,7 +392,7 @@ class TestVerifierLoss:
     @pytest.mark.asyncio
     async def test_verifier_loss_with_traced_output(self) -> None:
         """VerifierLoss attaches record from TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = VerifierLoss(verifier=lambda x: (True, ""))
         record = ForwardRecord(
@@ -528,7 +528,7 @@ class TestLLMJudge:
     @pytest.mark.asyncio
     async def test_llm_judge_with_traced_output(self) -> None:
         """LLMJudge attaches record from TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         judge = LLMJudge()
         judge.judge = AsyncMock(return_value="Feedback")
@@ -670,7 +670,7 @@ class TestCompositeLoss:
     @pytest.mark.asyncio
     async def test_composite_loss_with_traced_output(self) -> None:
         """CompositeLoss attaches record from TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = VerifierLoss(verifier=lambda x: (True, ""))
         composite = CompositeLoss([(loss, 1.0)])
@@ -957,7 +957,7 @@ class TestHumanFeedbackLoss:
     @pytest.mark.asyncio
     async def test_human_feedback_loss_with_traced_output(self) -> None:
         """HumanFeedbackLoss attaches record from TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = HumanFeedbackLoss()
         record = ForwardRecord(
@@ -1087,7 +1087,7 @@ class TestLLMRubricLoss:
     @pytest.mark.asyncio
     async def test_llm_rubric_loss_with_traced_output(self) -> None:
         """LLMRubricLoss attaches record from TracedOutput."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
         loss.judge = AsyncMock(
@@ -1698,7 +1698,7 @@ class TestUnifiedBatchAPI:
     @pytest.mark.asyncio
     async def test_batch_extracts_and_aggregates_records(self) -> None:
         """Batch loss extracts records from TracedOutputs and aggregates."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss()
 
@@ -1779,7 +1779,7 @@ class TestUnifiedBatchAPI:
     @pytest.mark.asyncio
     async def test_traced_output_not_treated_as_batch(self) -> None:
         """Single TracedOutput is not treated as batch."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss(always_score=0.7)
         record = self._create_record()
@@ -1817,7 +1817,7 @@ class TestUnifiedBatchAPI:
     @pytest.mark.asyncio
     async def test_backward_propagates_to_all_batch_records(self) -> None:
         """backward() on aggregated feedback propagates to all records."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss()
 
@@ -1869,7 +1869,7 @@ class TestExtractValueAndRecord:
 
     def test_extract_from_traced_output(self) -> None:
         """Extract from TracedOutput returns value and record."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss()
         inner_record = self._create_record()
@@ -1882,7 +1882,7 @@ class TestExtractValueAndRecord:
 
     def test_extract_explicit_record_takes_precedence(self) -> None:
         """Explicit record takes precedence over TracedOutput's record."""
-        from inf_engine.optimization.record import TracedOutput
+        from plait.optimization.record import TracedOutput
 
         loss = SimpleLoss()
         traced_record = self._create_record()
@@ -1907,7 +1907,7 @@ class TestExtractValueAndRecord:
 
     def test_extract_from_value_object(self) -> None:
         """Extract from Value object returns unwrapped payload."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         value_obj = Value(kind=ValueKind.TEXT, payload="payload content", ref="node_1")
@@ -1919,7 +1919,7 @@ class TestExtractValueAndRecord:
 
     def test_extract_from_value_with_explicit_record(self) -> None:
         """Extract from Value with explicit record preserves record."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         explicit_record = self._create_record()
@@ -1932,8 +1932,8 @@ class TestExtractValueAndRecord:
 
     def test_extract_from_traced_output_with_nested_value(self) -> None:
         """Extract from TracedOutput containing Value unwraps both."""
-        from inf_engine.optimization.record import TracedOutput
-        from inf_engine.values import Value, ValueKind
+        from plait.optimization.record import TracedOutput
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         inner_record = self._create_record()
@@ -1947,7 +1947,7 @@ class TestExtractValueAndRecord:
 
     def test_extract_unwraps_nested_values(self) -> None:
         """Extract unwraps deeply nested Value objects."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         nested = {"key": Value(kind=ValueKind.TEXT, payload="inner", ref="node_1")}
@@ -1964,7 +1964,7 @@ class TestLossWithValueObjects:
     @pytest.mark.asyncio
     async def test_loss_call_with_value_output(self) -> None:
         """Loss can be called with Value object as output."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         value_obj = Value(kind=ValueKind.TEXT, payload="output", ref="node_1")
@@ -1977,7 +1977,7 @@ class TestLossWithValueObjects:
     @pytest.mark.asyncio
     async def test_loss_call_with_value_target(self) -> None:
         """Loss can be called with Value object as target."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         value_target = Value(kind=ValueKind.TEXT, payload="target", ref="node_1")
@@ -1989,7 +1989,7 @@ class TestLossWithValueObjects:
     @pytest.mark.asyncio
     async def test_loss_call_with_matching_values(self) -> None:
         """Loss correctly evaluates matching Value payloads."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = SimpleLoss()
         output = Value(kind=ValueKind.TEXT, payload="same", ref="node_1")
@@ -2008,7 +2008,7 @@ class TestLossWithValueObjects:
             assert isinstance(output, str)
             return output == "hello", f"Got: {output}"
 
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         loss = VerifierLoss(verifier=verifier)
         output = Value(kind=ValueKind.TEXT, payload="hello", ref="node_1")
@@ -2020,7 +2020,7 @@ class TestLossWithValueObjects:
     @pytest.mark.asyncio
     async def test_composite_loss_with_values(self) -> None:
         """CompositeLoss works with Value objects."""
-        from inf_engine.values import Value, ValueKind
+        from plait.values import Value, ValueKind
 
         # CompositeLoss takes a list of (loss, weight) tuples
         loss = CompositeLoss(losses=[(SimpleLoss(always_score=0.5), 1.0)])

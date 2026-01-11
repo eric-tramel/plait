@@ -1,4 +1,4 @@
-"""Tests for inf-engine error types.
+"""Tests for plait error types.
 
 Tests the exception hierarchy and error attributes to ensure
 proper error handling and recovery capabilities.
@@ -6,7 +6,7 @@ proper error handling and recovery capabilities.
 
 import pytest
 
-from inf_engine.errors import (
+from plait.errors import (
     ExecutionError,
     InfEngineError,
     RateLimitError,
@@ -51,13 +51,13 @@ class TestRateLimitError:
         assert str(error) == "Too many requests"
         assert error.retry_after is None
 
-    def test_inheritance_from_inf_engine_error(self) -> None:
+    def test_inheritance_from_plait_error(self) -> None:
         """RateLimitError inherits from InfEngineError."""
         error = RateLimitError("test")
         assert isinstance(error, InfEngineError)
         assert isinstance(error, Exception)
 
-    def test_can_catch_as_inf_engine_error(self) -> None:
+    def test_can_catch_as_plait_error(self) -> None:
         """RateLimitError can be caught as InfEngineError."""
         with pytest.raises(InfEngineError):
             raise RateLimitError("rate limited", retry_after=5.0)
@@ -82,13 +82,13 @@ class TestTransientError:
         assert str(error) == "Connection timeout"
         assert error.message == "Connection timeout"
 
-    def test_inheritance_from_inf_engine_error(self) -> None:
+    def test_inheritance_from_plait_error(self) -> None:
         """TransientError inherits from InfEngineError."""
         error = TransientError("timeout")
         assert isinstance(error, InfEngineError)
         assert isinstance(error, Exception)
 
-    def test_can_catch_as_inf_engine_error(self) -> None:
+    def test_can_catch_as_plait_error(self) -> None:
         """TransientError can be caught as InfEngineError."""
         with pytest.raises(InfEngineError):
             raise TransientError("connection failed")
@@ -161,13 +161,13 @@ class TestExecutionError:
         assert error.node_id == "llm_node_42"
         assert error.cause is cause
 
-    def test_inheritance_from_inf_engine_error(self) -> None:
+    def test_inheritance_from_plait_error(self) -> None:
         """ExecutionError inherits from InfEngineError."""
         error = ExecutionError("test")
         assert isinstance(error, InfEngineError)
         assert isinstance(error, Exception)
 
-    def test_can_catch_as_inf_engine_error(self) -> None:
+    def test_can_catch_as_plait_error(self) -> None:
         """ExecutionError can be caught as InfEngineError."""
         with pytest.raises(InfEngineError):
             raise ExecutionError("execution failed", node_id="n1")
@@ -176,7 +176,7 @@ class TestExecutionError:
 class TestErrorHierarchy:
     """Tests for the exception hierarchy as a whole."""
 
-    def test_catch_all_inf_engine_errors(self) -> None:
+    def test_catch_all_plait_errors(self) -> None:
         """All error types can be caught with InfEngineError."""
         errors = [
             InfEngineError("base error"),

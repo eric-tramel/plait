@@ -5,8 +5,8 @@ This file contains tests for:
 - PR-004 (introspection): children(), modules(), parameters(), named_* iterators
 """
 
-from inf_engine.module import InferenceModule
-from inf_engine.parameter import Parameter
+from plait.module import InferenceModule
+from plait.parameter import Parameter
 
 
 class TestInferenceModuleInstantiation:
@@ -1959,9 +1959,9 @@ class TestCallWithTraceContext:
 
     def test_call_with_trace_context_returns_value(self) -> None:
         """With trace context, __call__ returns a Value."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
-        from inf_engine.values import Value
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
+        from plait.values import Value
 
         class Doubler(InferenceModule):
             def __init__(self) -> None:
@@ -1980,8 +1980,8 @@ class TestCallWithTraceContext:
 
     def test_call_with_trace_context_does_not_call_forward(self) -> None:
         """With trace context, forward() is not called."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Counter(InferenceModule):
             def __init__(self) -> None:
@@ -2003,8 +2003,8 @@ class TestCallWithTraceContext:
 
     def test_call_with_trace_context_records_node(self) -> None:
         """With trace context, __call__ records a node in the tracer."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Doubler(InferenceModule):
             def __init__(self) -> None:
@@ -2027,8 +2027,8 @@ class TestCallWithTraceContext:
 
     def test_call_with_proxy_input_creates_dependency(self) -> None:
         """When called with a Proxy input, creates a dependency edge."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Processor(InferenceModule):
             def __init__(self) -> None:
@@ -2056,8 +2056,8 @@ class TestCallWithTraceContext:
 
     def test_call_with_multiple_proxy_inputs(self) -> None:
         """Multiple Proxy inputs all create dependencies."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Combiner(InferenceModule):
             def __init__(self) -> None:
@@ -2082,8 +2082,8 @@ class TestCallWithTraceContext:
 
     def test_call_with_mixed_proxy_and_literal_args(self) -> None:
         """Mix of Proxy and literal arguments is handled correctly."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Formatter(InferenceModule):
             def __init__(self) -> None:
@@ -2110,8 +2110,8 @@ class TestCallWithTraceContext:
 
     def test_call_with_kwarg_proxy_creates_dependency(self) -> None:
         """Proxy passed as keyword argument creates dependency."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Greeter(InferenceModule):
             def __init__(self) -> None:
@@ -2134,8 +2134,8 @@ class TestCallWithTraceContext:
 
     def test_sequential_calls_create_chain(self) -> None:
         """Sequential module calls create a dependency chain."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Step1(InferenceModule):
             def __init__(self) -> None:
@@ -2175,8 +2175,8 @@ class TestCallWithTraceContext:
 
     def test_parallel_calls_from_same_input(self) -> None:
         """Parallel module calls from same input create fan-out."""
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class ModuleA(InferenceModule):
             def __init__(self) -> None:
@@ -2220,8 +2220,8 @@ class TestCallWithTraceContext:
         """Nested module calls are all recorded during tracing."""
         from typing import Any
 
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
 
         class Inner(InferenceModule):
             def __init__(self) -> None:
@@ -2255,10 +2255,10 @@ class TestCallWithTraceContext:
 
     def test_llm_inference_with_trace_context(self) -> None:
         """LLMInference works correctly with trace context."""
-        from inf_engine.module import LLMInference
-        from inf_engine.tracing.context import trace_context
-        from inf_engine.tracing.tracer import Tracer
-        from inf_engine.values import Value
+        from plait.module import LLMInference
+        from plait.tracing.context import trace_context
+        from plait.tracing.tracer import Tracer
+        from plait.values import Value
 
         llm = LLMInference(alias="test_llm", system_prompt="Be helpful.")
         tracer = Tracer()
@@ -2279,8 +2279,8 @@ class TestCallWithTraceContext:
 
     def test_context_cleared_after_block(self) -> None:
         """Trace context is cleared after exiting the block."""
-        from inf_engine.tracing.context import get_trace_context, trace_context
-        from inf_engine.tracing.tracer import Tracer
+        from plait.tracing.context import get_trace_context, trace_context
+        from plait.tracing.tracer import Tracer
 
         class Doubler(InferenceModule):
             def __init__(self) -> None:
@@ -2661,9 +2661,9 @@ class TestInferenceModuleBackward:
     @staticmethod
     def _make_context(inputs: dict) -> "BackwardContext":
         """Create a BackwardContext for testing."""
-        from inf_engine.graph import InferenceGraph
-        from inf_engine.optimization.backward import BackwardContext
-        from inf_engine.optimization.feedback import Feedback
+        from plait.graph import InferenceGraph
+        from plait.optimization.backward import BackwardContext
+        from plait.optimization.feedback import Feedback
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         return BackwardContext(
@@ -2691,8 +2691,8 @@ class TestInferenceModuleBackward:
         """Default backward() passes feedback unchanged to all inputs."""
         import asyncio
 
-        from inf_engine.optimization.backward import BackwardResult
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.backward import BackwardResult
+        from plait.optimization.feedback import Feedback
 
         class TestModule(InferenceModule):
             def forward(self, x: str) -> str:
@@ -2716,7 +2716,7 @@ class TestInferenceModuleBackward:
         """Default backward() produces no parameter feedback."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         module = InferenceModule()
         feedback = Feedback(content="Test")
@@ -2736,7 +2736,7 @@ class TestInferenceModuleBackward:
         """Default backward() handles empty inputs dict."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback
+        from plait.optimization.feedback import Feedback
 
         class TestModule(InferenceModule):
             def forward(self) -> str:
@@ -2754,7 +2754,7 @@ class TestInferenceModuleBackward:
         """Default backward() preserves all feedback properties."""
         import asyncio
 
-        from inf_engine.optimization.feedback import Feedback, FeedbackType
+        from plait.optimization.feedback import Feedback, FeedbackType
 
         class TestModule(InferenceModule):
             def forward(self, x: str) -> str:
@@ -2779,4 +2779,4 @@ class TestInferenceModuleBackward:
 
 # Import for type hints
 if True:  # Avoid circular import at runtime
-    from inf_engine.optimization.backward import BackwardContext, BackwardResult
+    from plait.optimization.backward import BackwardContext, BackwardResult

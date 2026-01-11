@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from inf_engine.execution.checkpoint import Checkpoint, CheckpointManager
-from inf_engine.execution.state import TaskResult
+from plait.execution.checkpoint import Checkpoint, CheckpointManager
+from plait.execution.state import TaskResult
 
 
 class TestCheckpointCreation:
@@ -665,8 +665,8 @@ class TestCheckpointIsCompatibleWith:
 
     def test_compatible_with_module_same_structure(self) -> None:
         """is_compatible_with() accepts a module and traces it internally."""
-        from inf_engine.module import InferenceModule
-        from inf_engine.tracing.tracer import Tracer
+        from plait.module import InferenceModule
+        from plait.tracing.tracer import Tracer
 
         class SimpleModule(InferenceModule):
             def forward(self, x: str) -> str:
@@ -691,8 +691,8 @@ class TestCheckpointIsCompatibleWith:
 
     def test_compatible_with_module_different_structure(self) -> None:
         """is_compatible_with() detects different module structures."""
-        from inf_engine.module import InferenceModule
-        from inf_engine.tracing.tracer import Tracer
+        from plait.module import InferenceModule
+        from plait.tracing.tracer import Tracer
 
         class ModuleA(InferenceModule):
             def __init__(self):
@@ -729,7 +729,7 @@ class TestCheckpointIsCompatibleWith:
 
     def test_compatible_with_module_legacy_checkpoint(self) -> None:
         """is_compatible_with() returns True for legacy checkpoints with modules."""
-        from inf_engine.module import InferenceModule
+        from plait.module import InferenceModule
 
         class SimpleModule(InferenceModule):
             def forward(self, x: str) -> str:

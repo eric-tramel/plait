@@ -1,7 +1,7 @@
 """Unit tests for numeric functional operations."""
 
-import inf_engine.functional as F
-from inf_engine.values import Value, ValueKind, valueify
+import plait.functional as F
+from plait.values import Value, ValueKind, valueify
 
 
 def test_add_sub_mul_div() -> None:

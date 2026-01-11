@@ -48,12 +48,12 @@ class Value:
 
     def __getitem__(self, key: str | int) -> "Value":
         """Graph-aware structured access (delegates to F.select)."""
-        from inf_engine import functional as F
+        from plait import functional as F
         return F.select(self, key)
 
     def get(self, key: str | int, default: Any | None = None) -> "Value":
         """Graph-aware structured access with default."""
-        from inf_engine import functional as F
+        from plait import functional as F
         return F.select(self, key, default=default)
 ```
 
@@ -217,7 +217,7 @@ similar to `torch.nn.functional` for stateless, graph-aware operations on
 `Value`s:
 
 ```python
-import inf_engine.functional as F
+import plait.functional as F
 
 template = valueify("Summarize: {text}", kind=ValueKind.FSTRING)
 vars = valueify({"text": "long doc"})

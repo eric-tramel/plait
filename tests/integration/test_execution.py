@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from inf_engine.execution.executor import run
-from inf_engine.execution.scheduler import Scheduler
-from inf_engine.execution.state import ExecutionState, TaskResult, TaskStatus
-from inf_engine.module import InferenceModule
-from inf_engine.tracing.tracer import Tracer
+from plait.execution.executor import run
+from plait.execution.scheduler import Scheduler
+from plait.execution.state import ExecutionState, TaskResult, TaskStatus
+from plait.module import InferenceModule
+from plait.tracing.tracer import Tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Helpers - Mock Modules for Testing

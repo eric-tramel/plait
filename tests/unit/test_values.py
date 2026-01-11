@@ -2,7 +2,7 @@
 
 import pytest
 
-from inf_engine.values import (
+from plait.values import (
     Value,
     ValueKind,
     ValueRef,

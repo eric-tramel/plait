@@ -4,10 +4,10 @@ import asyncio
 
 import pytest
 
-from inf_engine.execution.state import ExecutionState, TaskResult, TaskStatus
-from inf_engine.graph import GraphNode, InferenceGraph, NodeRef
-from inf_engine.module import LLMInference
-from inf_engine.tracing.tracer import InputNode
+from plait.execution.state import ExecutionState, TaskResult, TaskStatus
+from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.module import LLMInference
+from plait.tracing.tracer import InputNode
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper functions for creating test graphs
@@ -420,7 +420,7 @@ class TestExecutionStateNestedResolution:
 
     def test_resolve_value_nested_dict(self) -> None:
         """_resolve_value handles nested dicts with ValueRef."""
-        from inf_engine.values import ValueRef
+        from plait.values import ValueRef
 
         graph = create_linear_graph()
         state = ExecutionState(graph)
@@ -439,7 +439,7 @@ class TestExecutionStateNestedResolution:
 
     def test_resolve_value_nested_list(self) -> None:
         """_resolve_value handles nested lists with ValueRef."""
-        from inf_engine.values import ValueRef
+        from plait.values import ValueRef
 
         graph = create_linear_graph()
         state = ExecutionState(graph)
@@ -457,7 +457,7 @@ class TestExecutionStateNestedResolution:
 
     def test_resolve_value_mixed_nesting(self) -> None:
         """_resolve_value handles mixed dict/list nesting."""
-        from inf_engine.values import ValueRef
+        from plait.values import ValueRef
 
         graph = create_linear_graph()
         state = ExecutionState(graph)
@@ -489,7 +489,7 @@ class TestExecutionStateNestedResolution:
 
     def test_resolve_args_with_nested_valuerefs(self) -> None:
         """_resolve_args handles nested ValueRefs in args tuple."""
-        from inf_engine.values import ValueRef
+        from plait.values import ValueRef
 
         graph = create_linear_graph()
         state = ExecutionState(graph)
@@ -507,7 +507,7 @@ class TestExecutionStateNestedResolution:
 
     def test_resolve_kwargs_with_nested_valuerefs(self) -> None:
         """_resolve_kwargs handles nested ValueRefs in kwargs."""
-        from inf_engine.values import ValueRef
+        from plait.values import ValueRef
 
         graph = create_linear_graph()
         state = ExecutionState(graph)
@@ -525,7 +525,7 @@ class TestExecutionStateNestedResolution:
 
     def test_resolve_value_preserves_tuples(self) -> None:
         """_resolve_value preserves tuple type in nested structures."""
-        from inf_engine.values import ValueRef
+        from plait.values import ValueRef
 
         graph = create_linear_graph()
         state = ExecutionState(graph)

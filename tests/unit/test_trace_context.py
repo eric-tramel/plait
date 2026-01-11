@@ -1,7 +1,7 @@
 """Unit tests for the trace context infrastructure."""
 
-from inf_engine.tracing.context import get_trace_context, trace_context
-from inf_engine.tracing.tracer import Tracer
+from plait.tracing.context import get_trace_context, trace_context
+from plait.tracing.tracer import Tracer
 
 
 class NamedTracer(Tracer):

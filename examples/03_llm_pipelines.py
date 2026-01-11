@@ -7,7 +7,7 @@ and can be traced to capture their execution graph.
 
 To execute these pipelines with real LLMs, configure resources and bind them:
 
-    from inf_engine.resources.config import ResourceConfig, EndpointConfig
+    from plait.resources.config import ResourceConfig, EndpointConfig
 
     resources = ResourceConfig(endpoints={
         "fast_llm": EndpointConfig(provider_api="openai", model="gpt-4o-mini"),
@@ -24,8 +24,8 @@ See 05_execution.py and 07_execution_settings.py for more execution patterns.
 Run with: python examples/03_llm_pipelines.py
 """
 
-from inf_engine.module import InferenceModule, LLMInference
-from inf_engine.parameter import Parameter
+from plait.module import InferenceModule, LLMInference
+from plait.parameter import Parameter
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example 1: Simple LLM Module
@@ -208,7 +208,7 @@ class DocumentProcessor(InferenceModule):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("inf-engine: LLM Pipelines Example")
+    print("plait: LLM Pipelines Example")
     print("=" * 60)
     print("\nThis demo shows pipeline structure and parameters.")
     print("To execute with real LLMs, configure resources and use bind().")

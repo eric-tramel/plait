@@ -2,7 +2,7 @@
 
 import pytest
 
-from inf_engine.parameter import Parameter
+from plait.parameter import Parameter
 
 
 class TestParameterCreation:
