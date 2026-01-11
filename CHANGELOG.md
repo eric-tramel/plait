@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- [#12](https://github.com/eric-tramel/plait/pull/12) Export core classes (`Module`, `LLMInference`, `Parameter`, `ExecutionSettings`) from package root for cleaner imports
 - [#11](https://github.com/eric-tramel/plait/pull/11) Add comprehensive README with project overview, quick start, examples, and development setup
 - Integrate `Value.ref` system with loss functions and backward pass for seamless value unwrapping
 - Add `OptimizationError` exception with retry logic for `SFAOptimizer` parameter updates
@@ -54,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add project scaffolding, design documentation, and example cookbooks
 
 ### Changed
+- [#12](https://github.com/eric-tramel/plait/pull/12) Update README examples to use `bind()` and `forward` pattern instead of `run()`, with `OpenAIEndpointConfig` for endpoint configuration
 - **BREAKING**: Rename `InferenceModule` to `Module` for simpler PyTorch-like naming (update imports: `from plait.module import Module`)
 - Replace scheduler busy-wait polling with `asyncio.Event` signaling
 - Standardize rate limiting units to RPM (requests per minute) across all APIs
