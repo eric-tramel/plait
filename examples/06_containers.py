@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Containers: PyTorch-style module containers for composing pipelines.
+"""Containers: PyTorch-style module and parameter containers.
 
 Demonstrates:
 - Sequential: Chaining modules together (output -> input)
 - ModuleList: List-like container for dynamic module management
 - ModuleDict: Dict-like container for named module access
+- ParameterList: List-like container for parameters
+- ParameterDict: Dict-like container for parameters
 - Parameter collection through nested containers
 - Combining containers for complex architectures
 
@@ -13,7 +15,15 @@ Run: python examples/06_containers.py
 
 from collections import OrderedDict
 
-from plait import Module, ModuleDict, ModuleList, Parameter, Sequential
+from plait import (
+    Module,
+    ModuleDict,
+    ModuleList,
+    Parameter,
+    ParameterDict,
+    ParameterList,
+    Sequential,
+)
 
 # --- Basic Modules for Demonstration ---
 
@@ -279,17 +289,153 @@ def demo_module_dict() -> None:
         print(f"      {key}: '{value}'")
 
 
+# --- Parameter Containers ---
+
+
+def demo_parameter_containers() -> None:
+    """Demonstrate ParameterList and ParameterDict containers."""
+    print("\n" + "=" * 60)
+    print("4. PARAMETER CONTAINERS")
+    print("=" * 60)
+
+    # ParameterList
+    print("\n4.1 ParameterList")
+    print("-" * 40)
+
+    class MultiPromptModule(Module):
+        """Module with multiple prompts stored in a ParameterList."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.prompts = ParameterList(
+                [
+                    Parameter("Be concise", description="Style prompt"),
+                    Parameter("Be helpful", description="Tone prompt"),
+                    Parameter("Be accurate", description="Quality prompt"),
+                ]
+            )
+
+        def forward(self, text: str) -> str:
+            # Combine all prompts
+            combined = " | ".join(p.value for p in self.prompts)
+            return f"[{combined}] {text}"
+
+    multi_prompt = MultiPromptModule()
+    print(f"   ParameterList length: {len(multi_prompt.prompts)}")
+    print("   Accessing by index:")
+    for i, param in enumerate(multi_prompt.prompts):
+        print(f"      prompts[{i}]: '{param.value}'")
+
+    # Mutations
+    print("\n   Mutations:")
+    multi_prompt.prompts.append(Parameter("Be creative", description="Creativity"))
+    print(f"   After append: {len(multi_prompt.prompts)} prompts")
+    multi_prompt.prompts.insert(0, Parameter("Be clear", description="Clarity"))
+    print(f"   After insert at 0: {len(multi_prompt.prompts)} prompts")
+
+    # Named parameters
+    print("\n   Named parameters:")
+    for name, param in multi_prompt.named_parameters():
+        print(f"      {name}: '{param.value}'")
+
+    # ParameterDict
+    print("\n4.2 ParameterDict")
+    print("-" * 40)
+
+    class TaskRouter(Module):
+        """Module with task-specific prompts stored in a ParameterDict."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.task_prompts = ParameterDict(
+                {
+                    "summarize": Parameter(
+                        "Summarize the following text concisely",
+                        description="Summary task prompt",
+                    ),
+                    "translate": Parameter(
+                        "Translate the following text to French",
+                        description="Translation task prompt",
+                    ),
+                    "analyze": Parameter(
+                        "Analyze the sentiment of the following text",
+                        description="Analysis task prompt",
+                    ),
+                }
+            )
+
+        def forward(self, task: str, text: str) -> str:
+            prompt = self.task_prompts[task].value
+            return f"{prompt}: {text}"
+
+    router = TaskRouter()
+    print(f"   ParameterDict keys: {list(router.task_prompts.keys())}")
+    print("   Accessing by key:")
+    for key in router.task_prompts:
+        print(f"      task_prompts['{key}']: '{router.task_prompts[key].value[:30]}...'")
+
+    # Add new task
+    print("\n   Mutations:")
+    router.task_prompts["classify"] = Parameter(
+        "Classify the following text into categories",
+        description="Classification task prompt",
+    )
+    print(f"   After adding 'classify': {list(router.task_prompts.keys())}")
+
+    # Named parameters
+    print("\n   Named parameters:")
+    for name, param in router.named_parameters():
+        print(f"      {name}: '{param.value[:25]}...'")
+
+    # Combined example
+    print("\n4.3 Mixing Parameter Containers")
+    print("-" * 40)
+
+    class ConfigurableAgent(Module):
+        """Module combining direct params, ParameterList, and ParameterDict."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            # Direct parameter
+            self.system_prompt = Parameter(
+                "You are a helpful assistant",
+                description="Main system prompt",
+            )
+            # List of style modifiers
+            self.style_hints = ParameterList(
+                [
+                    Parameter("formal", description="Formality level"),
+                    Parameter("technical", description="Technical level"),
+                ]
+            )
+            # Dict of task-specific overrides
+            self.overrides = ParameterDict(
+                {
+                    "code": Parameter("Use code blocks", description="Code override"),
+                    "math": Parameter("Use LaTeX", description="Math override"),
+                }
+            )
+
+        def forward(self, text: str) -> str:
+            return text
+
+    agent = ConfigurableAgent()
+    print("   All parameters collected:")
+    for name, param in agent.named_parameters():
+        print(f"      {name}: '{param.value}'")
+
+
 # --- Parameter Collection ---
 
 
 def demo_parameter_collection() -> None:
     """Demonstrate parameter collection through containers."""
     print("\n" + "=" * 60)
-    print("4. PARAMETER COLLECTION")
+    print("5. PARAMETER COLLECTION (Module Containers)")
     print("=" * 60)
 
     # Create nested structure with learnable parameters
-    print("\n4.1 Nested Container with Parameters")
+    print("\n5.1 Nested Container with Parameters")
     print("-" * 40)
 
     class NestedPipeline(Module):
@@ -318,7 +464,7 @@ def demo_parameter_collection() -> None:
         print(f"      {name}: '{param.value}'")
 
     # State dict
-    print("\n4.2 State Dict (Save/Load)")
+    print("\n5.2 State Dict (Save/Load)")
     print("-" * 40)
     state = pipeline.state_dict()
     print("   state_dict():")
@@ -344,11 +490,11 @@ def demo_parameter_collection() -> None:
 def demo_complex_architecture() -> None:
     """Demonstrate combining containers for complex architectures."""
     print("\n" + "=" * 60)
-    print("5. COMPLEX ARCHITECTURES")
+    print("6. COMPLEX ARCHITECTURES")
     print("=" * 60)
 
     # Encoder-Decoder with multiple layers
-    print("\n5.1 Encoder-Decoder Architecture")
+    print("\n6.1 Encoder-Decoder Architecture")
     print("-" * 40)
 
     class EncoderDecoder(Module):
@@ -383,7 +529,7 @@ def demo_complex_architecture() -> None:
     print(f"   Decoder layers: {len(enc_dec.decoder)}")
 
     # Multi-branch parallel processing
-    print("\n5.2 Multi-Branch Processing")
+    print("\n6.2 Multi-Branch Processing")
     print("-" * 40)
 
     class MultiBranch(Module):
@@ -416,7 +562,7 @@ def demo_complex_architecture() -> None:
     print(f"   Output: '{result}'")
 
     # Module tree
-    print("\n5.3 Module Tree")
+    print("\n6.3 Module Tree")
     print("-" * 40)
     print("   MultiBranch module tree:")
     for name, mod in multi_branch.named_modules():
@@ -431,23 +577,32 @@ def demo_complex_architecture() -> None:
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("plait: Container Modules")
+    print("plait: Container Modules and Parameters")
     print("=" * 60)
     print("\nContainers provide PyTorch-style composition:")
-    print("  - Sequential: Chain modules (output -> input)")
-    print("  - ModuleList: Dynamic list of modules")
-    print("  - ModuleDict: Named module access")
+    print("  Module Containers:")
+    print("    - Sequential: Chain modules (output -> input)")
+    print("    - ModuleList: Dynamic list of modules")
+    print("    - ModuleDict: Named module access")
+    print("  Parameter Containers:")
+    print("    - ParameterList: Dynamic list of parameters")
+    print("    - ParameterDict: Named parameter access")
 
     demo_sequential()
     demo_module_list()
     demo_module_dict()
+    demo_parameter_containers()
     demo_parameter_collection()
     demo_complex_architecture()
 
     print("\n" + "=" * 60)
     print("Container Summary:")
-    print("  Sequential(mod1, mod2, ...)     - Chain modules")
-    print("  Sequential(OrderedDict([...]))  - Named chain")
-    print("  ModuleList([mod1, mod2, ...])   - List of modules")
-    print("  ModuleDict({'key': mod, ...})   - Dict of modules")
+    print("  Module Containers:")
+    print("    Sequential(mod1, mod2, ...)     - Chain modules")
+    print("    Sequential(OrderedDict([...]))  - Named chain")
+    print("    ModuleList([mod1, mod2, ...])   - List of modules")
+    print("    ModuleDict({'key': mod, ...})   - Dict of modules")
+    print("  Parameter Containers:")
+    print("    ParameterList([p1, p2, ...])    - List of parameters")
+    print("    ParameterDict({'key': p, ...})  - Dict of parameters")
     print("=" * 60)
