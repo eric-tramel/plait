@@ -81,19 +81,6 @@ which can be optimized via backward passes.
 - `docs(scope):` - Documentation only
 - `chore(scope):` - Build, tooling, or maintenance
 
-### Review Requirements
-
-Every feature branch must meet these criteria before GO approval:
-- [ ] Include implementation code
-- [ ] Include unit tests (100% coverage of new code)
-- [ ] Include integration tests where applicable
-- [ ] Update `CHANGELOG.md`
-- [ ] Pass `make ci`
-- [ ] Include usage examples in docstrings or tests
-- [ ] Single squashed commit with PR-style message
-- [ ] Clean rebase onto current main
-- [ ] Pass pr-review-agent validation against TASKS.md and design docs
-
 ### After Making Changes
 
 **IMPORTANT**: Always run `make ci` after implementing new features or making code changes. This ensures all linting, type checking, and tests pass before committing.
@@ -119,32 +106,35 @@ plait/
 │       ├── profiling/       # Profiler for execution analysis
 │       └── clients/         # LLM client implementations
 ├── tests/
-│   ├── unit/                # Fast, isolated unit tests
-│   └── integration/         # Component interaction tests
-├── design_docs/             # Architecture documentation
-│   ├── README.md            # Documentation index
-│   ├── DESIGN.md            # High-level design overview
-│   ├── REVISIONS.md         # Design revision history
-│   ├── architecture.md      # System architecture
-│   ├── inference_module.md  # Core module system
-│   ├── tracing.md           # DAG capture
-│   ├── execution.md         # Scheduler and state
-│   ├── resources.md         # Endpoint configuration
-│   ├── optimization.md      # Backward pass and learning
-│   ├── profiling.md         # Execution profiling
-│   ├── parameters.md        # Parameter system
-│   ├── values.md            # Values and references
-│   ├── ordered_parameter_updates.md  # Update ordering
-│   └── functional_api.md    # Functional API design
-├── examples/                # Usage examples
-├── cookbooks/               # Tutorials and recipes
-├── TASKS.md                 # PR-by-PR implementation breakdown
-├── CHANGELOG.md             # Version history
-├── README.md                # Project overview
-├── Makefile                 # Build targets
-├── pyproject.toml           # Project configuration
-├── uv.lock                  # Dependency lock file
-└── main.py                  # Entry point
+│   ├── unit/                    # Fast, isolated unit tests
+│   └── integration/             # Component interaction tests
+├── design_docs/                 # Architecture documentation
+│   ├── README.md                    # Documentation index
+│   ├── DESIGN.md                    # High-level design overview
+│   ├── REVISIONS.md                 # Design revision history
+│   ├── architecture.md              # System architecture
+│   ├── inference_module.md          # Core module system
+│   ├── tracing.md                   # DAG capture
+│   ├── execution.md                 # Scheduler and state
+│   ├── resources.md                 # Endpoint configuration
+│   ├── optimization.md              # Backward pass and learning
+│   ├── profiling.md                 # Execution profiling
+│   ├── parameters.md                # Parameter system
+│   ├── values.md                    # Values and references
+│   ├── ordered_parameter_updates.md # Update ordering
+│   └── functional_api.md            # Functional API design
+├── examples/                    # Usage examples (01-09)
+├── cookbooks/                   # Tutorials and recipes
+│   └── hallucination_detection.py
+├── .github/
+│   └── workflows/
+│       └── ci.yml                   # GitHub Actions CI workflow
+├── CHANGELOG.md                 # Version history
+├── README.md                    # Project overview
+├── Makefile                     # Build targets
+├── pyproject.toml               # Project configuration
+├── uv.lock                      # Dependency lock file
+└── main.py                      # Entry point
 ```
 
 ## Architecture Overview
@@ -162,7 +152,6 @@ Key design principle: **Separation of concerns** - module definitions are indepe
 
 | File | Purpose |
 |------|---------|
-| `TASKS.md` | PR-by-PR implementation tasks |
 | `CHANGELOG.md` | Version history and changes |
 | `design_docs/architecture.md` | System architecture |
 | `Makefile` | Build and test targets |
