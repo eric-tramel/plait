@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidate unit tests from 2187 to 1908 tests (12.7% reduction) while maintaining 93% coverage
+
 ### Added
 - [#11](https://github.com/eric-tramel/plait/pull/11) Add comprehensive README with project overview, quick start, examples, and development setup
 - Integrate `Value.ref` system with loss functions and backward pass for seamless value unwrapping
