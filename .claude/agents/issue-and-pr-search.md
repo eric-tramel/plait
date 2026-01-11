@@ -1,7 +1,7 @@
 ---
 name: issue-and-pr-search
 description: Fast issue and PR lookup agent. Use PROACTIVELY when you need to find issues or pull requests related to a topic, or reference specific issues/PRs during development.
-tools: Bash(gh issue:*), Bash(gh pr:*)
+tools: Bash(gh issue:*), Bash(gh pr:*), Bash(gh pr list:*)
 model: haiku
 ---
 
