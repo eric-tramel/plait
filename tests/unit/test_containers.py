@@ -1,4 +1,4 @@
-"""Unit tests for container modules (Sequential, ModuleList, ModuleDict).
+"""Unit tests for container modules and parameter containers.
 
 Tests cover:
 - Basic instantiation and module registration
@@ -6,6 +6,7 @@ Tests cover:
 - Method operations (append, extend, insert, etc.)
 - Parameter collection through nested containers
 - Named access patterns
+- ParameterList and ParameterDict containers
 """
 
 from collections import OrderedDict
@@ -13,7 +14,13 @@ from typing import cast
 
 import pytest
 
-from plait.containers import ModuleDict, ModuleList, Sequential
+from plait.containers import (
+    ModuleDict,
+    ModuleList,
+    ParameterDict,
+    ParameterList,
+    Sequential,
+)
 from plait.module import Module
 from plait.parameter import Parameter
 
@@ -801,3 +808,398 @@ class TestNestedContainers:
 
         assert cast(ModuleWithParam, seq.first).prompt.value == "updated1"
         assert cast(ModuleWithParam, seq.second).prompt.value == "updated2"
+
+
+# ============================================================================
+# ParameterList Tests
+# ============================================================================
+
+
+def _make_param(value: str) -> Parameter:
+    """Helper to create a test Parameter with required description."""
+    return Parameter(value, description=f"Test param: {value}")
+
+
+class TestParameterListInstantiation:
+    """Tests for ParameterList instantiation."""
+
+    def test_empty_initialization(self) -> None:
+        """ParameterList can be created empty."""
+        pl = ParameterList()
+        assert len(pl) == 0
+
+    def test_initialization_with_parameters(self) -> None:
+        """ParameterList initializes with given parameters."""
+        params = [_make_param(f"value{i}") for i in range(3)]
+        pl = ParameterList(params)
+        assert len(pl) == 3
+        assert pl[0].value == "value0"
+        assert pl[1].value == "value1"
+        assert pl[2].value == "value2"
+
+
+class TestParameterListAccess:
+    """Tests for ParameterList access patterns."""
+
+    def test_getitem_int(self) -> None:
+        """ParameterList supports integer indexing."""
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        assert pl[0].value == "a"
+        assert pl[1].value == "b"
+        assert pl[-1].value == "c"
+
+    def test_getitem_slice(self) -> None:
+        """ParameterList supports slicing."""
+        pl = ParameterList([_make_param(f"v{i}") for i in range(5)])
+        sliced = pl[1:3]
+        assert len(sliced) == 2
+        assert sliced[0].value == "v1"
+
+    def test_setitem(self) -> None:
+        """ParameterList supports item assignment."""
+        pl = ParameterList([_make_param("old")])
+        pl[0] = _make_param("new")
+        assert pl[0].value == "new"
+
+    def test_setitem_type_error(self) -> None:
+        """ParameterList rejects non-Parameter values."""
+        pl = ParameterList([_make_param("test")])
+        with pytest.raises(TypeError, match="ParameterList only accepts Parameter"):
+            pl[0] = "not a parameter"  # type: ignore[assignment]
+
+    def test_delitem(self) -> None:
+        """ParameterList supports item deletion."""
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        del pl[1]
+        assert len(pl) == 2
+        assert pl[0].value == "a"
+        assert pl[1].value == "c"
+
+
+class TestParameterListMutations:
+    """Tests for ParameterList mutation operations."""
+
+    def test_append(self) -> None:
+        """append() adds parameter to end."""
+        pl = ParameterList()
+        pl.append(_make_param("first"))
+        pl.append(_make_param("second"))
+        assert len(pl) == 2
+        assert pl[0].value == "first"
+        assert pl[1].value == "second"
+
+    def test_insert(self) -> None:
+        """insert() adds parameter at specified position."""
+        pl = ParameterList([_make_param("a"), _make_param("c")])
+        pl.insert(1, _make_param("b"))
+        assert len(pl) == 3
+        assert [p.value for p in pl] == ["a", "b", "c"]
+
+    def test_insert_type_error(self) -> None:
+        """insert() rejects non-Parameter values."""
+        pl = ParameterList()
+        with pytest.raises(TypeError, match="ParameterList only accepts Parameter"):
+            pl.insert(0, "not a parameter")  # type: ignore[arg-type]
+
+
+class TestParameterListIteration:
+    """Tests for ParameterList iteration methods."""
+
+    def test_iter(self) -> None:
+        """ParameterList is iterable."""
+        params = [_make_param(f"v{i}") for i in range(3)]
+        pl = ParameterList(params)
+        values = [p.value for p in pl]
+        assert values == ["v0", "v1", "v2"]
+
+    def test_parameters(self) -> None:
+        """parameters() yields all contained parameters."""
+        pl = ParameterList([_make_param("a"), _make_param("b")])
+        params = list(pl.parameters())
+        assert len(params) == 2
+        assert params[0].value == "a"
+        assert params[1].value == "b"
+
+    def test_named_parameters(self) -> None:
+        """named_parameters() yields (name, param) tuples."""
+        pl = ParameterList([_make_param("a"), _make_param("b")])
+        named = list(pl.named_parameters())
+        assert len(named) == 2
+        assert named[0][0] == "0"
+        assert named[0][1].value == "a"
+        assert named[1][0] == "1"
+        assert named[1][1].value == "b"
+
+    def test_named_parameters_with_prefix(self) -> None:
+        """named_parameters() respects prefix."""
+        pl = ParameterList([_make_param("x")])
+        named = list(pl.named_parameters("prompts"))
+        assert named[0][0] == "prompts.0"
+
+
+# ============================================================================
+# ParameterDict Tests
+# ============================================================================
+
+
+class TestParameterDictInstantiation:
+    """Tests for ParameterDict instantiation."""
+
+    def test_empty_initialization(self) -> None:
+        """ParameterDict can be created empty."""
+        pd = ParameterDict()
+        assert len(pd) == 0
+
+    def test_initialization_with_dict(self) -> None:
+        """ParameterDict initializes from dict."""
+        pd = ParameterDict({"a": _make_param("val_a"), "b": _make_param("val_b")})
+        assert len(pd) == 2
+        assert pd["a"].value == "val_a"
+        assert pd["b"].value == "val_b"
+
+    def test_initialization_with_tuples(self) -> None:
+        """ParameterDict initializes from iterable of tuples."""
+        pd = ParameterDict([("x", _make_param("vx")), ("y", _make_param("vy"))])
+        assert len(pd) == 2
+        assert pd["x"].value == "vx"
+
+
+class TestParameterDictAccess:
+    """Tests for ParameterDict access patterns."""
+
+    def test_getitem(self) -> None:
+        """ParameterDict supports key access."""
+        pd = ParameterDict({"key": _make_param("value")})
+        assert pd["key"].value == "value"
+
+    def test_setitem(self) -> None:
+        """ParameterDict supports item assignment."""
+        pd = ParameterDict()
+        pd["new"] = _make_param("new_value")
+        assert pd["new"].value == "new_value"
+
+    def test_setitem_type_error(self) -> None:
+        """ParameterDict rejects non-Parameter values."""
+        pd = ParameterDict()
+        with pytest.raises(TypeError, match="ParameterDict only accepts Parameter"):
+            pd["key"] = "not a parameter"  # type: ignore[assignment]
+
+    def test_delitem(self) -> None:
+        """ParameterDict supports item deletion."""
+        pd = ParameterDict({"a": _make_param("va"), "b": _make_param("vb")})
+        del pd["a"]
+        assert len(pd) == 1
+        assert "a" not in pd
+        assert "b" in pd
+
+
+class TestParameterDictIteration:
+    """Tests for ParameterDict iteration methods."""
+
+    def test_iter(self) -> None:
+        """ParameterDict iterates over keys."""
+        pd = ParameterDict({"x": _make_param("vx"), "y": _make_param("vy")})
+        keys = list(pd)
+        assert "x" in keys
+        assert "y" in keys
+
+    def test_parameters(self) -> None:
+        """parameters() yields all contained parameters."""
+        pd = ParameterDict({"a": _make_param("va"), "b": _make_param("vb")})
+        params = list(pd.parameters())
+        assert len(params) == 2
+
+    def test_named_parameters(self) -> None:
+        """named_parameters() yields (name, param) tuples."""
+        pd = ParameterDict({"foo": _make_param("bar")})
+        named = list(pd.named_parameters())
+        assert len(named) == 1
+        assert named[0][0] == "foo"
+        assert named[0][1].value == "bar"
+
+    def test_named_parameters_with_prefix(self) -> None:
+        """named_parameters() respects prefix."""
+        pd = ParameterDict({"task": _make_param("prompt")})
+        named = list(pd.named_parameters("tasks"))
+        assert named[0][0] == "tasks.task"
+
+
+# ============================================================================
+# Module Integration with Parameter Containers
+# ============================================================================
+
+
+class TestModuleWithParameterContainers:
+    """Tests for Module integration with ParameterList and ParameterDict."""
+
+    def test_module_registers_parameter_list(self) -> None:
+        """Module registers ParameterList for parameter collection."""
+
+        class MultiPrompt(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [_make_param("p1"), _make_param("p2"), _make_param("p3")]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = MultiPrompt()
+        params = list(m.parameters())
+        assert len(params) == 3
+
+    def test_module_registers_parameter_dict(self) -> None:
+        """Module registers ParameterDict for parameter collection."""
+
+        class TaskPrompts(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = ParameterDict(
+                    {"summarize": _make_param("sum"), "translate": _make_param("trans")}
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TaskPrompts()
+        params = list(m.parameters())
+        assert len(params) == 2
+
+    def test_named_parameters_with_parameter_list(self) -> None:
+        """named_parameters() includes ParameterList contents with hierarchy."""
+
+        class MultiPrompt(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([_make_param("a"), _make_param("b")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = MultiPrompt()
+        named = dict(m.named_parameters())
+        assert "prompts.0" in named
+        assert "prompts.1" in named
+        assert named["prompts.0"].value == "a"
+
+    def test_named_parameters_with_parameter_dict(self) -> None:
+        """named_parameters() includes ParameterDict contents with hierarchy."""
+
+        class TaskPrompts(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = ParameterDict({"task1": _make_param("v1")})
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TaskPrompts()
+        named = dict(m.named_parameters())
+        assert "tasks.task1" in named
+        assert named["tasks.task1"].value == "v1"
+
+    def test_mixed_parameters_and_containers(self) -> None:
+        """Module collects both direct parameters and container parameters."""
+
+        class MixedModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.direct = _make_param("direct_value")
+                self.list_params = ParameterList([_make_param("list1")])
+                self.dict_params = ParameterDict({"key": _make_param("dict1")})
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = MixedModule()
+        named = dict(m.named_parameters())
+        assert len(named) == 3
+        assert "direct" in named
+        assert "list_params.0" in named
+        assert "dict_params.key" in named
+
+
+# ============================================================================
+# Reviewer Feedback Tests
+# ============================================================================
+
+
+class TestModuleDictStaleAttributeCleanup:
+    """Tests for ModuleDict attribute cleanup on deletion (PR #16 review)."""
+
+    def test_delitem_removes_attribute(self) -> None:
+        """Deleting from ModuleDict removes the attribute."""
+        md = ModuleDict({"encoder": DummyModule("enc")})
+        # Verify attribute exists
+        assert hasattr(md, "encoder")
+        # Delete the module
+        del md["encoder"]
+        # Verify attribute is removed
+        assert "encoder" not in md
+        with pytest.raises(AttributeError):
+            _ = md.encoder
+
+    def test_pop_removes_attribute(self) -> None:
+        """pop() from ModuleDict removes the attribute."""
+        md = ModuleDict({"decoder": DummyModule("dec")})
+        assert hasattr(md, "decoder")
+        md.pop("decoder")
+        assert "decoder" not in md
+        with pytest.raises(AttributeError):
+            _ = md.decoder
+
+    def test_clear_removes_all_attributes(self) -> None:
+        """clear() from ModuleDict removes all attributes."""
+        md = ModuleDict(
+            {"enc": DummyModule("e"), "dec": DummyModule("d"), "cls": DummyModule("c")}
+        )
+        assert hasattr(md, "enc")
+        assert hasattr(md, "dec")
+        md.clear()
+        assert len(md) == 0
+        with pytest.raises(AttributeError):
+            _ = md.enc
+        with pytest.raises(AttributeError):
+            _ = md.dec
+
+
+class TestSlicingNoReparenting:
+    """Tests for slicing not reparenting modules (PR #16 review)."""
+
+    def test_sequential_slice_does_not_reparent(self) -> None:
+        """Slicing Sequential does not change module's parent."""
+        original = Sequential(
+            OrderedDict(
+                [
+                    ("a", DummyModule("va")),
+                    ("b", DummyModule("vb")),
+                    ("c", DummyModule("vc")),
+                ]
+            )
+        )
+        # Get original parent reference
+        mod_b = original._modules["b"]
+        original_parent = mod_b._parent
+
+        # Slice the sequential
+        sliced = original[0:2]
+
+        # Module's parent should still be the original
+        assert mod_b._parent is original_parent
+        assert mod_b._parent is original
+
+        # Sliced container should not have the modules as children
+        assert len(sliced._children) == 0
+
+    def test_module_list_slice_does_not_reparent(self) -> None:
+        """Slicing ModuleList does not change module's parent."""
+        original = ModuleList([DummyModule(f"v{i}") for i in range(5)])
+        mod_1 = original[1]
+        original_parent = mod_1._parent
+
+        sliced = original[1:4]
+
+        assert mod_1._parent is original_parent
+        assert mod_1._parent is original
+        assert len(sliced._children) == 0

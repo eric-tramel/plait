@@ -1,20 +1,28 @@
-"""Container modules for composing and organizing modules.
+"""Container modules for composing and organizing modules and parameters.
 
-This module provides PyTorch-style container modules for building
+This module provides PyTorch-style container classes for building
 complex inference pipelines:
 
+Module containers (inherit from Module):
 - Sequential: Chains modules together, passing output to input
 - ModuleList: List-like container for dynamic module management
 - ModuleDict: Dict-like container for named module access
+
+Parameter containers (lightweight, integrate with Module):
+- ParameterList: List-like container for parameters
+- ParameterDict: Dict-like container for parameters
 """
 
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Iterable, Iterator
-from typing import Any, cast, overload
+from collections.abc import Iterable, Iterator, MutableMapping, MutableSequence
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from plait.module import Module
+
+if TYPE_CHECKING:
+    from plait.parameter import Parameter
 
 
 class Sequential(Module):
@@ -149,10 +157,22 @@ class Sequential(Module):
         Raises:
             IndexError: If index is out of range.
             TypeError: If idx is not int or slice.
+
+        Note:
+            Slicing returns a new Sequential containing views of the same
+            module objects, but does NOT reparent them. The modules remain
+            children of the original container.
         """
         if isinstance(idx, slice):
             keys = list(self._modules.keys())[idx]
-            return Sequential(OrderedDict((k, self._modules[k]) for k in keys))
+            # Create a new Sequential without reparenting modules
+            new_seq = Sequential.__new__(Sequential)
+            Module.__init__(new_seq)
+            object.__setattr__(new_seq, "_modules", OrderedDict())
+            for k in keys:
+                # Store module reference without calling setattr (no reparenting)
+                new_seq._modules[k] = self._modules[k]
+            return new_seq
         elif isinstance(idx, int):
             if idx < 0:
                 idx += len(self._modules)
@@ -297,10 +317,22 @@ class ModuleList(Module):
 
         Raises:
             IndexError: If index is out of range.
+
+        Note:
+            Slicing returns a new ModuleList containing views of the same
+            module objects, but does NOT reparent them. The modules remain
+            children of the original container.
         """
         if isinstance(idx, slice):
             modules = list(self._modules.values())[idx]
-            return ModuleList(modules)
+            # Create a new ModuleList without reparenting modules
+            new_list = ModuleList.__new__(ModuleList)
+            Module.__init__(new_list)
+            object.__setattr__(new_list, "_modules", OrderedDict())
+            for i, mod in enumerate(modules):
+                # Store module reference without calling setattr (no reparenting)
+                new_list._modules[str(i)] = mod
+            return new_list
         else:
             if idx < 0:
                 idx += len(self._modules)
@@ -568,6 +600,18 @@ class ModuleDict(Module):
         """
         self._add_module(key, module)
 
+    def _remove_module(self, key: str) -> None:
+        """Remove a module and clean up all references.
+
+        Args:
+            key: The key of the module to remove.
+        """
+        if key in self._children:
+            del self._children[key]
+        # Also remove the attribute if it was set (for identifier keys)
+        if key.isidentifier() and key in self.__dict__:
+            delattr(self, key)
+
     def __delitem__(self, key: str) -> None:
         """Delete a module by key.
 
@@ -580,8 +624,7 @@ class ModuleDict(Module):
         if key not in self._modules:
             raise KeyError(key)
         del self._modules[key]
-        if key in self._children:
-            del self._children[key]
+        self._remove_module(key)
 
     def __len__(self) -> int:
         """Return the number of modules in the dict.
@@ -684,15 +727,16 @@ class ModuleDict(Module):
         """
         if key in self._modules:
             module = self._modules.pop(key)
-            if key in self._children:
-                del self._children[key]
+            self._remove_module(key)
             return module
         return default
 
     def clear(self) -> None:
         """Remove all modules from the dict."""
+        # Clean up all attributes before clearing
+        for key in list(self._modules.keys()):
+            self._remove_module(key)
         self._modules.clear()
-        self._children.clear()
 
     def forward(self, x: Any) -> Any:
         """Forward is not implemented for ModuleDict.
@@ -707,3 +751,360 @@ class ModuleDict(Module):
             "ModuleDict does not implement forward(). "
             "Access modules by key in your forward() method."
         )
+
+
+# =============================================================================
+# Parameter Containers
+# =============================================================================
+
+
+class ParameterList(MutableSequence["Parameter"]):
+    """A list-like container for Parameters.
+
+    Holds a list of Parameters that will be properly collected by
+    Module.parameters() and Module.named_parameters(). This is analogous
+    to torch.nn.ParameterList.
+
+    Parameters are named by their index in the list (e.g., "0", "1", "2").
+
+    Args:
+        parameters: Optional iterable of Parameter objects to initialize with.
+
+    Example:
+        >>> class MultiPrompt(Module):
+        ...     def __init__(self):
+        ...         super().__init__()
+        ...         self.prompts = ParameterList([
+        ...             Parameter("Be concise", description="Style prompt"),
+        ...             Parameter("Be helpful", description="Tone prompt"),
+        ...         ])
+        ...
+        >>> m = MultiPrompt()
+        >>> list(m.named_parameters())
+        [('prompts.0', Parameter(...)), ('prompts.1', Parameter(...))]
+
+    Note:
+        The container itself is not a Parameter, but it provides iteration
+        methods that Module uses to collect the contained Parameters.
+    """
+
+    _parameters: list[Parameter]
+    _name: str | None
+    _parent: Module | None
+
+    def __init__(self, parameters: Iterable[Parameter] | None = None) -> None:
+        """Initialize the ParameterList.
+
+        Args:
+            parameters: Optional iterable of Parameter objects.
+        """
+        self._parameters = []
+        self._name = None
+        self._parent = None
+
+        if parameters is not None:
+            for param in parameters:
+                self.append(param)
+
+    def _set_param_name(self, idx: int, param: Parameter) -> None:
+        """Set the parameter's name based on its index.
+
+        Args:
+            idx: The index of the parameter in the list.
+            param: The parameter to name.
+        """
+        object.__setattr__(param, "_name", str(idx))
+        object.__setattr__(param, "_parent", self._parent)
+
+    # MutableSequence abstract methods
+
+    @overload
+    def __getitem__(self, index: int) -> Parameter: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[Parameter]: ...
+
+    def __getitem__(self, index: int | slice) -> Parameter | list[Parameter]:
+        """Get parameter(s) by index.
+
+        Args:
+            index: Integer index or slice.
+
+        Returns:
+            Single Parameter for int index, list for slice.
+        """
+        return self._parameters[index]
+
+    @overload
+    def __setitem__(self, index: int, value: Parameter) -> None: ...
+
+    @overload
+    def __setitem__(self, index: slice, value: Iterable[Parameter]) -> None: ...
+
+    def __setitem__(
+        self, index: int | slice, value: Parameter | Iterable[Parameter]
+    ) -> None:
+        """Set parameter(s) by index.
+
+        Args:
+            index: Integer index or slice.
+            value: Parameter or iterable of Parameters.
+        """
+        from plait.parameter import Parameter as ParameterClass
+
+        if isinstance(index, int):
+            if not isinstance(value, ParameterClass):
+                raise TypeError(
+                    f"ParameterList only accepts Parameter objects, got {type(value)}"
+                )
+            self._parameters[index] = value
+            self._set_param_name(index, value)
+        else:
+            # Handle slice assignment
+            if not isinstance(value, Iterable):
+                raise TypeError(
+                    f"Expected iterable for slice assignment, got {type(value)}"
+                )
+            params = list(value)
+            for p in params:
+                if not isinstance(p, ParameterClass):
+                    raise TypeError(
+                        f"ParameterList only accepts Parameter objects, got {type(p)}"
+                    )
+            self._parameters[index] = params
+            # Re-index all parameters after slice assignment
+            for i, p in enumerate(self._parameters):
+                self._set_param_name(i, p)
+
+    @overload
+    def __delitem__(self, index: int) -> None: ...
+
+    @overload
+    def __delitem__(self, index: slice) -> None: ...
+
+    def __delitem__(self, index: int | slice) -> None:
+        """Delete parameter(s) by index.
+
+        Args:
+            index: Integer index or slice.
+        """
+        del self._parameters[index]
+        # Re-index remaining parameters
+        for i, p in enumerate(self._parameters):
+            self._set_param_name(i, p)
+
+    def __len__(self) -> int:
+        """Return the number of parameters.
+
+        Returns:
+            Number of parameters in the list.
+        """
+        return len(self._parameters)
+
+    def insert(self, index: int, value: Parameter) -> None:
+        """Insert a parameter at the given index.
+
+        Args:
+            index: Index to insert at.
+            value: Parameter to insert.
+
+        Raises:
+            TypeError: If value is not a Parameter.
+        """
+        from plait.parameter import Parameter as ParameterClass
+
+        if not isinstance(value, ParameterClass):
+            raise TypeError(
+                f"ParameterList only accepts Parameter objects, got {type(value)}"
+            )
+        self._parameters.insert(index, value)
+        # Re-index all parameters from index onwards
+        for i in range(index, len(self._parameters)):
+            self._set_param_name(i, self._parameters[i])
+
+    # Parameter iteration for Module integration
+
+    def named_parameters(self, prefix: str = "") -> Iterator[tuple[str, Parameter]]:
+        """Iterate over parameters with their names.
+
+        Args:
+            prefix: Prefix to prepend to parameter names.
+
+        Yields:
+            Tuples of (name, parameter).
+        """
+        for i, param in enumerate(self._parameters):
+            name = f"{prefix}.{i}" if prefix else str(i)
+            yield name, param
+
+    def parameters(self) -> Iterator[Parameter]:
+        """Iterate over all parameters.
+
+        Yields:
+            Each Parameter in the list.
+        """
+        yield from self._parameters
+
+    def __repr__(self) -> str:
+        """Return string representation.
+
+        Returns:
+            String representation of the ParameterList.
+        """
+        return f"ParameterList({self._parameters!r})"
+
+
+class ParameterDict(MutableMapping[str, "Parameter"]):
+    """A dict-like container for Parameters.
+
+    Holds a dictionary of Parameters that will be properly collected by
+    Module.parameters() and Module.named_parameters(). This is analogous
+    to torch.nn.ParameterDict.
+
+    Args:
+        parameters: Optional mapping or iterable of (key, Parameter) pairs.
+
+    Example:
+        >>> class MultiTask(Module):
+        ...     def __init__(self):
+        ...         super().__init__()
+        ...         self.prompts = ParameterDict({
+        ...             "summarize": Parameter("Summarize:", description="Summary prompt"),
+        ...             "translate": Parameter("Translate:", description="Translation prompt"),
+        ...         })
+        ...
+        >>> m = MultiTask()
+        >>> list(m.named_parameters())
+        [('prompts.summarize', Parameter(...)), ('prompts.translate', Parameter(...))]
+
+    Note:
+        The container itself is not a Parameter, but it provides iteration
+        methods that Module uses to collect the contained Parameters.
+    """
+
+    _parameters: dict[str, Parameter]
+    _name: str | None
+    _parent: Module | None
+
+    def __init__(
+        self,
+        parameters: dict[str, Parameter]
+        | Iterable[tuple[str, Parameter]]
+        | None = None,
+    ) -> None:
+        """Initialize the ParameterDict.
+
+        Args:
+            parameters: Optional dict or iterable of (key, Parameter) pairs.
+        """
+        self._parameters: dict[str, Parameter] = {}
+        self._name = None
+        self._parent = None
+
+        if parameters is not None:
+            # Handle dict or iterable of tuples
+            if isinstance(parameters, dict):
+                # Cast to typed dict for type checker
+                typed_dict = cast(dict[str, "Parameter"], parameters)
+                for key, param in typed_dict.items():
+                    self[key] = param
+            else:
+                for key, param in parameters:
+                    self[key] = param
+
+    def _set_param_name(self, key: str, param: Parameter) -> None:
+        """Set the parameter's name based on its key.
+
+        Args:
+            key: The key of the parameter in the dict.
+            param: The parameter to name.
+        """
+        object.__setattr__(param, "_name", key)
+        object.__setattr__(param, "_parent", self._parent)
+
+    # MutableMapping abstract methods
+
+    def __getitem__(self, key: str) -> Parameter:
+        """Get a parameter by key.
+
+        Args:
+            key: The parameter's key.
+
+        Returns:
+            The Parameter at the given key.
+        """
+        return self._parameters[key]
+
+    def __setitem__(self, key: str, value: Parameter) -> None:
+        """Set a parameter by key.
+
+        Args:
+            key: The parameter's key.
+            value: The Parameter to store.
+
+        Raises:
+            TypeError: If value is not a Parameter.
+        """
+        from plait.parameter import Parameter as ParameterClass
+
+        if not isinstance(value, ParameterClass):
+            raise TypeError(
+                f"ParameterDict only accepts Parameter objects, got {type(value)}"
+            )
+        self._parameters[key] = value
+        self._set_param_name(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        """Delete a parameter by key.
+
+        Args:
+            key: The parameter's key.
+        """
+        del self._parameters[key]
+
+    def __iter__(self) -> Iterator[str]:
+        """Iterate over parameter keys.
+
+        Yields:
+            Each key in the dict.
+        """
+        return iter(self._parameters)
+
+    def __len__(self) -> int:
+        """Return the number of parameters.
+
+        Returns:
+            Number of parameters in the dict.
+        """
+        return len(self._parameters)
+
+    # Parameter iteration for Module integration
+
+    def named_parameters(self, prefix: str = "") -> Iterator[tuple[str, Parameter]]:
+        """Iterate over parameters with their names.
+
+        Args:
+            prefix: Prefix to prepend to parameter names.
+
+        Yields:
+            Tuples of (name, parameter).
+        """
+        for key, param in self._parameters.items():
+            name = f"{prefix}.{key}" if prefix else key
+            yield name, param
+
+    def parameters(self) -> Iterator[Parameter]:
+        """Iterate over all parameters.
+
+        Yields:
+            Each Parameter in the dict.
+        """
+        yield from self._parameters.values()
+
+    def __repr__(self) -> str:
+        """Return string representation.
+
+        Returns:
+            String representation of the ParameterDict.
+        """
+        return f"ParameterDict({self._parameters!r})"
