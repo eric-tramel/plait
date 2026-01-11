@@ -1,6 +1,6 @@
 ---
 description: Implement a GitHub issue using the developer-main agent
-allowed-tools: Task
+allowed-tools: Read, Edit, Task
 argument-hint: <issue number>
 ---
 
