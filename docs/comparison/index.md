@@ -1,37 +1,41 @@
 # Framework Comparison
 
-Each comparison page shows how the same example—a summarize-and-analyze
+Each comparison page shows how the same example—an extract-and-compare
 pipeline—is implemented in plait and the compared framework. This "Rosetta
 Stone" approach makes it easy to see the key differences at a glance.
 
 ## The Reference Example
 
-All comparisons use this plait pipeline from the [Getting Started](../getting-started.md) guide:
+All comparisons use this plait pipeline that demonstrates **automatic parallel execution**:
 
 ```python
 from plait import Module, LLMInference, Parameter
 from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
-class SummarizeAndAnalyze(Module):
+class ExtractAndCompare(Module):
     def __init__(self):
         super().__init__()
-        self.instructions = Parameter(
-            value="Be concise and highlight key insights.",
-            description="Controls the style of analysis output.",
+        self.comparison_style = Parameter(
+            value="Highlight key similarities and differences.",
+            description="Controls the style of comparison output.",
         )
-        self.summarizer = LLMInference(
+        self.extractor = LLMInference(
             alias="fast",
-            system_prompt="Summarize the input text concisely.",
+            system_prompt="Extract the main facts as a bulleted list.",
         )
-        self.analyzer = LLMInference(
+        self.comparer = LLMInference(
             alias="smart",
-            system_prompt=self.instructions,
+            system_prompt=self.comparison_style,
         )
 
-    def forward(self, text: str) -> str:
-        summary = self.summarizer(text)
-        return self.analyzer(f"Analyze this summary:\n{summary}")
+    def forward(self, doc1: str, doc2: str) -> str:
+        # These two calls are INDEPENDENT - plait runs them in PARALLEL
+        facts1 = self.extractor(doc1)
+        facts2 = self.extractor(doc2)
+
+        # This depends on both facts, waits for both to complete
+        return self.comparer(f"Compare:\n{facts1}\n\nvs:\n{facts2}")
 
 
 resources = ResourceConfig(
@@ -41,26 +45,73 @@ resources = ResourceConfig(
     }
 )
 
-pipeline = SummarizeAndAnalyze().bind(resources=resources)
-result = await pipeline("Your input text...")
+pipeline = ExtractAndCompare().bind(resources=resources)
+result = await pipeline(doc1, doc2)
 ```
 
 This example demonstrates:
 
-- **Two-stage pipeline**: summarize then analyze
-- **Multi-model**: fast model (gpt-4o-mini) and smart model (gpt-4o)
-- **Learnable parameter**: `instructions` can be optimized via backward pass
-- **Resource configuration**: aliases separate module logic from deployment
+- **Fan-out parallelism**: Two independent extractions run concurrently
+- **Automatic dependency tracking**: The comparison waits for both extractions
+- **Multi-model**: Fast model (gpt-4o-mini) for extraction, smart model (gpt-4o) for comparison
+- **Learnable parameter**: `comparison_style` can be optimized via backward pass
+- **Resource configuration**: Aliases separate module logic from deployment
 
 ## Quick Comparison
 
 | Feature | plait | Pydantic AI | LangGraph | DSPy |
 |---------|-------|-------------|-----------|------|
 | **Graph definition** | Implicit (tracing) | Explicit (pydantic-graph) | Explicit (add_node/edge) | Implicit (composition) |
+| **Parallel execution** | Automatic | Manual (asyncio.gather) | Explicit (Send) | Sequential |
 | **Multi-model** | Alias-based | Per-agent | Per-node | Global config |
 | **Learnable params** | `Parameter` class | No | No | Compile-time |
 | **Optimization** | Runtime backward pass | No | No | Compile-time |
 | **Execution** | Async-first | Async | Async | Sync-first |
+
+## Parallel Execution Comparison
+
+The extract-and-compare workflow highlights how each framework handles parallelism:
+
+| Framework | Approach | Boilerplate Required |
+|-----------|----------|---------------------|
+| **plait** | Automatic from data dependencies | None - just write sequential code |
+| **Pydantic AI** | Manual `asyncio.gather()` | Must explicitly group concurrent calls |
+| **LangGraph** | Explicit `Send()` + reducers | Must define fan-out functions and state reducers |
+| **DSPy** | Sequential by default | No built-in parallelism (sync-first) |
+
+### Code Comparison
+
+**plait** - Automatic parallelism:
+```python
+def forward(self, doc1: str, doc2: str) -> str:
+    facts1 = self.extractor(doc1)  # These run
+    facts2 = self.extractor(doc2)  # in parallel!
+    return self.comparer(f"{facts1}\n\n{facts2}")
+```
+
+**Pydantic AI** - Manual gather:
+```python
+facts1, facts2 = await asyncio.gather(
+    extractor.run(doc1),
+    extractor.run(doc2),
+)
+```
+
+**LangGraph** - Explicit Send:
+```python
+def fan_out(state):
+    return [
+        Send("extract", {"doc": state["doc1"]}),
+        Send("extract", {"doc": state["doc2"]}),
+    ]
+graph.set_conditional_entry_point(fan_out)
+```
+
+**DSPy** - Sequential:
+```python
+facts1 = self.extract(document=doc1).facts  # Runs first
+facts2 = self.extract(document=doc2).facts  # Runs second
+```
 
 ## Detailed Comparisons
 
@@ -72,6 +123,7 @@ This example demonstrates:
 
 Choose plait when you need:
 
+- **Automatic parallelism**: Independent operations run concurrently without boilerplate
 - **Runtime optimization**: Improve prompts based on feedback during execution
 - **PyTorch-like patterns**: Familiar Module/forward/backward API
 - **Automatic DAG capture**: Write normal Python, get optimized execution

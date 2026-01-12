@@ -1,15 +1,17 @@
 # plait vs DSPy
 
-This comparison uses the same example—a summarize-and-analyze pipeline—to show
-how each framework approaches the same problem.
+This comparison uses the same example—an extract-and-compare pipeline—to show
+how each framework approaches the same problem, with a focus on parallel execution.
 
-## The Example: Summarize and Analyze
+## The Example: Extract and Compare
 
-A two-stage pipeline that:
+A three-stage pipeline that:
 
-1. Summarizes input text using a fast model (gpt-4o-mini)
-2. Analyzes the summary using a smarter model (gpt-4o)
-3. Has a configurable instruction parameter
+1. Takes two documents as input
+2. Extracts main facts from both documents (can run in parallel)
+3. Compares and contrasts the extracted facts
+
+This workflow highlights **plait's automatic parallel execution** for independent operations.
 
 ## plait Implementation
 
@@ -18,25 +20,33 @@ from plait import Module, LLMInference, Parameter
 from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
-class SummarizeAndAnalyze(Module):
+class ExtractAndCompare(Module):
     def __init__(self):
         super().__init__()
-        self.instructions = Parameter(
-            value="Be concise and highlight key insights.",
-            description="Controls the style of analysis output.",
+        self.comparison_style = Parameter(
+            value="Highlight key similarities and differences.",
+            description="Controls the style of comparison output.",
         )
-        self.summarizer = LLMInference(
+        self.extractor = LLMInference(
             alias="fast",
-            system_prompt="Summarize the input text concisely.",
+            system_prompt="Extract the main facts as a bulleted list.",
         )
-        self.analyzer = LLMInference(
+        self.comparer = LLMInference(
             alias="smart",
-            system_prompt=self.instructions,
+            system_prompt=self.comparison_style,
         )
 
-    def forward(self, text: str) -> str:
-        summary = self.summarizer(text)
-        return self.analyzer(f"Analyze this summary:\n{summary}")
+    def forward(self, doc1: str, doc2: str) -> str:
+        # These two calls are INDEPENDENT - plait runs them in PARALLEL
+        facts1 = self.extractor(doc1)
+        facts2 = self.extractor(doc2)
+
+        # This depends on both facts, waits for both to complete
+        return self.comparer(
+            f"Compare and contrast:\n\n"
+            f"Document 1:\n{facts1}\n\n"
+            f"Document 2:\n{facts2}"
+        )
 
 
 resources = ResourceConfig(
@@ -52,8 +62,8 @@ resources = ResourceConfig(
     }
 )
 
-pipeline = SummarizeAndAnalyze().bind(resources=resources)
-result = await pipeline("Your input text...")
+pipeline = ExtractAndCompare().bind(resources=resources)
+result = await pipeline(doc1, doc2)
 ```
 
 ## DSPy Implementation
@@ -62,39 +72,43 @@ result = await pipeline("Your input text...")
 import dspy
 
 
-class Summarize(dspy.Signature):
-    """Summarize the input text concisely."""
-    text: str = dspy.InputField()
-    summary: str = dspy.OutputField()
+class ExtractFacts(dspy.Signature):
+    """Extract the main facts from the document as a bulleted list."""
+    document: str = dspy.InputField()
+    facts: str = dspy.OutputField(desc="Bulleted list of main facts")
 
 
-class Analyze(dspy.Signature):
-    """Be concise and highlight key insights."""
-    summary: str = dspy.InputField()
-    analysis: str = dspy.OutputField()
+class CompareAndContrast(dspy.Signature):
+    """Compare and contrast the facts from two documents."""
+    facts_doc1: str = dspy.InputField()
+    facts_doc2: str = dspy.InputField()
+    comparison: str = dspy.OutputField()
 
 
-class SummarizeAndAnalyze(dspy.Module):
+class ExtractAndCompare(dspy.Module):
     def __init__(self):
         super().__init__()
-        # Create separate LM instances for each step
         self.fast_lm = dspy.LM('openai/gpt-4o-mini')
         self.smart_lm = dspy.LM('openai/gpt-4o')
-        self.summarize = dspy.Predict(Summarize)
-        self.analyze = dspy.Predict(Analyze)
+        self.extract = dspy.Predict(ExtractFacts)
+        self.compare = dspy.Predict(CompareAndContrast)
 
-    def forward(self, text: str) -> str:
-        # Use fast model for summarization
+    def forward(self, doc1: str, doc2: str) -> str:
+        # These run SEQUENTIALLY - no automatic parallelism in DSPy
         with dspy.context(lm=self.fast_lm):
-            summary = self.summarize(text=text).summary
-        # Use smart model for analysis
+            facts1 = self.extract(document=doc1).facts
+            facts2 = self.extract(document=doc2).facts
+
         with dspy.context(lm=self.smart_lm):
-            analysis = self.analyze(summary=summary).analysis
-        return analysis
+            comparison = self.compare(
+                facts_doc1=facts1,
+                facts_doc2=facts2
+            ).comparison
+        return comparison
 
 
-pipeline = SummarizeAndAnalyze()
-result = pipeline(text="Your input text...")
+pipeline = ExtractAndCompare()
+result = pipeline(doc1=doc1, doc2=doc2)
 ```
 
 ## Key Differences
@@ -102,10 +116,32 @@ result = pipeline(text="Your input text...")
 | Aspect | plait | DSPy |
 |--------|-------|------|
 | **Structure** | `Module` with `LLMInference` | `dspy.Module` with `Signature` |
+| **Parallel execution** | Automatic from data flow | Sequential (sync-first) |
 | **Prompts** | Explicit system prompts | Signature docstrings |
 | **Multi-model** | Aliases map to different endpoints | `dspy.context(lm=...)` per call |
 | **Optimization** | Runtime backward pass | Compile-time teleprompters |
 | **Execution** | Async-first | Sync-first |
+
+### Parallel Execution
+
+**plait**: Automatically detects that the two extraction calls are independent and
+runs them concurrently. No special syntax needed.
+
+```python
+def forward(self, doc1: str, doc2: str) -> str:
+    facts1 = self.extractor(doc1)  # These run
+    facts2 = self.extractor(doc2)  # in parallel!
+    return self.comparer(...)      # Waits for both
+```
+
+**DSPy**: Executes synchronously by default. Each call completes before the next begins.
+
+```python
+def forward(self, doc1: str, doc2: str) -> str:
+    facts1 = self.extract(document=doc1).facts  # Runs first
+    facts2 = self.extract(document=doc2).facts  # Runs second
+    return self.compare(...).comparison          # Runs third
+```
 
 ### Prompt Definition
 
@@ -113,9 +149,9 @@ result = pipeline(text="Your input text...")
 class makes prompts learnable.
 
 ```python
-self.summarizer = LLMInference(
+self.extractor = LLMInference(
     alias="fast",
-    system_prompt="Summarize the input text concisely.",
+    system_prompt="Extract the main facts as a bulleted list.",
 )
 ```
 
@@ -123,10 +159,10 @@ self.summarizer = LLMInference(
 framework generates the actual prompt.
 
 ```python
-class Summarize(dspy.Signature):
-    """Summarize the input text concisely."""
-    text: str = dspy.InputField()
-    summary: str = dspy.OutputField()
+class ExtractFacts(dspy.Signature):
+    """Extract the main facts from the document as a bulleted list."""
+    document: str = dspy.InputField()
+    facts: str = dspy.OutputField()
 ```
 
 ### Multi-Model Configuration
@@ -151,9 +187,9 @@ self.smart_lm = dspy.LM('openai/gpt-4o')
 
 # In forward():
 with dspy.context(lm=self.fast_lm):
-    summary = self.summarize(text=text).summary
+    facts1 = self.extract(document=doc1).facts
 with dspy.context(lm=self.smart_lm):
-    analysis = self.analyze(summary=summary).analysis
+    comparison = self.compare(...).comparison
 ```
 
 ### Optimization Philosophy
@@ -181,7 +217,7 @@ good few-shot examples before deployment.
 from dspy.teleprompt import BootstrapFewShot
 
 def metric(example, pred, trace=None):
-    return example.answer == pred.analysis
+    return example.answer == pred.comparison
 
 teleprompter = BootstrapFewShot(metric=metric)
 compiled = teleprompter.compile(pipeline, trainset=examples)
@@ -193,21 +229,22 @@ compiled.save("optimized.json")
 **plait**: Async-first with automatic parallelism from data flow.
 
 ```python
-result = await pipeline("input")
-results = await pipeline(["input1", "input2", "input3"])  # Parallel
+result = await pipeline(doc1, doc2)
+# Independent operations run in parallel automatically
 ```
 
 **DSPy**: Synchronous by default.
 
 ```python
-result = pipeline(text="input")
-results = [pipeline(text=t) for t in texts]  # Sequential
+result = pipeline(doc1=doc1, doc2=doc2)
+# Operations run sequentially
 ```
 
 ## When to Choose Each
 
 ### Choose plait when:
 
+- You want **automatic parallel execution** without explicit concurrency management
 - You want **runtime optimization** based on feedback during execution
 - You need **multi-model pipelines** with different models per step
 - **Async execution** and high throughput are important

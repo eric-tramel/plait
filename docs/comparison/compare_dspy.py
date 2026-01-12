@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Compare plait vs DSPy performance and output.
 
-This script implements the same summarize-and-analyze pipeline in both
+This script implements the same extract-and-compare pipeline in both
 plait and DSPy, then compares execution time, memory usage, and outputs.
+
+The workflow demonstrates parallel execution:
+1. Takes TWO documents as input
+2. Extracts main facts from BOTH documents in parallel (fan-out)
+3. Runs a compare-and-contrast analysis on the extracted facts
+
+This highlights plait's automatic parallel execution for independent operations.
 
 Run from repository root:
 
     uv run --with dspy docs/comparison/compare_dspy.py
-
-Or with a specific input file:
-
-    uv run --with dspy docs/comparison/compare_dspy.py --input myfile.txt
 
 Environment variables required:
     OPENAI_API_KEY: Your OpenAI API key
@@ -31,25 +34,26 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-# Sample input text for comparison
-SAMPLE_TEXT = """
-Artificial intelligence has transformed numerous industries over the past decade.
-Machine learning algorithms now power recommendation systems, autonomous vehicles,
-and medical diagnosis tools. The emergence of large language models has further
-accelerated this transformation, enabling new applications in content generation,
-code assistance, and conversational interfaces.
+# Sample input documents for comparison
+SAMPLE_DOC_1 = """
+Electric vehicles (EVs) are revolutionizing the automotive industry. Battery
+technology has improved dramatically, with modern lithium-ion batteries offering
+ranges of 300+ miles on a single charge. The cost of EVs has decreased
+significantly, making them accessible to more consumers. Charging infrastructure
+is expanding rapidly, with fast-charging stations appearing along major highways.
+Major automakers have committed to transitioning their fleets to electric,
+with some planning to phase out internal combustion engines entirely by 2035.
+"""
 
-However, these advances come with significant challenges. Concerns about bias in
-AI systems, the environmental impact of training large models, and the potential
-for job displacement have sparked important debates. Researchers and policymakers
-are working to address these issues while continuing to push the boundaries of
-what AI can achieve.
-
-The future of AI likely involves more efficient training methods, better
-interpretability of model decisions, and stronger safeguards against misuse.
-As these technologies mature, their integration into daily life will only deepen,
-making it essential to develop frameworks for responsible AI development and
-deployment.
+SAMPLE_DOC_2 = """
+Hydrogen fuel cell vehicles represent an alternative approach to sustainable
+transportation. These vehicles generate electricity through a chemical reaction
+between hydrogen and oxygen, producing only water as a byproduct. Refueling
+takes just minutes, similar to traditional gasoline vehicles. However, hydrogen
+infrastructure remains limited, with fewer than 100 public stations in the US.
+Production of green hydrogen is still expensive and energy-intensive. Several
+major automakers are investing in fuel cell technology for heavy-duty vehicles
+where battery weight would be prohibitive.
 """
 
 
@@ -129,40 +133,54 @@ async def measure_execution_async(
 # =============================================================================
 
 
-def run_dspy(text: str) -> str:
-    """Run the summarize-and-analyze pipeline using DSPy."""
+def run_dspy(doc1: str, doc2: str) -> str:
+    """Run the extract-and-compare pipeline using DSPy.
+
+    Note: DSPy is synchronous by default, so the two extractions run
+    sequentially. This demonstrates the performance difference when
+    compared to plait's automatic parallel execution.
+    """
     import dspy  # type: ignore[import-not-found]
 
-    class Summarize(dspy.Signature):
-        """Summarize the input text concisely."""
+    class ExtractFacts(dspy.Signature):
+        """Extract the main facts from the document as a bulleted list."""
 
-        text: str = dspy.InputField()
-        summary: str = dspy.OutputField()
+        document: str = dspy.InputField()
+        facts: str = dspy.OutputField(desc="Bulleted list of main facts")
 
-    class Analyze(dspy.Signature):
-        """Be concise and highlight key insights."""
+    class CompareAndContrast(dspy.Signature):
+        """Compare and contrast the facts from two documents."""
 
-        summary: str = dspy.InputField()
-        analysis: str = dspy.OutputField()
+        facts_doc1: str = dspy.InputField(desc="Facts from first document")
+        facts_doc2: str = dspy.InputField(desc="Facts from second document")
+        comparison: str = dspy.OutputField(
+            desc="Compare and contrast analysis highlighting similarities and differences"
+        )
 
-    class SummarizeAndAnalyze(dspy.Module):
+    class ExtractAndCompare(dspy.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.summarize = dspy.Predict(Summarize)
-            self.analyze = dspy.Predict(Analyze)
+            self.fast_lm = dspy.LM("openai/gpt-4o-mini")
+            self.smart_lm = dspy.LM("openai/gpt-4o")
+            self.extract = dspy.Predict(ExtractFacts)
+            self.compare = dspy.Predict(CompareAndContrast)
 
-        def forward(self, text: str) -> str:
-            summary = self.summarize(text=text).summary
-            analysis = self.analyze(summary=summary).analysis
-            return analysis
+        def forward(self, doc1: str, doc2: str) -> str:
+            # Extract facts from both documents
+            # Note: These run SEQUENTIALLY in DSPy (no automatic parallelism)
+            with dspy.context(lm=self.fast_lm):
+                facts1 = self.extract(document=doc1).facts
+                facts2 = self.extract(document=doc2).facts
 
-    # Configure DSPy with OpenAI
-    # Note: DSPy uses a single global LM config, so we use gpt-4o-mini for both steps
-    lm = dspy.LM("openai/gpt-4o-mini")
-    dspy.configure(lm=lm)
+            # Compare and contrast
+            with dspy.context(lm=self.smart_lm):
+                comparison = self.compare(
+                    facts_doc1=facts1, facts_doc2=facts2
+                ).comparison
+            return comparison
 
-    pipeline = SummarizeAndAnalyze()
-    return pipeline(text=text)
+    pipeline = ExtractAndCompare()
+    return pipeline(doc1=doc1, doc2=doc2)
 
 
 # =============================================================================
@@ -170,31 +188,57 @@ def run_dspy(text: str) -> str:
 # =============================================================================
 
 
-async def run_plait(text: str) -> str:
-    """Run the summarize-and-analyze pipeline using plait."""
+async def run_plait(doc1: str, doc2: str) -> str:
+    """Run the extract-and-compare pipeline using plait.
+
+    The two fact extractions are independent operations that plait
+    automatically executes in parallel, reducing total execution time.
+    """
     from plait import LLMInference, Module, Parameter
     from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
-    class SummarizeAndAnalyze(Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.instructions = Parameter(
-                value="Be concise and highlight key insights. Analyze the summary provided.",
-                description="Controls the style of analysis output.",
-            )
-            self.summarizer = LLMInference(
-                alias="fast",
-                system_prompt="Summarize the input text concisely.",
-            )
-            self.analyzer = LLMInference(
-                alias="smart",
-                system_prompt=self.instructions,
+    class FactsCombiner(Module):
+        """Combine two facts into a comparison prompt.
+
+        This module formats the facts from two documents into a single
+        prompt for comparison. Using a module ensures proper tracing
+        during the forward pass (Proxy objects are resolved correctly).
+        """
+
+        def forward(self, facts1: str, facts2: str) -> str:
+            return (
+                f"Compare and contrast these facts:\n\n"
+                f"Document 1 Facts:\n{facts1}\n\n"
+                f"Document 2 Facts:\n{facts2}"
             )
 
-        def forward(self, text: str) -> str:
-            summary = self.summarizer(text)
-            # Pass summary Value directly - plait handles dependency tracking
-            return self.analyzer(summary)
+    class ExtractAndCompare(Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.comparison_style = Parameter(
+                value="Highlight key similarities and differences. Be thorough but concise.",
+                description="Controls the style of comparison output.",
+            )
+            self.extractor = LLMInference(
+                alias="fast",
+                system_prompt="Extract the main facts from the document as a bulleted list.",
+            )
+            self.combiner = FactsCombiner()
+            self.comparer = LLMInference(
+                alias="smart",
+                system_prompt=self.comparison_style,
+            )
+
+        def forward(self, doc1: str, doc2: str) -> str:
+            # These two calls are INDEPENDENT - plait runs them in PARALLEL
+            facts1 = self.extractor(doc1)
+            facts2 = self.extractor(doc2)
+
+            # Combine facts using the combiner module (resolves Proxy objects)
+            combined = self.combiner(facts1, facts2)
+
+            # This depends on both facts, so it waits for both to complete
+            return self.comparer(combined)
 
     resources = ResourceConfig(
         endpoints={
@@ -209,8 +253,8 @@ async def run_plait(text: str) -> str:
         }
     )
 
-    pipeline = SummarizeAndAnalyze().bind(resources=resources)
-    result = await pipeline(text)
+    pipeline = ExtractAndCompare().bind(resources=resources)
+    result = await pipeline(doc1, doc2)
     # Extract payload from Value object
     return str(result.payload if hasattr(result, "payload") else result)
 
@@ -248,6 +292,11 @@ def print_comparison(results: list[BenchmarkResult]) -> None:
         time_pct = (time_diff / successful[0].execution_time_ms) * 100
 
         print(f"\nTime difference: {time_diff:+.2f} ms ({time_pct:+.1f}%)")
+        print(
+            "\nNote: plait runs the two fact extractions in PARALLEL,"
+            "\nwhile DSPy runs them SEQUENTIALLY. This accounts for"
+            "\nthe performance difference in this fan-out workflow."
+        )
 
     # Outputs
     print("\n## Outputs\n")
@@ -258,14 +307,13 @@ def print_comparison(results: list[BenchmarkResult]) -> None:
         else:
             print(f"{result.output}\n")
 
-    # Note about DSPy limitations
+    # Note about differences
     print("\n## Notes\n")
-    print("- DSPy uses a single global LM config, so both steps use gpt-4o-mini")
-    print("- plait uses gpt-4o-mini for summarization and gpt-4o for analysis")
-    print(
-        "- This difference may affect output quality but demonstrates the "
-        "multi-model capability of plait"
-    )
+    print("- This workflow demonstrates PARALLEL EXECUTION:")
+    print("  - plait: Automatically runs independent operations in parallel")
+    print("  - DSPy: Runs operations sequentially (sync-first design)")
+    print("- plait uses gpt-4o-mini for extraction and gpt-4o for comparison")
+    print("- DSPy uses dspy.context() to switch models per call")
 
     print("\n" + "=" * 70)
 
@@ -279,10 +327,14 @@ async def main() -> int:
     """Run the comparison benchmark."""
     parser = argparse.ArgumentParser(description="Compare plait vs DSPy performance")
     parser.add_argument(
-        "--input",
-        "-i",
+        "--doc1",
         type=str,
-        help="Path to input text file (uses sample text if not provided)",
+        help="Path to first document (uses sample if not provided)",
+    )
+    parser.add_argument(
+        "--doc2",
+        type=str,
+        help="Path to second document (uses sample if not provided)",
     )
     args = parser.parse_args()
 
@@ -291,27 +343,36 @@ async def main() -> int:
         print("ERROR: OPENAI_API_KEY environment variable not set", file=sys.stderr)
         return 1
 
-    # Get input text
-    if args.input:
-        with open(args.input) as f:
-            text = f.read()
-        print(f"Using input from: {args.input}")
+    # Get input documents
+    if args.doc1:
+        with open(args.doc1) as f:
+            doc1 = f.read()
+        print(f"Document 1 from: {args.doc1}")
     else:
-        text = SAMPLE_TEXT
-        print("Using sample text")
+        doc1 = SAMPLE_DOC_1
+        print("Document 1: Sample (Electric Vehicles)")
 
-    print(f"Input length: {len(text)} characters")
+    if args.doc2:
+        with open(args.doc2) as f:
+            doc2 = f.read()
+        print(f"Document 2 from: {args.doc2}")
+    else:
+        doc2 = SAMPLE_DOC_2
+        print("Document 2: Sample (Hydrogen Fuel Cells)")
+
+    print(f"Document 1 length: {len(doc1)} characters")
+    print(f"Document 2 length: {len(doc2)} characters")
 
     results: list[BenchmarkResult] = []
 
     # Run DSPy
-    print("\nRunning DSPy...")
-    result = measure_execution("DSPy", lambda: run_dspy(text))
+    print("\nRunning DSPy (sequential extraction)...")
+    result = measure_execution("DSPy", lambda: run_dspy(doc1, doc2))
     results.append(result)
 
     # Run plait
-    print("Running plait...")
-    result = await measure_execution_async("plait", lambda: run_plait(text))
+    print("Running plait (parallel extraction)...")
+    result = await measure_execution_async("plait", lambda: run_plait(doc1, doc2))
     results.append(result)
 
     # Print comparison

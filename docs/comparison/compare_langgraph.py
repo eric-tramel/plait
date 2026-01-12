@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Compare plait vs LangGraph performance and output.
 
-This script implements the same summarize-and-analyze pipeline in both
+This script implements the same extract-and-compare pipeline in both
 plait and LangGraph, then compares execution time, memory usage, and outputs.
+
+The workflow demonstrates parallel execution:
+1. Takes TWO documents as input
+2. Extracts main facts from BOTH documents in parallel (fan-out)
+3. Runs a compare-and-contrast analysis on the extracted facts
+
+This highlights plait's automatic parallel execution vs LangGraph's explicit
+fan-out configuration.
 
 Run from repository root:
 
     uv run --with langgraph --with langchain-openai docs/comparison/compare_langgraph.py
-
-Or with a specific input file:
-
-    uv run --with langgraph --with langchain-openai docs/comparison/compare_langgraph.py --input myfile.txt
 
 Environment variables required:
     OPENAI_API_KEY: Your OpenAI API key
@@ -26,30 +30,31 @@ import sys
 import time
 import tracemalloc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-# Sample input text for comparison
-SAMPLE_TEXT = """
-Artificial intelligence has transformed numerous industries over the past decade.
-Machine learning algorithms now power recommendation systems, autonomous vehicles,
-and medical diagnosis tools. The emergence of large language models has further
-accelerated this transformation, enabling new applications in content generation,
-code assistance, and conversational interfaces.
+# Sample input documents for comparison
+SAMPLE_DOC_1 = """
+Electric vehicles (EVs) are revolutionizing the automotive industry. Battery
+technology has improved dramatically, with modern lithium-ion batteries offering
+ranges of 300+ miles on a single charge. The cost of EVs has decreased
+significantly, making them accessible to more consumers. Charging infrastructure
+is expanding rapidly, with fast-charging stations appearing along major highways.
+Major automakers have committed to transitioning their fleets to electric,
+with some planning to phase out internal combustion engines entirely by 2035.
+"""
 
-However, these advances come with significant challenges. Concerns about bias in
-AI systems, the environmental impact of training large models, and the potential
-for job displacement have sparked important debates. Researchers and policymakers
-are working to address these issues while continuing to push the boundaries of
-what AI can achieve.
-
-The future of AI likely involves more efficient training methods, better
-interpretability of model decisions, and stronger safeguards against misuse.
-As these technologies mature, their integration into daily life will only deepen,
-making it essential to develop frameworks for responsible AI development and
-deployment.
+SAMPLE_DOC_2 = """
+Hydrogen fuel cell vehicles represent an alternative approach to sustainable
+transportation. These vehicles generate electricity through a chemical reaction
+between hydrogen and oxygen, producing only water as a byproduct. Refueling
+takes just minutes, similar to traditional gasoline vehicles. However, hydrogen
+infrastructure remains limited, with fewer than 100 public stations in the US.
+Production of green hydrogen is still expensive and energy-intensive. Several
+major automakers are investing in fuel cell technology for heavy-duty vehicles
+where battery weight would be prohibitive.
 """
 
 
@@ -99,45 +104,81 @@ async def measure_execution_async(
 # =============================================================================
 
 
-async def run_langgraph(text: str) -> str:
-    """Run the summarize-and-analyze pipeline using LangGraph."""
-    from typing import TypedDict
+# Reducer function to collect facts from parallel branches (must be at module level)
+def _add_facts(existing: list[str] | None, new: list[str]) -> list[str]:
+    if existing is None:
+        return new
+    return existing + new
 
+
+# LangGraph state definition (must be at module level for Annotated to work)
+class _LangGraphState(TypedDict):
+    doc1: str
+    doc2: str
+    facts: Annotated[list[str], _add_facts]
+    comparison: str
+
+
+async def run_langgraph(doc1: str, doc2: str) -> str:
+    """Run the extract-and-compare pipeline using LangGraph.
+
+    LangGraph requires explicit fan-out configuration using Send() to achieve
+    parallel execution. The graph structure must be explicitly defined.
+    """
     from langchain_openai import ChatOpenAI  # type: ignore[import-not-found]
     from langgraph.graph import END, StateGraph  # type: ignore[import-not-found]
+    from langgraph.types import Send  # type: ignore[import-not-found]
 
-    class State(TypedDict):
-        text: str
-        summary: str
-        analysis: str
+    COMPARISON_STYLE = (
+        "Highlight key similarities and differences. Be thorough but concise."
+    )
 
-    INSTRUCTIONS = "Be concise and highlight key insights."
-
-    async def summarize(state: State) -> dict[str, str]:
+    async def extract_facts(state: dict[str, str]) -> dict[str, list[str]]:
+        """Extract facts from a single document."""
         llm = ChatOpenAI(model="gpt-4o-mini")
         result = await llm.ainvoke(
-            f"Summarize the input text concisely.\n\n{state['text']}"
+            f"Extract the main facts from this document as a bulleted list:\n\n{state['document']}"
         )
-        return {"summary": str(result.content)}
+        return {"facts": [str(result.content)]}
 
-    async def analyze(state: State) -> dict[str, str]:
+    async def compare_facts(state: _LangGraphState) -> dict[str, str]:
+        """Compare and contrast facts from both documents."""
         llm = ChatOpenAI(model="gpt-4o")
         result = await llm.ainvoke(
-            f"{INSTRUCTIONS}\n\nAnalyze this summary:\n{state['summary']}"
+            f"{COMPARISON_STYLE}\n\n"
+            f"Compare and contrast these facts:\n\n"
+            f"Document 1 Facts:\n{state['facts'][0]}\n\n"
+            f"Document 2 Facts:\n{state['facts'][1]}"
         )
-        return {"analysis": str(result.content)}
+        return {"comparison": str(result.content)}
 
-    # Build graph
-    graph = StateGraph(State)
-    graph.add_node("summarize", summarize)
-    graph.add_node("analyze", analyze)
-    graph.set_entry_point("summarize")
-    graph.add_edge("summarize", "analyze")
-    graph.add_edge("analyze", END)
+    def fan_out_to_extractors(state: _LangGraphState) -> list[Any]:
+        """Fan out to parallel extraction nodes using Send()."""
+        return [
+            Send("extract_facts", {"document": state["doc1"]}),
+            Send("extract_facts", {"document": state["doc2"]}),
+        ]
+
+    # Build graph with explicit fan-out
+    graph = StateGraph(_LangGraphState)
+    graph.add_node("extract_facts", extract_facts)
+    graph.add_node("compare_facts", compare_facts)
+
+    # Set up fan-out: entry -> parallel extractions -> comparison
+    graph.set_conditional_entry_point(fan_out_to_extractors)
+    graph.add_edge("extract_facts", "compare_facts")
+    graph.add_edge("compare_facts", END)
 
     app = graph.compile()
-    result = await app.ainvoke({"text": text, "summary": "", "analysis": ""})
-    return str(result["analysis"])
+    result = await app.ainvoke(
+        {
+            "doc1": doc1,
+            "doc2": doc2,
+            "facts": [],
+            "comparison": "",
+        }
+    )
+    return str(result["comparison"])
 
 
 # =============================================================================
@@ -145,31 +186,59 @@ async def run_langgraph(text: str) -> str:
 # =============================================================================
 
 
-async def run_plait(text: str) -> str:
-    """Run the summarize-and-analyze pipeline using plait."""
+async def run_plait(doc1: str, doc2: str) -> str:
+    """Run the extract-and-compare pipeline using plait.
+
+    The two fact extractions are independent operations that plait
+    automatically executes in parallel, reducing total execution time.
+    No explicit fan-out configuration is needed.
+    """
     from plait import LLMInference, Module, Parameter
     from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
-    class SummarizeAndAnalyze(Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.instructions = Parameter(
-                value="Be concise and highlight key insights. Analyze the summary provided.",
-                description="Controls the style of analysis output.",
-            )
-            self.summarizer = LLMInference(
-                alias="fast",
-                system_prompt="Summarize the input text concisely.",
-            )
-            self.analyzer = LLMInference(
-                alias="smart",
-                system_prompt=self.instructions,
+    class FactsCombiner(Module):
+        """Combine two facts into a comparison prompt.
+
+        This module formats the facts from two documents into a single
+        prompt for comparison. Using a module ensures proper tracing
+        during the forward pass (Proxy objects are resolved correctly).
+        """
+
+        def forward(self, facts1: str, facts2: str) -> str:
+            return (
+                f"Compare and contrast these facts:\n\n"
+                f"Document 1 Facts:\n{facts1}\n\n"
+                f"Document 2 Facts:\n{facts2}"
             )
 
-        def forward(self, text: str) -> str:
-            summary = self.summarizer(text)
-            # Pass summary Value directly - plait handles dependency tracking
-            return self.analyzer(summary)
+    class ExtractAndCompare(Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.comparison_style = Parameter(
+                value="Highlight key similarities and differences. Be thorough but concise.",
+                description="Controls the style of comparison output.",
+            )
+            self.extractor = LLMInference(
+                alias="fast",
+                system_prompt="Extract the main facts from the document as a bulleted list.",
+            )
+            self.combiner = FactsCombiner()
+            self.comparer = LLMInference(
+                alias="smart",
+                system_prompt=self.comparison_style,
+            )
+
+        def forward(self, doc1: str, doc2: str) -> str:
+            # These two calls are INDEPENDENT - plait runs them in PARALLEL
+            # No explicit fan-out configuration needed!
+            facts1 = self.extractor(doc1)
+            facts2 = self.extractor(doc2)
+
+            # Combine facts using the combiner module (resolves Proxy objects)
+            combined = self.combiner(facts1, facts2)
+
+            # This depends on both facts, so it waits for both to complete
+            return self.comparer(combined)
 
     resources = ResourceConfig(
         endpoints={
@@ -184,8 +253,8 @@ async def run_plait(text: str) -> str:
         }
     )
 
-    pipeline = SummarizeAndAnalyze().bind(resources=resources)
-    result = await pipeline(text)
+    pipeline = ExtractAndCompare().bind(resources=resources)
+    result = await pipeline(doc1, doc2)
     # Extract payload from Value object
     return str(result.payload if hasattr(result, "payload") else result)
 
@@ -223,6 +292,11 @@ def print_comparison(results: list[BenchmarkResult]) -> None:
         time_pct = (time_diff / successful[0].execution_time_ms) * 100
 
         print(f"\nTime difference: {time_diff:+.2f} ms ({time_pct:+.1f}%)")
+        print(
+            "\nNote: Both frameworks can run extractions in parallel,"
+            "\nbut plait does this AUTOMATICALLY from data dependencies,"
+            "\nwhile LangGraph requires EXPLICIT Send() configuration."
+        )
 
     # Outputs
     print("\n## Outputs\n")
@@ -233,7 +307,15 @@ def print_comparison(results: list[BenchmarkResult]) -> None:
         else:
             print(f"{result.output}\n")
 
-    print("=" * 70)
+    # Note about differences
+    print("\n## Notes\n")
+    print("- This workflow demonstrates PARALLEL EXECUTION approaches:")
+    print("  - plait: Automatic parallelism from data dependencies (no config needed)")
+    print("  - LangGraph: Explicit fan-out using Send() and conditional entry points")
+    print("- plait uses gpt-4o-mini for extraction and gpt-4o for comparison")
+    print("- LangGraph requires reducer functions to collect parallel results")
+
+    print("\n" + "=" * 70)
 
 
 # =============================================================================
@@ -247,10 +329,14 @@ async def main() -> int:
         description="Compare plait vs LangGraph performance"
     )
     parser.add_argument(
-        "--input",
-        "-i",
+        "--doc1",
         type=str,
-        help="Path to input text file (uses sample text if not provided)",
+        help="Path to first document (uses sample if not provided)",
+    )
+    parser.add_argument(
+        "--doc2",
+        type=str,
+        help="Path to second document (uses sample if not provided)",
     )
     args = parser.parse_args()
 
@@ -259,27 +345,38 @@ async def main() -> int:
         print("ERROR: OPENAI_API_KEY environment variable not set", file=sys.stderr)
         return 1
 
-    # Get input text
-    if args.input:
-        with open(args.input) as f:
-            text = f.read()
-        print(f"Using input from: {args.input}")
+    # Get input documents
+    if args.doc1:
+        with open(args.doc1) as f:
+            doc1 = f.read()
+        print(f"Document 1 from: {args.doc1}")
     else:
-        text = SAMPLE_TEXT
-        print("Using sample text")
+        doc1 = SAMPLE_DOC_1
+        print("Document 1: Sample (Electric Vehicles)")
 
-    print(f"Input length: {len(text)} characters")
+    if args.doc2:
+        with open(args.doc2) as f:
+            doc2 = f.read()
+        print(f"Document 2 from: {args.doc2}")
+    else:
+        doc2 = SAMPLE_DOC_2
+        print("Document 2: Sample (Hydrogen Fuel Cells)")
+
+    print(f"Document 1 length: {len(doc1)} characters")
+    print(f"Document 2 length: {len(doc2)} characters")
 
     results: list[BenchmarkResult] = []
 
     # Run LangGraph
-    print("\nRunning LangGraph...")
-    result = await measure_execution_async("LangGraph", lambda: run_langgraph(text))
+    print("\nRunning LangGraph (explicit fan-out with Send())...")
+    result = await measure_execution_async(
+        "LangGraph", lambda: run_langgraph(doc1, doc2)
+    )
     results.append(result)
 
     # Run plait
-    print("Running plait...")
-    result = await measure_execution_async("plait", lambda: run_plait(text))
+    print("Running plait (automatic parallel extraction)...")
+    result = await measure_execution_async("plait", lambda: run_plait(doc1, doc2))
     results.append(result)
 
     # Print comparison
