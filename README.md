@@ -21,6 +21,31 @@ plait moves that complexity into a shared runtime:
 3. **Execute with a scheduler** - concurrent I/O, rate limiting, retries handled for you
 4. **Optimize with feedback** - backward passes propagate feedback to improve prompts
 
+### Framework Comparison
+
+| Feature | plait | DSPy | LangGraph | Pydantic AI |
+|---------|:-----:|:----:|:---------:|:-----------:|
+| **Automatic parallelism** | ✅ | ❌ | ❌ | ❌ |
+| **Implicit graph definition** | ✅ | ✅ | ❌ | ❌ |
+| **Runtime optimization** | ✅ | ❌ | ❌ | ❌ |
+| **Multi-model pipelines** | ✅ | ✅ | ✅ | ✅ |
+| **Async-first execution** | ✅ | ❌ | ✅ | ✅ |
+| **PyTorch-like API** | ✅ | ❌ | ❌ | ❌ |
+| **Learnable parameters** | ✅ | ✅ | ❌ | ❌ |
+
+### Benchmark: Extract-and-Compare Pipeline
+
+Real-world performance on a fan-out workflow (2 parallel extractions + 1 comparison):
+
+| Framework | Time | Memory | Notes |
+|-----------|------|--------|-------|
+| **plait** | **6.9s** | **0.4 MB** | Automatic parallel execution |
+| Pydantic AI | 8.7s | 17.6 MB | Requires manual `asyncio.gather()` |
+| LangGraph | 10.1s | 26.2 MB | Requires explicit `Send()` config |
+| DSPy | 13.4s | 76.0 MB | Sequential execution only |
+
+plait is **up to 2x faster** and uses **up to 99% less memory** than alternatives. [See detailed comparisons →](docs/comparison/)
+
 ## Features
 
 - **PyTorch-like API**: `Module` with `forward()` and `backward()` methods
