@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -1053,7 +1053,7 @@ wheels = [
 
 [[package]]
 name = "plait"
-version = "0.1.0"
+version = "2025.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "datasets" },

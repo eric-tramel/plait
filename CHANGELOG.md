@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Calendar Versioning](https://calver.org/) with format `YYYY.MM.MICRO`.
 
 ## Formatting Rules
 
@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [#13](https://github.com/eric-tramel/plait/pull/13) Fix scheduler race condition that caused 5-second delays when tasks completed while waiting for semaphore (10x test speedup: 33s → 3.4s)
 
 ### Added
+- [#27](https://github.com/eric-tramel/plait/pull/27) Add release process documentation (`RELEASE.md`) with CalVer versioning and GitHub Actions workflow for automated PyPI publishing
 - [#15](https://github.com/eric-tramel/plait/pull/15) Add container modules (`Sequential`, `ModuleList`, `ModuleDict`) for PyTorch-style module composition
 - [#14](https://github.com/eric-tramel/plait/pull/14) Consolidate examples from 9 files to 5 focused single-concept files with `make example` runner
 - [#12](https://github.com/eric-tramel/plait/pull/12) Export core classes (`Module`, `LLMInference`, `Parameter`, `ExecutionSettings`) from package root for cleaner imports
@@ -86,8 +87,4 @@ _No releases yet._
 
 ## Release Process
 
-1. Update version in `pyproject.toml`
-2. Move items from `[Unreleased]` to new version section
-3. Add release date
-4. Create git tag: `git tag -a v0.X.0 -m "Release v0.X.0"`
-5. Push tag: `git push origin v0.X.0`
+See [RELEASE.md](RELEASE.md) for the complete release process documentation.
