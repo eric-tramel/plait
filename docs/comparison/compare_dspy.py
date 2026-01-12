@@ -13,7 +13,7 @@ This highlights plait's automatic parallel execution for independent operations.
 
 Run from repository root:
 
-    uv run --with dspy docs/comparison/compare_dspy.py
+    uv run --with dspy --with rich docs/comparison/compare_dspy.py
 
 Environment variables required:
     OPENAI_API_KEY: Your OpenAI API key
@@ -265,24 +265,37 @@ async def run_plait(doc1: str, doc2: str) -> str:
 
 
 def print_comparison(results: list[BenchmarkResult]) -> None:
-    """Print a formatted comparison of benchmark results."""
-    print("\n" + "=" * 70)
-    print("BENCHMARK COMPARISON: plait vs DSPy")
-    print("=" * 70)
+    """Print a formatted comparison of benchmark results using Rich."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
 
-    # Performance table
-    print("\n## Performance Metrics\n")
-    print(f"{'Framework':<20} {'Time (ms)':<15} {'Peak Memory (MB)':<20}")
-    print("-" * 55)
+    console = Console()
+
+    # Print output panels for each framework
+    for result in results:
+        if result.error:
+            content = f"[red]ERROR: {result.error}[/red]"
+        else:
+            content = result.output
+
+        console.print(Panel(content, title=result.name, border_style="blue"))
+        console.print()
+
+    # Create performance metrics table
+    table = Table(title="Benchmark Comparison: plait vs DSPy")
+    table.add_column("Framework", style="cyan", no_wrap=True)
+    table.add_column("Time (ms)", style="magenta", justify="right")
+    table.add_column("Peak Memory (MB)", style="green", justify="right")
 
     for result in results:
         if result.error:
-            print(f"{result.name:<20} {'ERROR':<15} {'N/A':<20}")
+            table.add_row(result.name, "ERROR", "N/A")
         else:
-            print(
-                f"{result.name:<20} "
-                f"{result.execution_time_ms:<15.2f} "
-                f"{result.peak_memory_mb:<20.2f}"
+            table.add_row(
+                result.name,
+                f"{result.execution_time_ms:.2f}",
+                f"{result.peak_memory_mb:.2f}",
             )
 
     # Calculate differences if both succeeded
@@ -290,32 +303,10 @@ def print_comparison(results: list[BenchmarkResult]) -> None:
     if len(successful) == 2:
         time_diff = successful[1].execution_time_ms - successful[0].execution_time_ms
         time_pct = (time_diff / successful[0].execution_time_ms) * 100
+        table.add_section()
+        table.add_row("Difference", f"{time_diff:+.2f} ({time_pct:+.1f}%)", "")
 
-        print(f"\nTime difference: {time_diff:+.2f} ms ({time_pct:+.1f}%)")
-        print(
-            "\nNote: plait runs the two fact extractions in PARALLEL,"
-            "\nwhile DSPy runs them SEQUENTIALLY. This accounts for"
-            "\nthe performance difference in this fan-out workflow."
-        )
-
-    # Outputs
-    print("\n## Outputs\n")
-    for result in results:
-        print(f"### {result.name}\n")
-        if result.error:
-            print(f"ERROR: {result.error}\n")
-        else:
-            print(f"{result.output}\n")
-
-    # Note about differences
-    print("\n## Notes\n")
-    print("- This workflow demonstrates PARALLEL EXECUTION:")
-    print("  - plait: Automatically runs independent operations in parallel")
-    print("  - DSPy: Runs operations sequentially (sync-first design)")
-    print("- plait uses gpt-4o-mini for extraction and gpt-4o for comparison")
-    print("- DSPy uses dspy.context() to switch models per call")
-
-    print("\n" + "=" * 70)
+    console.print(table)
 
 
 # =============================================================================
@@ -376,6 +367,7 @@ async def main() -> int:
     results.append(result)
 
     # Print comparison
+    print()
     print_comparison(results)
 
     return 0

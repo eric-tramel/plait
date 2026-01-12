@@ -32,10 +32,10 @@ docs-serve:
 
 doctest:
 	@echo "=== Running plait vs Pydantic AI comparison ==="
-	uv run --with pydantic-ai docs/comparison/compare_pydantic_ai.py
+	uv run --with pydantic-ai --with rich docs/comparison/compare_pydantic_ai.py
 	@echo ""
 	@echo "=== Running plait vs LangGraph comparison ==="
-	uv run --with langgraph --with langchain-openai docs/comparison/compare_langgraph.py
+	uv run --with langgraph --with langchain-openai --with rich docs/comparison/compare_langgraph.py
 	@echo ""
 	@echo "=== Running plait vs DSPy comparison ==="
-	uv run --with dspy docs/comparison/compare_dspy.py
+	uv run --with dspy --with rich docs/comparison/compare_dspy.py
