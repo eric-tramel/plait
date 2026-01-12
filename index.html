@@ -367,47 +367,81 @@
             <!-- Parallelism Code Comparison -->
             <div class="parallelism-comparison">
                 <h3 class="parallelism-title">Parallelism: Write Sequential, Execute Parallel</h3>
-                <div class="parallelism-grid">
-                    <div class="parallelism-card plait-card">
-                        <div class="parallelism-header">
-                            <span class="parallelism-badge">plait</span>
-                            <span class="parallelism-note">Automatic parallelism</span>
-                        </div>
-                        <pre><code class="language-python">def forward(self, doc1: str, doc2: str) -> str:
-    facts1 = self.extractor(doc1)  # These run
-    facts2 = self.extractor(doc2)  # in parallel!
-    prompt = self.formatter(facts1, facts2)  # Sub-module
-    return self.comparer(prompt)</code></pre>
+                <div class="code-comparison-box">
+                    <div class="code-comparison-tabs">
+                        <button class="code-tab active" data-tab="plait">
+                            <span class="tab-name">plait</span>
+                            <span class="tab-note">Automatic</span>
+                        </button>
+                        <button class="code-tab" data-tab="pydantic">
+                            <span class="tab-name">Pydantic AI</span>
+                            <span class="tab-note">Manual gather</span>
+                        </button>
+                        <button class="code-tab" data-tab="langgraph">
+                            <span class="tab-name">LangGraph</span>
+                            <span class="tab-note">Explicit Send</span>
+                        </button>
+                        <button class="code-tab" data-tab="dspy">
+                            <span class="tab-name">DSPy</span>
+                            <span class="tab-note">Sequential</span>
+                        </button>
                     </div>
-                    <div class="parallelism-card">
-                        <div class="parallelism-header">
-                            <span class="parallelism-badge other">Pydantic AI</span>
-                            <span class="parallelism-note">Manual gather</span>
-                        </div>
-                        <pre><code class="language-python">facts1, facts2 = await asyncio.gather(
-    extractor.run(doc1),
-    extractor.run(doc2),
-)</code></pre>
-                    </div>
-                    <div class="parallelism-card">
-                        <div class="parallelism-header">
-                            <span class="parallelism-badge other">LangGraph</span>
-                            <span class="parallelism-note">Explicit Send</span>
-                        </div>
-                        <pre><code class="language-python">def fan_out(state):
+                    <div class="code-comparison-content">
+                        <pre class="code-panel active" id="code-plait"><code class="language-python">class ExtractAndCompare(Module):
+    def forward(self, doc1: str, doc2: str) -> str:
+        # These two calls are INDEPENDENT - plait runs them in PARALLEL
+        facts1 = self.extractor(doc1)
+        facts2 = self.extractor(doc2)
+
+        # Formatter is a traced sub-module
+        prompt = self.formatter(facts1, facts2)
+        return self.comparer(prompt)
+
+# That's it! No async boilerplate, no explicit parallelism.
+# The tracer discovers independence and parallelizes automatically.</code></pre>
+                        <pre class="code-panel" id="code-pydantic"><code class="language-python">async def extract_and_compare(doc1: str, doc2: str) -> str:
+    # Must explicitly use asyncio.gather for parallelism
+    facts1, facts2 = await asyncio.gather(
+        extractor.run(doc1),
+        extractor.run(doc2),
+    )
+
+    # Manual string formatting
+    prompt = f"Compare:\n{facts1.data}\n\nvs:\n{facts2.data}"
+    result = await comparer.run(prompt)
+    return result.data
+
+# Requires understanding of async/await patterns.
+# Parallelism must be manually identified and implemented.</code></pre>
+                        <pre class="code-panel" id="code-langgraph"><code class="language-python">def fan_out(state: State) -> list[Send]:
+    # Must define explicit fan-out function
     return [
-        Send("extract", {"doc": state["doc1"]}),
-        Send("extract", {"doc": state["doc2"]}),
+        Send("extract", {"doc": state["doc1"], "key": "facts1"}),
+        Send("extract", {"doc": state["doc2"], "key": "facts2"}),
     ]
-graph.set_conditional_entry_point(fan_out)</code></pre>
-                    </div>
-                    <div class="parallelism-card">
-                        <div class="parallelism-header">
-                            <span class="parallelism-badge other">DSPy</span>
-                            <span class="parallelism-note">Sequential only</span>
-                        </div>
-                        <pre><code class="language-python">facts1 = self.extract(document=doc1).facts  # Runs first
-facts2 = self.extract(document=doc2).facts  # Runs second</code></pre>
+
+def reduce(results: list[str]) -> str:
+    # Must define reducer to collect parallel results
+    return "\n\n".join(results)
+
+graph.add_conditional_edges(START, fan_out)
+graph.add_node("extract", extract_node)
+graph.add_node("compare", compare_node)
+
+# Requires explicit graph construction with Send() and reducers.
+# More boilerplate for simple parallel patterns.</code></pre>
+                        <pre class="code-panel" id="code-dspy"><code class="language-python">class ExtractAndCompare(dspy.Module):
+    def forward(self, doc1: str, doc2: str) -> str:
+        # Runs sequentially - no built-in parallelism
+        facts1 = self.extract(document=doc1).facts  # Runs first
+        facts2 = self.extract(document=doc2).facts  # Then second
+
+        # Compare after both complete
+        result = self.compare(facts1=facts1, facts2=facts2)
+        return result.comparison
+
+# DSPy is sync-first. These calls execute one after another.
+# No automatic parallelism for independent operations.</code></pre>
                     </div>
                 </div>
             </div>
@@ -632,6 +666,18 @@ result = await pipeline(doc1, doc2)</code></pre>
                 document.querySelectorAll('.install-code').forEach(c => c.classList.add('hidden'));
                 tab.classList.add('active');
                 document.getElementById('install-' + tab.dataset.tab).classList.remove('hidden');
+            });
+        });
+
+        // Code comparison tab switching
+        document.querySelectorAll('.code-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('code-' + tab.dataset.tab).classList.add('active');
+                // Re-highlight code with Prism
+                Prism.highlightAllUnder(document.getElementById('code-' + tab.dataset.tab));
             });
         });
 

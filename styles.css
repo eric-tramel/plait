@@ -664,57 +664,105 @@ img {
     margin-bottom: var(--space-xl);
 }
 
-.parallelism-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: var(--space-lg);
-}
-
-.parallelism-card {
+/* Tabbed Code Comparison Box */
+.code-comparison-box {
     background: var(--bg-card);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    max-width: 800px;
+    margin: 0 auto;
 }
 
-.parallelism-card.plait-card {
-    border-color: rgba(246, 198, 103, 0.3);
-    box-shadow: 0 0 20px rgba(246, 198, 103, 0.1);
-}
-
-.parallelism-header {
+.code-comparison-tabs {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-md) var(--space-lg);
     background: rgba(255, 255, 255, 0.02);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
-.parallelism-badge {
-    font-size: 0.8rem;
+.code-tab {
+    flex: 1;
+    min-width: 120px;
+    padding: var(--space-md) var(--space-lg);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.code-tab:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.code-tab.active {
+    background: rgba(246, 198, 103, 0.05);
+    border-bottom-color: var(--accent-primary);
+}
+
+.code-tab .tab-name {
+    font-size: 0.9rem;
     font-weight: 600;
-    padding: 0.2rem 0.6rem;
-    border-radius: var(--radius-sm);
-    background: var(--accent-glow);
+    color: var(--text-secondary);
+    transition: color var(--transition-fast);
+}
+
+.code-tab.active .tab-name {
     color: var(--accent-primary);
 }
 
-.parallelism-badge.other {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-secondary);
-}
-
-.parallelism-note {
-    font-size: 0.8rem;
+.code-tab .tab-note {
+    font-size: 0.7rem;
     color: var(--text-muted);
 }
 
-.parallelism-card pre {
+.code-comparison-content {
+    position: relative;
+    min-height: 320px;
+}
+
+.code-panel {
+    display: none;
     margin: 0;
     padding: var(--space-lg);
     background: var(--bg-code);
     font-size: 0.85rem;
+    line-height: 1.6;
+    overflow-x: auto;
+}
+
+.code-panel.active {
+    display: block;
+}
+
+.code-panel code {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Responsive adjustments for tabs */
+@media (max-width: 640px) {
+    .code-tab {
+        min-width: 90px;
+        padding: var(--space-sm) var(--space-md);
+    }
+
+    .code-tab .tab-name {
+        font-size: 0.8rem;
+    }
+
+    .code-tab .tab-note {
+        font-size: 0.65rem;
+    }
+
+    .code-comparison-content {
+        min-height: 380px;
+    }
 }
 
 /* ============================================
