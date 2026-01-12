@@ -55,7 +55,6 @@ nav:
       - vs Pydantic AI: comparison/pydantic-ai.md
       - vs LangGraph: comparison/langgraph.md
       - vs DSPY: comparison/dspy.md
-      - vs NeMo Data Designer: comparison/nemo-data-designer.md
   - API Reference:
       - API Reference: api/reference.md
   - Design:

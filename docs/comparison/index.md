@@ -16,16 +16,16 @@ LLM inference pipelines. Its key differentiators are:
 
 ## Feature Comparison Matrix
 
-| Feature | plait | Pydantic AI | LangGraph | DSPY | NeMo Data Designer |
-|---------|-------|-------------|-----------|------|-------------------|
-| **Core Paradigm** | PyTorch-like modules | Agent-based | Explicit state graph | Signatures/Modules | Column-based schema |
-| **DAG Definition** | Implicit (tracing) | Explicit (pydantic-graph) | Explicit (add_node/edge) | Implicit (composition) | Declarative (config) |
-| **Optimization** | LLM backward pass | N/A | N/A | Compile-time prompting | N/A |
-| **Async Execution** | Native async-first | Native async | Async supported | Sync-first | Batch-oriented |
-| **Type Safety** | Type hints + validation | Pydantic models | TypedDict state | Signature fields | Schema validation |
-| **Structured Output** | Dataclass response_format | Native Pydantic | Manual parsing | Field types | Column types |
-| **Learning/Feedback** | Parameter + backward() | N/A | N/A | Optimizers | N/A |
-| **Primary Use Case** | Inference optimization | Agent workflows | Stateful workflows | Prompt optimization | Synthetic data |
+| Feature | plait | Pydantic AI | LangGraph | DSPY |
+|---------|-------|-------------|-----------|------|
+| **Core Paradigm** | PyTorch-like modules | Agent-based | Explicit state graph | Signatures/Modules |
+| **DAG Definition** | Implicit (tracing) | Explicit (pydantic-graph) | Explicit (add_node/edge) | Implicit (composition) |
+| **Optimization** | LLM backward pass | N/A | N/A | Compile-time prompting |
+| **Async Execution** | Native async-first | Native async | Async supported | Sync-first |
+| **Type Safety** | Type hints + validation | Pydantic models | TypedDict state | Signature fields |
+| **Structured Output** | Dataclass response_format | Native Pydantic | Manual parsing | Field types |
+| **Learning/Feedback** | Parameter + backward() | N/A | N/A | Optimizers |
+| **Primary Use Case** | Inference optimization | Agent workflows | Stateful workflows | Prompt optimization |
 
 ## When to Use Each Framework
 
@@ -57,22 +57,13 @@ LLM inference pipelines. Its key differentiators are:
 - **Dataset-driven optimization**: Improve prompts using evaluation datasets
 - **Compilation**: Pre-optimize prompts before deployment
 
-### Choose NeMo Data Designer when you need:
-
-- **Synthetic data generation**: Generate training datasets at scale
-- **Schema-based generation**: Define column types and relationships
-- **Data validation**: Built-in quality checks for generated data
-- **Batch processing**: Generate large volumes efficiently
-
 ## Complementary Usage
 
 These frameworks are not mutually exclusive. Common combinations include:
 
-1. **NeMo Data Designer + plait**: Generate training data with Data Designer,
-   then optimize your inference pipeline with plait
-2. **DSPY + plait**: Use DSPY to find good initial prompts, then use plait's
+1. **DSPY + plait**: Use DSPY to find good initial prompts, then use plait's
    runtime optimization for continued improvement
-3. **LangGraph + plait**: Use LangGraph for complex stateful orchestration,
+2. **LangGraph + plait**: Use LangGraph for complex stateful orchestration,
    with plait modules handling individual inference steps
 
 ## Detailed Comparisons
@@ -82,4 +73,3 @@ For in-depth analysis of each framework, see:
 - [plait vs Pydantic AI](pydantic-ai.md) - Agent definition and dependency injection
 - [plait vs LangGraph](langgraph.md) - Graph definition and state management
 - [plait vs DSPY](dspy.md) - Optimization philosophy and prompt engineering
-- [plait vs NeMo Data Designer](nemo-data-designer.md) - Data generation and complementary usage
