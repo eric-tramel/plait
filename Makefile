@@ -26,6 +26,7 @@ example:
 
 docs:
 	uv run mkdocs build
+	cp index.html styles.css public/
 
 docs-serve:
 	uv run mkdocs serve
