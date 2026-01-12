@@ -815,9 +815,33 @@ class ParameterList(MutableSequence["Parameter"]):
         Args:
             idx: The index of the parameter in the list.
             param: The parameter to name.
+
+        Note:
+            Sets the parameter's _parent to the container (self), not the owning
+            module. This preserves the container name in hierarchical paths
+            (e.g., 'prompts.0' instead of just '0').
         """
         object.__setattr__(param, "_name", str(idx))
-        object.__setattr__(param, "_parent", self._parent)
+        object.__setattr__(param, "_parent", self)
+
+    def _increment_state_version(self) -> None:
+        """Proxy state version increment to the owning module.
+
+        This is called by Parameter.apply_update() to signal that the module's
+        state has changed. We walk up the parent chain to find the actual Module
+        and call its _increment_state_version.
+
+        Note:
+            If no parent module exists, this is a no-op.
+        """
+        if self._parent is not None:
+            # Walk up to find a Module with _increment_state_version
+            parent = self._parent
+            while parent is not None:
+                if hasattr(parent, "_increment_state_version"):
+                    parent._increment_state_version()
+                    return
+                parent = getattr(parent, "_parent", None)
 
     # MutableSequence abstract methods
 
@@ -1021,9 +1045,33 @@ class ParameterDict(MutableMapping[str, "Parameter"]):
         Args:
             key: The key of the parameter in the dict.
             param: The parameter to name.
+
+        Note:
+            Sets the parameter's _parent to the container (self), not the owning
+            module. This preserves the container name in hierarchical paths
+            (e.g., 'tasks.summarize' instead of just 'summarize').
         """
         object.__setattr__(param, "_name", key)
-        object.__setattr__(param, "_parent", self._parent)
+        object.__setattr__(param, "_parent", self)
+
+    def _increment_state_version(self) -> None:
+        """Proxy state version increment to the owning module.
+
+        This is called by Parameter.apply_update() to signal that the module's
+        state has changed. We walk up the parent chain to find the actual Module
+        and call its _increment_state_version.
+
+        Note:
+            If no parent module exists, this is a no-op.
+        """
+        if self._parent is not None:
+            # Walk up to find a Module with _increment_state_version
+            parent = self._parent
+            while parent is not None:
+                if hasattr(parent, "_increment_state_version"):
+                    parent._increment_state_version()
+                    return
+                parent = getattr(parent, "_parent", None)
 
     # MutableMapping abstract methods
 

@@ -1221,9 +1221,10 @@ class TestParameterContainerReparenting:
         p2 = Parameter("prompt2", description="second")
         param_list = ParameterList([p1, p2])
 
-        # Initially, parameters have no parent (None)
-        assert p1._parent is None
-        assert p2._parent is None
+        # When parameters are added to a container, they immediately get
+        # the container as their parent (not None)
+        assert p1._parent is param_list
+        assert p2._parent is param_list
 
         # Create a module and assign the list
         class TestModule(Module):
@@ -1233,11 +1234,11 @@ class TestParameterContainerReparenting:
 
         module = TestModule()
 
-        # After assignment, parameters should have the container as parent
+        # After assignment, parameters should still have the container as parent
         # (not the module directly) to preserve hierarchical naming
         assert p1._parent is param_list
         assert p2._parent is param_list
-        # The container itself should have the module as parent
+        # The container itself should now have the module as parent
         assert param_list._parent is module
 
     def test_parameter_dict_keeps_container_in_parent_chain(self) -> None:
@@ -1253,9 +1254,10 @@ class TestParameterContainerReparenting:
         p2 = Parameter("translate this", description="translation prompt")
         param_dict = ParameterDict({"summarize": p1, "translate": p2})
 
-        # Initially, parameters have no parent (None)
-        assert p1._parent is None
-        assert p2._parent is None
+        # When parameters are added to a container, they immediately get
+        # the container as their parent (not None)
+        assert p1._parent is param_dict
+        assert p2._parent is param_dict
 
         # Create a module and assign the dict
         class TestModule(Module):
@@ -1265,11 +1267,11 @@ class TestParameterContainerReparenting:
 
         module = TestModule()
 
-        # After assignment, parameters should have the container as parent
+        # After assignment, parameters should still have the container as parent
         # (not the module directly) to preserve hierarchical naming
         assert p1._parent is param_dict
         assert p2._parent is param_dict
-        # The container itself should have the module as parent
+        # The container itself should now have the module as parent
         assert param_dict._parent is module
 
 
@@ -1448,3 +1450,191 @@ class TestParameterContainerHierarchicalNaming:
         assert v_style.ref == "param:styles.0"
         # Most importantly, they should NOT be the same
         assert v_prompt.ref != v_style.ref
+
+
+class TestParameterContainerIncrementStateVersion:
+    """Tests for _increment_state_version on container-held parameters (PR #16 P1 review).
+
+    This addresses the critical P1 review comment: Parameters in ParameterList/ParameterDict
+    call _parent._increment_state_version() in apply_update(), but containers don't
+    implement this method. This would break training when using the new containers.
+    """
+
+    def test_parameter_list_apply_update_does_not_crash(self) -> None:
+        """apply_update() on parameter in ParameterList should not raise AttributeError.
+
+        When a parameter's _parent is a container (ParameterList), calling apply_update()
+        should work without raising AttributeError for missing _increment_state_version.
+        """
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [
+                        Parameter("initial value", description="test prompt"),
+                    ]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        param = m.prompts[0]
+
+        # This should NOT raise AttributeError
+        param.apply_update("updated value")
+
+        assert param.value == "updated value"
+
+    def test_parameter_dict_apply_update_does_not_crash(self) -> None:
+        """apply_update() on parameter in ParameterDict should not raise AttributeError.
+
+        When a parameter's _parent is a container (ParameterDict), calling apply_update()
+        should work without raising AttributeError for missing _increment_state_version.
+        """
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = ParameterDict(
+                    {
+                        "summarize": Parameter("summarize this", description="summary"),
+                    }
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        param = m.tasks["summarize"]
+
+        # This should NOT raise AttributeError
+        param.apply_update("new summary prompt")
+
+        assert param.value == "new summary prompt"
+
+    def test_apply_update_increments_module_state_version(self) -> None:
+        """apply_update() on container parameter should increment the owning module's state version.
+
+        The state version should be incremented on the actual Module, not just the container.
+        """
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([Parameter("initial", description="test")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        initial_version = m._module_state_version
+
+        # Apply update should increment the module's state version
+        m.prompts[0].apply_update("updated")
+
+        assert m._module_state_version > initial_version
+
+
+class TestParameterListMutationsKeepContainerPrefix:
+    """Tests for ParameterList mutations keeping container prefixes (PR #16 review).
+
+    This addresses the review comment about keeping container prefixes after mutations.
+    Operations like append, insert, and slice should not drop the container prefix
+    from hierarchical names.
+    """
+
+    def test_append_preserves_hierarchical_name(self) -> None:
+        """Appending to ParameterList preserves container prefix in hierarchical names."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([Parameter("first", description="first")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        new_param = Parameter("second", description="second")
+        m.prompts.append(new_param)
+
+        # The new parameter should have the full hierarchical name
+        assert new_param._get_hierarchical_name() == "prompts.1"
+
+    def test_insert_preserves_hierarchical_name(self) -> None:
+        """Inserting into ParameterList preserves container prefix in hierarchical names."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [
+                        Parameter("first", description="first"),
+                        Parameter("third", description="third"),
+                    ]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        new_param = Parameter("second", description="second")
+        m.prompts.insert(1, new_param)
+
+        # All parameters should have proper hierarchical names
+        assert m.prompts[0]._get_hierarchical_name() == "prompts.0"
+        assert m.prompts[1]._get_hierarchical_name() == "prompts.1"
+        assert m.prompts[2]._get_hierarchical_name() == "prompts.2"
+
+    def test_setitem_preserves_hierarchical_name(self) -> None:
+        """Setting an item in ParameterList preserves container prefix."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([Parameter("old", description="old")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        new_param = Parameter("new", description="new")
+        m.prompts[0] = new_param
+
+        # The new parameter should have the full hierarchical name
+        assert new_param._get_hierarchical_name() == "prompts.0"
+
+    def test_delitem_reindexes_with_container_prefix(self) -> None:
+        """Deleting from ParameterList preserves container prefix after reindexing."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [
+                        Parameter("first", description="first"),
+                        Parameter("second", description="second"),
+                        Parameter("third", description="third"),
+                    ]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        del m.prompts[1]  # Delete "second"
+
+        # Remaining parameters should have proper hierarchical names
+        assert m.prompts[0]._get_hierarchical_name() == "prompts.0"
+        assert m.prompts[1]._get_hierarchical_name() == "prompts.1"
+        assert m.prompts[0].value == "first"
+        assert m.prompts[1].value == "third"
