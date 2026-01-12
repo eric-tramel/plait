@@ -101,7 +101,7 @@ jobs:
     needs: [build]
     environment:
       name: testpypi
-      url: https://test.pypi.org/project/plait/
+      url: https://test.pypi.org/project/pyplait/
     permissions:
       id-token: write
     steps:
@@ -122,7 +122,7 @@ jobs:
     needs: [publish-testpypi]
     environment:
       name: pypi
-      url: https://pypi.org/project/plait/
+      url: https://pypi.org/project/pyplait/
     permissions:
       id-token: write
     steps:

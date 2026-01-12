@@ -1,5 +1,5 @@
 [project]
-name = "plait"
+name = "pyplait"
 version = "2025.1.0"
 description = "A PyTorch-inspired framework for LLM inference pipelines"
 readme = "README.md"

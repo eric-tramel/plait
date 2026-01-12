@@ -2,6 +2,20 @@
 
 This document describes the release process for plait, including versioning conventions, the release checklist, and recovery procedures.
 
+## Package Naming
+
+The package is published to PyPI as **`pyplait`** while the Python module remains **`plait`**:
+
+```bash
+# Install from PyPI
+pip install pyplait
+
+# Import in Python
+import plait
+```
+
+> **Note**: The name "plait" was unavailable on PyPI at the time of initial release. We may migrate to `plait` in the future via a [PEP 541](https://peps.python.org/pep-0541/) request if the name becomes available.
+
 ## Versioning Scheme
 
 plait uses **Calendar Versioning (CalVer)** with the format:
@@ -75,14 +89,14 @@ git push origin v2025.1.0
 ### 5. Verify Release Pipeline
 
 1. **Check GitHub Actions**: Navigate to Actions tab, verify the release workflow starts
-2. **Verify TestPyPI**: Check [TestPyPI](https://test.pypi.org/project/plait/) for the new version
-3. **Verify PyPI**: Check [PyPI](https://pypi.org/project/plait/) for the new version
+2. **Verify TestPyPI**: Check [TestPyPI](https://test.pypi.org/project/pyplait/) for the new version
+3. **Verify PyPI**: Check [PyPI](https://pypi.org/project/pyplait/) for the new version
 
 ### 6. Verify Installation
 
 ```bash
 # Test installation from PyPI
-pip install plait==2025.1.0
+pip install pyplait==2025.1.0
 
 # Verify version
 python -c "import plait; print(plait.__version__)"
@@ -122,7 +136,7 @@ This is a one-time setup required before the first release.
 1. Go to [TestPyPI](https://test.pypi.org/) and sign in
 2. Navigate to "Your projects" > "Publishing"
 3. Add a new pending publisher:
-   - **PyPI Project Name**: `plait`
+   - **PyPI Project Name**: `pyplait`
    - **Owner**: `eric-tramel`
    - **Repository name**: `plait`
    - **Workflow name**: `release.yml`
@@ -133,7 +147,7 @@ This is a one-time setup required before the first release.
 1. Go to [PyPI](https://pypi.org/) and sign in
 2. Navigate to "Your projects" > "Publishing"
 3. Add a new pending publisher:
-   - **PyPI Project Name**: `plait`
+   - **PyPI Project Name**: `pyplait`
    - **Owner**: `eric-tramel`
    - **Repository name**: `plait`
    - **Workflow name**: `release.yml`
@@ -172,7 +186,7 @@ If a release has critical issues and was already published:
 
 ```bash
 # Yank from PyPI (prevents new installs, existing installs unaffected)
-pip index yank plait --version 2025.1.0
+pip index yank pyplait --version 2025.1.0
 
 # Create a patch release with the fix
 # Use the next micro version: 2025.1.1
@@ -203,7 +217,7 @@ The version is defined in `pyproject.toml`:
 
 ```toml
 [project]
-name = "plait"
+name = "pyplait"
 version = "2025.1.0"
 ```
 
@@ -211,7 +225,7 @@ To access the version programmatically:
 
 ```python
 from importlib.metadata import version
-print(version("plait"))
+print(version("pyplait"))
 ```
 
 ## References
