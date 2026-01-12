@@ -3,14 +3,16 @@
 ## Installation
 
 ```bash
-uv add plait
+uv add pyplait
 ```
 
 Or with pip:
 
 ```bash
-pip install plait
+pip install pyplait
 ```
+
+> **Note**: The package is published as `pyplait` on PyPI, but you import it as `plait` in Python.
 
 ## Quick start
 

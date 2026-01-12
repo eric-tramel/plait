@@ -5,6 +5,8 @@ complex LLM inference pipelines with automatic DAG capture and
 maximum throughput through async execution.
 """
 
+from importlib.metadata import version
+
 from plait.containers import (
     ModuleDict,
     ModuleList,
@@ -16,7 +18,7 @@ from plait.execution.context import ExecutionSettings
 from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 
-__version__ = "0.1.0"
+__version__ = version("pyplait")
 __all__ = [
     "ExecutionSettings",
     "LLMInference",

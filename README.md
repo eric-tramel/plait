@@ -59,11 +59,13 @@ plait is **up to 2x faster** and uses **up to 99% less memory** than alternative
 
 ```bash
 # Install with uv (recommended)
-uv add plait
+uv add pyplait
 
 # Or with pip
-pip install plait
+pip install pyplait
 ```
+
+> **Note**: The package is published as `pyplait` on PyPI, but you import it as `plait` in Python.
 
 **Requirements**: Python 3.13+
 
