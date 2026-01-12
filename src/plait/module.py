@@ -108,10 +108,11 @@ class Module:
             self._parameter_containers[name] = value
             object.__setattr__(value, "_name", name)
             object.__setattr__(value, "_parent", self)
-            # Reparent existing parameters in the container so their
-            # _parent points to the owning module (not None)
+            # Set parameters' _parent to the container (not the module) so that
+            # _get_hierarchical_name() can walk up through the container to build
+            # the full path (e.g., "prompts.0" instead of just "0")
             for param in value.parameters():
-                object.__setattr__(param, "_parent", self)
+                object.__setattr__(param, "_parent", value)
 
         object.__setattr__(self, name, value)
 

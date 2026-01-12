@@ -1208,8 +1208,12 @@ class TestSlicingNoReparenting:
 class TestParameterContainerReparenting:
     """Tests for parameter reparenting when containers attach to Module (PR #16 review)."""
 
-    def test_parameter_list_reparents_on_attach(self) -> None:
-        """Parameters in ParameterList get reparented when list is assigned to Module."""
+    def test_parameter_list_keeps_container_in_parent_chain(self) -> None:
+        """Parameters in ParameterList are parented to the container, not the module.
+
+        This preserves the hierarchical name (e.g., 'prompts.0' not just '0')
+        which is important for valueify() to produce correct refs.
+        """
         from plait.parameter import Parameter
 
         # Create parameters and put them in a list BEFORE assigning to module
@@ -1229,12 +1233,19 @@ class TestParameterContainerReparenting:
 
         module = TestModule()
 
-        # After assignment, parameters should have the module as parent
-        assert p1._parent is module
-        assert p2._parent is module
+        # After assignment, parameters should have the container as parent
+        # (not the module directly) to preserve hierarchical naming
+        assert p1._parent is param_list
+        assert p2._parent is param_list
+        # The container itself should have the module as parent
+        assert param_list._parent is module
 
-    def test_parameter_dict_reparents_on_attach(self) -> None:
-        """Parameters in ParameterDict get reparented when dict is assigned to Module."""
+    def test_parameter_dict_keeps_container_in_parent_chain(self) -> None:
+        """Parameters in ParameterDict are parented to the container, not the module.
+
+        This preserves the hierarchical name (e.g., 'tasks.summarize' not just 'summarize')
+        which is important for valueify() to produce correct refs.
+        """
         from plait.parameter import Parameter
 
         # Create parameters and put them in a dict BEFORE assigning to module
@@ -1254,9 +1265,12 @@ class TestParameterContainerReparenting:
 
         module = TestModule()
 
-        # After assignment, parameters should have the module as parent
-        assert p1._parent is module
-        assert p2._parent is module
+        # After assignment, parameters should have the container as parent
+        # (not the module directly) to preserve hierarchical naming
+        assert p1._parent is param_dict
+        assert p2._parent is param_dict
+        # The container itself should have the module as parent
+        assert param_dict._parent is module
 
 
 class TestModuleDictUpdateMapping:
@@ -1286,3 +1300,151 @@ class TestModuleDictUpdateMapping:
         # They should reference the same module objects
         assert copy["x"] is original["x"]
         assert copy["y"] is original["y"]
+
+
+class TestParameterContainerHierarchicalNaming:
+    """Tests for hierarchical naming through parameter containers (PR #16 review).
+
+    This addresses the review comment about keeping container names in the
+    parameter parent chain so that _get_hierarchical_name() and valueify()
+    produce correct refs like 'param:prompts.0' instead of 'param:0'.
+    """
+
+    def test_parameter_list_hierarchical_name(self) -> None:
+        """Parameter in ParameterList gets full hierarchical name including container."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [
+                        Parameter("first prompt", description="first"),
+                        Parameter("second prompt", description="second"),
+                    ]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+
+        # Get parameters and check their hierarchical names
+        p0 = m.prompts[0]
+        p1 = m.prompts[1]
+
+        assert p0._get_hierarchical_name() == "prompts.0"
+        assert p1._get_hierarchical_name() == "prompts.1"
+
+    def test_parameter_dict_hierarchical_name(self) -> None:
+        """Parameter in ParameterDict gets full hierarchical name including container."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = ParameterDict(
+                    {
+                        "summarize": Parameter("summarize this", description="summary"),
+                        "translate": Parameter(
+                            "translate this", description="translation"
+                        ),
+                    }
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+
+        # Get parameters and check their hierarchical names
+        p_sum = m.tasks["summarize"]
+        p_trans = m.tasks["translate"]
+
+        assert p_sum._get_hierarchical_name() == "tasks.summarize"
+        assert p_trans._get_hierarchical_name() == "tasks.translate"
+
+    def test_valueify_produces_correct_refs_for_parameter_list(self) -> None:
+        """valueify() includes container name in param ref for ParameterList."""
+        from plait.parameter import Parameter
+        from plait.values import valueify
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [
+                        Parameter("first prompt", description="first"),
+                        Parameter("second prompt", description="second"),
+                    ]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+
+        # Valueify the parameters and check refs
+        v0 = valueify(m.prompts[0])
+        v1 = valueify(m.prompts[1])
+
+        assert v0.ref == "param:prompts.0"
+        assert v1.ref == "param:prompts.1"
+
+    def test_valueify_produces_correct_refs_for_parameter_dict(self) -> None:
+        """valueify() includes container name in param ref for ParameterDict."""
+        from plait.parameter import Parameter
+        from plait.values import valueify
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = ParameterDict(
+                    {
+                        "summarize": Parameter("summarize this", description="summary"),
+                        "translate": Parameter(
+                            "translate this", description="translation"
+                        ),
+                    }
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+
+        # Valueify the parameters and check refs
+        v_sum = valueify(m.tasks["summarize"])
+        v_trans = valueify(m.tasks["translate"])
+
+        assert v_sum.ref == "param:tasks.summarize"
+        assert v_trans.ref == "param:tasks.translate"
+
+    def test_multiple_containers_produce_unique_refs(self) -> None:
+        """Two different containers in the same module produce distinct refs.
+
+        This was the core issue in the review comment - without container names
+        in the ref, two containers would produce ambiguous refs like 'param:0'.
+        """
+        from plait.parameter import Parameter
+        from plait.values import valueify
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([Parameter("prompt", description="p")])
+                self.styles = ParameterList([Parameter("style", description="s")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+
+        # These should be different refs
+        v_prompt = valueify(m.prompts[0])
+        v_style = valueify(m.styles[0])
+
+        assert v_prompt.ref == "param:prompts.0"
+        assert v_style.ref == "param:styles.0"
+        # Most importantly, they should NOT be the same
+        assert v_prompt.ref != v_style.ref
