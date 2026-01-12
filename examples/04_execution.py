@@ -244,11 +244,13 @@ async def demo_concurrency() -> None:
     print("\n6. Concurrency Control")
     print("-" * 40)
 
-    # Create pipeline with many parallel tasks
+    # Create pipeline with many parallel tasks using ModuleList
     class ManyTasks(Module):
         def __init__(self) -> None:
             super().__init__()
-            self.tasks = [AsyncProcessor(f"t{i}", delay_ms=20) for i in range(10)]
+            self.tasks = ModuleList(
+                [AsyncProcessor(f"t{i}", delay_ms=20) for i in range(10)]
+            )
 
         def forward(self, text: str) -> list[str]:
             return [t(text) for t in self.tasks]
