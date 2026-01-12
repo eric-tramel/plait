@@ -77,18 +77,21 @@ class Analyze(dspy.Signature):
 class SummarizeAndAnalyze(dspy.Module):
     def __init__(self):
         super().__init__()
+        # Create separate LM instances for each step
+        self.fast_lm = dspy.LM('openai/gpt-4o-mini')
+        self.smart_lm = dspy.LM('openai/gpt-4o')
         self.summarize = dspy.Predict(Summarize)
         self.analyze = dspy.Predict(Analyze)
 
     def forward(self, text: str) -> str:
-        summary = self.summarize(text=text).summary
-        analysis = self.analyze(summary=summary).analysis
+        # Use fast model for summarization
+        with dspy.context(lm=self.fast_lm):
+            summary = self.summarize(text=text).summary
+        # Use smart model for analysis
+        with dspy.context(lm=self.smart_lm):
+            analysis = self.analyze(summary=summary).analysis
         return analysis
 
-
-# Configure LLM (single model for both steps in basic DSPy)
-lm = dspy.LM('openai/gpt-4o-mini')
-dspy.configure(lm=lm)
 
 pipeline = SummarizeAndAnalyze()
 result = pipeline(text="Your input text...")
@@ -100,7 +103,7 @@ result = pipeline(text="Your input text...")
 |--------|-------|------|
 | **Structure** | `Module` with `LLMInference` | `dspy.Module` with `Signature` |
 | **Prompts** | Explicit system prompts | Signature docstrings |
-| **Multi-model** | Aliases map to different endpoints | Global `dspy.configure()` |
+| **Multi-model** | Aliases map to different endpoints | `dspy.context(lm=...)` per call |
 | **Optimization** | Runtime backward pass | Compile-time teleprompters |
 | **Execution** | Async-first | Sync-first |
 
@@ -139,12 +142,18 @@ resources = ResourceConfig(
 )
 ```
 
-**DSPy**: Uses global configuration. Multi-model requires manual switching or
-custom modules.
+**DSPy**: Use `dspy.context(lm=...)` to switch models per call, or store LM
+instances as module attributes.
 
 ```python
-dspy.configure(lm=dspy.LM('openai/gpt-4o-mini'))
-# All calls use the same model
+self.fast_lm = dspy.LM('openai/gpt-4o-mini')
+self.smart_lm = dspy.LM('openai/gpt-4o')
+
+# In forward():
+with dspy.context(lm=self.fast_lm):
+    summary = self.summarize(text=text).summary
+with dspy.context(lm=self.smart_lm):
+    analysis = self.analyze(summary=summary).analysis
 ```
 
 ### Optimization Philosophy
