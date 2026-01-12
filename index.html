@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="plait - A PyTorch-inspired framework for building, executing, and optimizing LLM inference pipelines. Automatic parallelism, runtime optimization, and familiar APIs.">
+    <meta name="keywords" content="LLM, machine learning, PyTorch, AI pipelines, prompt optimization, async execution">
+    <title>plait - PyTorch for LLM Pipelines</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Prism.js for syntax highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">plait</a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#comparison">Comparison</a>
+                <a href="#example">Example</a>
+                <a href="docs/" class="nav-link-docs">Documentation</a>
+                <a href="https://github.com/eric-tramel/plait" class="nav-link-github" target="_blank" rel="noopener">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section with PyTorch Comparison -->
+    <header class="hero">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                <span class="hero-title-main">plait</span>
+                <span class="hero-title-sub">PyTorch for LLM Pipelines</span>
+            </h1>
+            <p class="hero-description">
+                Build, execute, and optimize compound AI systems with the familiar PyTorch programming model.
+                Write normal Python, get automatic parallelism, and improve prompts through backward passes.
+            </p>
+            <div class="hero-cta">
+                <a href="docs/getting-started/" class="btn btn-primary">Get Started</a>
+                <a href="#example" class="btn btn-secondary">See Example</a>
+            </div>
+
+            <!-- PyTorch Comparison -->
+            <div class="pytorch-comparison">
+                <h2 class="comparison-title">If you know PyTorch, you know plait</h2>
+                <div class="comparison-grid">
+                    <div class="comparison-card">
+                        <div class="comparison-card-header">
+                            <span class="comparison-badge pytorch">PyTorch</span>
+                            <span class="comparison-subtitle">Training Neural Networks</span>
+                        </div>
+                        <div class="comparison-table">
+                            <div class="comparison-row">
+                                <code>nn.Module</code>
+                                <span class="comparison-desc">Base class</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>forward()</code>
+                                <span class="comparison-desc">Define computation</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>backward()</code>
+                                <span class="comparison-desc">Propagate gradients</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>nn.Parameter</code>
+                                <span class="comparison-desc">Learnable weights</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>torch.fx.Tracer</code>
+                                <span class="comparison-desc">Capture graph</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="comparison-arrow">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                    <div class="comparison-card">
+                        <div class="comparison-card-header">
+                            <span class="comparison-badge plait">plait</span>
+                            <span class="comparison-subtitle">Training LLM Pipelines</span>
+                        </div>
+                        <div class="comparison-table">
+                            <div class="comparison-row">
+                                <code>Module</code>
+                                <span class="comparison-desc">Base class</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>forward()</code>
+                                <span class="comparison-desc">Define computation</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>backward()</code>
+                                <span class="comparison-desc">Propagate feedback</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>Parameter</code>
+                                <span class="comparison-desc">Learnable prompts</span>
+                            </div>
+                            <div class="comparison-row">
+                                <code>Tracer</code>
+                                <span class="comparison-desc">Capture graph</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Why plait?</h2>
+            <p class="section-subtitle">
+                Most LLM applications are systems, not single calls. plait moves the complexity into a shared runtime.
+            </p>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <h3>Automatic Parallelism</h3>
+                    <p>Independent operations run concurrently without boilerplate. No manual <code>asyncio.gather()</code> required.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                            <path d="M2 17l10 5 10-5"/>
+                            <path d="M2 12l10 5 10-5"/>
+                        </svg>
+                    </div>
+                    <h3>Automatic DAG Capture</h3>
+                    <p>Write normal Python code in <code>forward()</code>. Dependencies are discovered automatically via tracing.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                    </div>
+                    <h3>Async-First Execution</h3>
+                    <p>Maximum throughput with adaptive backpressure, rate limiting, and automatic retries.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                        </svg>
+                    </div>
+                    <h3>Runtime Optimization</h3>
+                    <p>Backward passes propagate feedback to improve prompts. Optimize your pipeline during execution.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/>
+                            <path d="M8 21h8"/>
+                            <path d="M12 17v4"/>
+                        </svg>
+                    </div>
+                    <h3>Multi-Model Pipelines</h3>
+                    <p>Use different models for different steps. Alias-based configuration separates logic from deployment.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <path d="M3.27 6.96L12 12.01l8.73-5.05"/>
+                            <path d="M12 22.08V12"/>
+                        </svg>
+                    </div>
+                    <h3>Learnable Parameters</h3>
+                    <p>Prompts and instructions as <code>Parameter</code> objects that can be optimized via feedback.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Framework Comparison Section -->
+    <section id="comparison" class="comparison-section">
+        <div class="container">
+            <h2 class="section-title">Framework Comparison</h2>
+            <p class="section-subtitle">
+                See how plait compares to other LLM frameworks on key features.
+            </p>
+
+            <!-- Feature Matrix -->
+            <div class="matrix-container">
+                <table class="feature-matrix">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th class="highlight">plait</th>
+                            <th>Pydantic AI</th>
+                            <th>LangGraph</th>
+                            <th>DSPy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Graph definition</td>
+                            <td class="highlight"><span class="check">Implicit (tracing)</span></td>
+                            <td>Explicit</td>
+                            <td>Explicit</td>
+                            <td>Implicit</td>
+                        </tr>
+                        <tr>
+                            <td>Parallel execution</td>
+                            <td class="highlight"><span class="check">Automatic</span></td>
+                            <td>Manual</td>
+                            <td>Explicit</td>
+                            <td>Sequential</td>
+                        </tr>
+                        <tr>
+                            <td>Multi-model</td>
+                            <td class="highlight"><span class="check">Alias-based</span></td>
+                            <td>Per-agent</td>
+                            <td>Per-node</td>
+                            <td>Global config</td>
+                        </tr>
+                        <tr>
+                            <td>Learnable params</td>
+                            <td class="highlight"><span class="check">Parameter class</span></td>
+                            <td><span class="cross">No</span></td>
+                            <td><span class="cross">No</span></td>
+                            <td>Compile-time</td>
+                        </tr>
+                        <tr>
+                            <td>Optimization</td>
+                            <td class="highlight"><span class="check">Runtime backward</span></td>
+                            <td><span class="cross">No</span></td>
+                            <td><span class="cross">No</span></td>
+                            <td>Compile-time</td>
+                        </tr>
+                        <tr>
+                            <td>Execution model</td>
+                            <td class="highlight"><span class="check">Async-first</span></td>
+                            <td>Async</td>
+                            <td>Async</td>
+                            <td>Sync-first</td>
+                        </tr>
+                        <tr>
+                            <td>PyTorch-like API</td>
+                            <td class="highlight"><span class="check-icon">Yes</span></td>
+                            <td><span class="cross">No</span></td>
+                            <td><span class="cross">No</span></td>
+                            <td><span class="cross">No</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Benchmark Results -->
+            <div class="benchmark-section">
+                <h3 class="benchmark-title">Benchmark: Extract-and-Compare Pipeline</h3>
+                <p class="benchmark-description">
+                    Real-world performance on a fan-out workflow: 2 parallel extractions (gpt-4o-mini) + 1 comparison (gpt-4o).
+                </p>
+                <div class="benchmark-grid">
+                    <div class="benchmark-chart">
+                        <h4>Execution Time</h4>
+                        <div class="bar-chart">
+                            <div class="bar-row">
+                                <span class="bar-label">plait</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-plait" style="width: 52%;">
+                                        <span class="bar-value">6.9s</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bar-row">
+                                <span class="bar-label">Pydantic AI</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-other" style="width: 65%;">
+                                        <span class="bar-value">8.7s</span>
+                                    </div>
+                                </div>
+                                <span class="bar-delta">+25%</span>
+                            </div>
+                            <div class="bar-row">
+                                <span class="bar-label">LangGraph</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-other" style="width: 75%;">
+                                        <span class="bar-value">10.1s</span>
+                                    </div>
+                                </div>
+                                <span class="bar-delta">+45%</span>
+                            </div>
+                            <div class="bar-row">
+                                <span class="bar-label">DSPy</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-other" style="width: 100%;">
+                                        <span class="bar-value">13.4s</span>
+                                    </div>
+                                </div>
+                                <span class="bar-delta">+94%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="benchmark-chart">
+                        <h4>Memory Usage</h4>
+                        <div class="bar-chart">
+                            <div class="bar-row">
+                                <span class="bar-label">plait</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-plait bar-memory" style="width: 5%;">
+                                        <span class="bar-value">0.4 MB</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="bar-row">
+                                <span class="bar-label">Pydantic AI</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-other" style="width: 23%;">
+                                        <span class="bar-value">17.6 MB</span>
+                                    </div>
+                                </div>
+                                <span class="bar-delta">44x</span>
+                            </div>
+                            <div class="bar-row">
+                                <span class="bar-label">LangGraph</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-other" style="width: 34%;">
+                                        <span class="bar-value">26.2 MB</span>
+                                    </div>
+                                </div>
+                                <span class="bar-delta">65x</span>
+                            </div>
+                            <div class="bar-row">
+                                <span class="bar-label">DSPy</span>
+                                <div class="bar-container">
+                                    <div class="bar bar-other" style="width: 100%;">
+                                        <span class="bar-value">76.0 MB</span>
+                                    </div>
+                                </div>
+                                <span class="bar-delta">190x</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p class="benchmark-note">
+                    plait is <strong>up to 2x faster</strong> and uses <strong>up to 99% less memory</strong> than alternatives.
+                </p>
+            </div>
+
+            <!-- Parallelism Code Comparison -->
+            <div class="parallelism-comparison">
+                <h3 class="parallelism-title">Parallelism: Write Sequential, Execute Parallel</h3>
+                <div class="parallelism-grid">
+                    <div class="parallelism-card plait-card">
+                        <div class="parallelism-header">
+                            <span class="parallelism-badge">plait</span>
+                            <span class="parallelism-note">Automatic parallelism</span>
+                        </div>
+                        <pre><code class="language-python">def forward(self, doc1: str, doc2: str) -> str:
+    facts1 = self.extractor(doc1)  # These run
+    facts2 = self.extractor(doc2)  # in parallel!
+    return self.comparer(f"{facts1}\n\n{facts2}")</code></pre>
+                    </div>
+                    <div class="parallelism-card">
+                        <div class="parallelism-header">
+                            <span class="parallelism-badge other">Pydantic AI</span>
+                            <span class="parallelism-note">Manual gather</span>
+                        </div>
+                        <pre><code class="language-python">facts1, facts2 = await asyncio.gather(
+    extractor.run(doc1),
+    extractor.run(doc2),
+)</code></pre>
+                    </div>
+                    <div class="parallelism-card">
+                        <div class="parallelism-header">
+                            <span class="parallelism-badge other">LangGraph</span>
+                            <span class="parallelism-note">Explicit Send</span>
+                        </div>
+                        <pre><code class="language-python">def fan_out(state):
+    return [
+        Send("extract", {"doc": state["doc1"]}),
+        Send("extract", {"doc": state["doc2"]}),
+    ]
+graph.set_conditional_entry_point(fan_out)</code></pre>
+                    </div>
+                    <div class="parallelism-card">
+                        <div class="parallelism-header">
+                            <span class="parallelism-badge other">DSPy</span>
+                            <span class="parallelism-note">Sequential only</span>
+                        </div>
+                        <pre><code class="language-python">facts1 = self.extract(document=doc1).facts  # Runs first
+facts2 = self.extract(document=doc2).facts  # Runs second</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Code Example Section -->
+    <section id="example" class="example-section">
+        <div class="container">
+            <h2 class="section-title">See It In Action</h2>
+            <p class="section-subtitle">
+                A complete pipeline showing automatic parallelism, multi-model configuration, and learnable parameters.
+            </p>
+            <div class="example-container">
+                <div class="example-code">
+                    <div class="code-header">
+                        <span class="code-filename">extract_and_compare.py</span>
+                        <div class="code-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                    </div>
+                    <pre><code class="language-python">from plait import Module, LLMInference, Parameter
+from plait.resources import OpenAIEndpointConfig, ResourceConfig
+
+
+class ExtractAndCompare(Module):
+    """Extract facts from two documents and compare them."""
+
+    def __init__(self):
+        super().__init__()
+        # Learnable parameter - can be optimized via backward pass
+        self.comparison_style = Parameter(
+            value="Highlight key similarities and differences.",
+            description="Controls the style of comparison output.",
+        )
+        self.extractor = LLMInference(
+            alias="fast",
+            system_prompt="Extract the main facts as a bulleted list.",
+        )
+        self.comparer = LLMInference(
+            alias="smart",
+            system_prompt=self.comparison_style,
+        )
+
+    def forward(self, doc1: str, doc2: str) -> str:
+        # These two calls are INDEPENDENT - plait runs them in PARALLEL
+        facts1 = self.extractor(doc1)
+        facts2 = self.extractor(doc2)
+
+        # This depends on both facts, waits for both to complete
+        return self.comparer(f"Compare:\n{facts1}\n\nvs:\n{facts2}")
+
+
+# Configure endpoints separately from module definition
+resources = ResourceConfig(
+    endpoints={
+        "fast": OpenAIEndpointConfig(model="gpt-4o-mini", max_concurrent=20),
+        "smart": OpenAIEndpointConfig(model="gpt-4o", max_concurrent=5),
+    }
+)
+
+# Bind resources and execute
+pipeline = ExtractAndCompare().bind(resources=resources)
+result = await pipeline(doc1, doc2)</code></pre>
+                </div>
+                <div class="example-annotations">
+                    <div class="annotation">
+                        <div class="annotation-marker">1</div>
+                        <div class="annotation-content">
+                            <h4>Learnable Parameters</h4>
+                            <p>Prompts stored as <code>Parameter</code> can be optimized through backward passes with feedback.</p>
+                        </div>
+                    </div>
+                    <div class="annotation">
+                        <div class="annotation-marker">2</div>
+                        <div class="annotation-content">
+                            <h4>Automatic Parallelism</h4>
+                            <p>Independent calls to <code>extractor</code> are traced and executed concurrently - no async boilerplate needed.</p>
+                        </div>
+                    </div>
+                    <div class="annotation">
+                        <div class="annotation-marker">3</div>
+                        <div class="annotation-content">
+                            <h4>Multi-Model Configuration</h4>
+                            <p>Use aliases like "fast" and "smart" to decouple module logic from endpoint configuration.</p>
+                        </div>
+                    </div>
+                    <div class="annotation">
+                        <div class="annotation-marker">4</div>
+                        <div class="annotation-content">
+                            <h4>Resource Binding</h4>
+                            <p>Same pipeline can run against different endpoints - dev, prod, or self-hosted models.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DAG Visualization -->
+            <div class="dag-visualization">
+                <h3>Execution DAG</h3>
+                <p class="dag-description">
+                    The tracer captures the dependency graph from your <code>forward()</code> method.
+                    Independent branches execute in parallel automatically.
+                </p>
+                <div class="dag-diagram">
+                    <div class="dag-node dag-input">Input</div>
+                    <div class="dag-arrows">
+                        <div class="dag-branch">
+                            <div class="dag-arrow"></div>
+                            <div class="dag-node dag-extract">extractor(doc1)</div>
+                        </div>
+                        <div class="dag-branch">
+                            <div class="dag-arrow"></div>
+                            <div class="dag-node dag-extract">extractor(doc2)</div>
+                        </div>
+                    </div>
+                    <div class="dag-merge">
+                        <div class="dag-arrow-down"></div>
+                        <div class="dag-arrow-down"></div>
+                    </div>
+                    <div class="dag-node dag-compare">comparer</div>
+                    <div class="dag-arrow-final"></div>
+                    <div class="dag-node dag-output">Output</div>
+                    <div class="dag-parallel-label">Runs in parallel</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation / CTA Section -->
+    <section class="cta-section">
+        <div class="container">
+            <h2 class="section-title">Get Started in Seconds</h2>
+            <div class="install-box">
+                <div class="install-tabs">
+                    <button class="install-tab active" data-tab="uv">uv (recommended)</button>
+                    <button class="install-tab" data-tab="pip">pip</button>
+                </div>
+                <div class="install-content">
+                    <pre class="install-code" id="install-uv"><code>uv add plait</code></pre>
+                    <pre class="install-code hidden" id="install-pip"><code>pip install plait</code></pre>
+                </div>
+                <button class="copy-btn" aria-label="Copy to clipboard">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                </button>
+            </div>
+            <p class="cta-requirements">Requires Python 3.13+</p>
+            <div class="cta-links">
+                <a href="docs/" class="btn btn-primary">Read the Docs</a>
+                <a href="docs/comparison/" class="btn btn-secondary">Compare Frameworks</a>
+                <a href="https://github.com/eric-tramel/plait" class="btn btn-outline" target="_blank" rel="noopener">View on GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <span class="footer-logo">plait</span>
+                    <p>PyTorch-inspired framework for building, executing, and optimizing LLM inference pipelines.</p>
+                </div>
+                <div class="footer-links">
+                    <h4>Documentation</h4>
+                    <ul>
+                        <li><a href="docs/getting-started/">Getting Started</a></li>
+                        <li><a href="docs/tutorials/">Tutorials</a></li>
+                        <li><a href="docs/api/reference/">API Reference</a></li>
+                        <li><a href="docs/design/">Design Docs</a></li>
+                    </ul>
+                </div>
+                <div class="footer-links">
+                    <h4>Compare</h4>
+                    <ul>
+                        <li><a href="docs/comparison/pydantic-ai/">vs Pydantic AI</a></li>
+                        <li><a href="docs/comparison/langgraph/">vs LangGraph</a></li>
+                        <li><a href="docs/comparison/dspy/">vs DSPy</a></li>
+                    </ul>
+                </div>
+                <div class="footer-links">
+                    <h4>Resources</h4>
+                    <ul>
+                        <li><a href="https://github.com/eric-tramel/plait" target="_blank" rel="noopener">GitHub</a></li>
+                        <li><a href="https://github.com/eric-tramel/plait/issues" target="_blank" rel="noopener">Issues</a></li>
+                        <li><a href="https://github.com/eric-tramel/plait/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>Apache-2.0 License</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Prism.js for syntax highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+
+    <!-- Simple interactivity -->
+    <script>
+        // Install tab switching
+        document.querySelectorAll('.install-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.install-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.install-code').forEach(c => c.classList.add('hidden'));
+                tab.classList.add('active');
+                document.getElementById('install-' + tab.dataset.tab).classList.remove('hidden');
+            });
+        });
+
+        // Copy button
+        document.querySelector('.copy-btn').addEventListener('click', function() {
+            const activeCode = document.querySelector('.install-code:not(.hidden) code').textContent;
+            navigator.clipboard.writeText(activeCode).then(() => {
+                this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+                setTimeout(() => {
+                    this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+                }, 2000);
+            });
+        });
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
