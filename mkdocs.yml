@@ -50,6 +50,11 @@ nav:
   - Getting Started: getting-started.md
   - Tutorials:
       - Overview: tutorials/index.md
+  - Framework Comparison:
+      - Overview: comparison/index.md
+      - vs Pydantic AI: comparison/pydantic-ai.md
+      - vs LangGraph: comparison/langgraph.md
+      - vs DSPY: comparison/dspy.md
   - API Reference:
       - API Reference: api/reference.md
   - Design:
