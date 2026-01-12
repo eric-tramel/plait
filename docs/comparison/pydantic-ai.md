@@ -1,6 +1,10 @@
 # plait vs Pydantic AI
 
-This comparison uses the same example—an extract-and-compare pipeline—to show
+> **Run the comparison:** `uv run --with pydantic-ai --with rich docs/comparison/compare_pydantic_ai.py`
+>
+> [View full source](compare_pydantic_ai.py)
+
+This comparison uses the same example--an extract-and-compare pipeline--to show
 how each framework approaches the same problem, with a focus on parallel execution.
 
 ## The Example: Extract and Compare
@@ -20,17 +24,29 @@ from plait import Module, LLMInference, Parameter
 from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
+class FactsCombiner(Module):
+    """Combine two facts into a comparison prompt."""
+
+    def forward(self, facts1: str, facts2: str) -> str:
+        return (
+            f"Compare and contrast these facts:\n\n"
+            f"Document 1 Facts:\n{facts1}\n\n"
+            f"Document 2 Facts:\n{facts2}"
+        )
+
+
 class ExtractAndCompare(Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.comparison_style = Parameter(
-            value="Highlight key similarities and differences.",
+            value="Highlight key similarities and differences. Be thorough but concise.",
             description="Controls the style of comparison output.",
         )
         self.extractor = LLMInference(
             alias="fast",
-            system_prompt="Extract the main facts as a bulleted list.",
+            system_prompt="Extract the main facts from the document as a bulleted list.",
         )
+        self.combiner = FactsCombiner()
         self.comparer = LLMInference(
             alias="smart",
             system_prompt=self.comparison_style,
@@ -38,15 +54,15 @@ class ExtractAndCompare(Module):
 
     def forward(self, doc1: str, doc2: str) -> str:
         # These two calls are INDEPENDENT - plait runs them in PARALLEL
+        # No asyncio.gather() needed!
         facts1 = self.extractor(doc1)
         facts2 = self.extractor(doc2)
 
+        # Combine facts using the combiner module (resolves Proxy objects)
+        combined = self.combiner(facts1, facts2)
+
         # This depends on both facts, waits for both to complete
-        return self.comparer(
-            f"Compare and contrast:\n\n"
-            f"Document 1:\n{facts1}\n\n"
-            f"Document 2:\n{facts2}"
-        )
+        return self.comparer(combined)
 
 
 resources = ResourceConfig(
@@ -74,13 +90,13 @@ from pydantic_ai import Agent
 
 
 extractor = Agent(
-    'openai:gpt-4o-mini',
-    system_prompt="Extract the main facts as a bulleted list.",
+    "openai:gpt-4o-mini",
+    system_prompt="Extract the main facts from the document as a bulleted list.",
 )
 
 comparer = Agent(
-    'openai:gpt-4o',
-    system_prompt="Highlight key similarities and differences.",
+    "openai:gpt-4o",
+    system_prompt="Highlight key similarities and differences. Be thorough but concise.",
 )
 
 
@@ -92,11 +108,11 @@ async def extract_and_compare(doc1: str, doc2: str) -> str:
     )
 
     comparison_result = await comparer.run(
-        f"Compare and contrast:\n\n"
-        f"Document 1:\n{facts1_result.output}\n\n"
-        f"Document 2:\n{facts2_result.output}"
+        f"Compare and contrast these facts:\n\n"
+        f"Document 1 Facts:\n{facts1_result.output}\n\n"
+        f"Document 2 Facts:\n{facts2_result.output}"
     )
-    return comparison_result.output
+    return str(comparison_result.output)
 ```
 
 For a more structured approach, Pydantic AI offers `pydantic-graph`:
@@ -169,7 +185,7 @@ async def extract_and_compare(doc1: str, doc2: str) -> str:
         extractor.run(doc2),
     )
     comparison_result = await comparer.run(...)
-    return comparison_result.output
+    return str(comparison_result.output)
 ```
 
 ### Graph Definition
@@ -207,7 +223,7 @@ on feedback.
 
 ```python
 self.comparison_style = Parameter(
-    value="Highlight key similarities and differences.",
+    value="Highlight key similarities and differences. Be thorough but concise.",
     description="Controls the style of comparison output.",
 )
 ```
@@ -231,12 +247,12 @@ resources = ResourceConfig(
 pipeline = ExtractAndCompare().bind(resources=resources)
 ```
 
-**Pydantic AI**: Model is specified directly on each Agent (`'openai:gpt-4o'`).
+**Pydantic AI**: Model is specified directly on each Agent (`"openai:gpt-4o"`).
 Configuration is coupled to agent definition.
 
 ```python
-extractor = Agent('openai:gpt-4o-mini', system_prompt="...")
-comparer = Agent('openai:gpt-4o', system_prompt="...")
+extractor = Agent("openai:gpt-4o-mini", system_prompt="...")
+comparer = Agent("openai:gpt-4o", system_prompt="...")
 ```
 
 ## When to Choose Each

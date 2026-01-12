@@ -1,6 +1,10 @@
 # plait vs DSPy
 
-This comparison uses the same example—an extract-and-compare pipeline—to show
+> **Run the comparison:** `uv run --with dspy --with rich docs/comparison/compare_dspy.py`
+>
+> [View full source](compare_dspy.py)
+
+This comparison uses the same example--an extract-and-compare pipeline--to show
 how each framework approaches the same problem, with a focus on parallel execution.
 
 ## The Example: Extract and Compare
@@ -20,17 +24,29 @@ from plait import Module, LLMInference, Parameter
 from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
+class FactsCombiner(Module):
+    """Combine two facts into a comparison prompt."""
+
+    def forward(self, facts1: str, facts2: str) -> str:
+        return (
+            f"Compare and contrast these facts:\n\n"
+            f"Document 1 Facts:\n{facts1}\n\n"
+            f"Document 2 Facts:\n{facts2}"
+        )
+
+
 class ExtractAndCompare(Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.comparison_style = Parameter(
-            value="Highlight key similarities and differences.",
+            value="Highlight key similarities and differences. Be thorough but concise.",
             description="Controls the style of comparison output.",
         )
         self.extractor = LLMInference(
             alias="fast",
-            system_prompt="Extract the main facts as a bulleted list.",
+            system_prompt="Extract the main facts from the document as a bulleted list.",
         )
+        self.combiner = FactsCombiner()
         self.comparer = LLMInference(
             alias="smart",
             system_prompt=self.comparison_style,
@@ -41,12 +57,11 @@ class ExtractAndCompare(Module):
         facts1 = self.extractor(doc1)
         facts2 = self.extractor(doc2)
 
+        # Combine facts using the combiner module (resolves Proxy objects)
+        combined = self.combiner(facts1, facts2)
+
         # This depends on both facts, waits for both to complete
-        return self.comparer(
-            f"Compare and contrast:\n\n"
-            f"Document 1:\n{facts1}\n\n"
-            f"Document 2:\n{facts2}"
-        )
+        return self.comparer(combined)
 
 
 resources = ResourceConfig(
@@ -74,22 +89,27 @@ import dspy
 
 class ExtractFacts(dspy.Signature):
     """Extract the main facts from the document as a bulleted list."""
+
     document: str = dspy.InputField()
     facts: str = dspy.OutputField(desc="Bulleted list of main facts")
 
 
 class CompareAndContrast(dspy.Signature):
     """Compare and contrast the facts from two documents."""
-    facts_doc1: str = dspy.InputField()
-    facts_doc2: str = dspy.InputField()
-    comparison: str = dspy.OutputField()
+
+    facts_doc1: str = dspy.InputField(desc="Facts from first document")
+    facts_doc2: str = dspy.InputField(desc="Facts from second document")
+    comparison: str = dspy.OutputField(
+        desc="Compare and contrast analysis highlighting similarities and differences"
+    )
 
 
 class ExtractAndCompare(dspy.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.fast_lm = dspy.LM('openai/gpt-4o-mini')
-        self.smart_lm = dspy.LM('openai/gpt-4o')
+        # Disable caching to ensure fair comparison with plait
+        self.fast_lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+        self.smart_lm = dspy.LM("openai/gpt-4o", cache=False)
         self.extract = dspy.Predict(ExtractFacts)
         self.compare = dspy.Predict(CompareAndContrast)
 
@@ -101,8 +121,7 @@ class ExtractAndCompare(dspy.Module):
 
         with dspy.context(lm=self.smart_lm):
             comparison = self.compare(
-                facts_doc1=facts1,
-                facts_doc2=facts2
+                facts_doc1=facts1, facts_doc2=facts2
             ).comparison
         return comparison
 
@@ -151,7 +170,7 @@ class makes prompts learnable.
 ```python
 self.extractor = LLMInference(
     alias="fast",
-    system_prompt="Extract the main facts as a bulleted list.",
+    system_prompt="Extract the main facts from the document as a bulleted list.",
 )
 ```
 
@@ -162,7 +181,7 @@ framework generates the actual prompt.
 class ExtractFacts(dspy.Signature):
     """Extract the main facts from the document as a bulleted list."""
     document: str = dspy.InputField()
-    facts: str = dspy.OutputField()
+    facts: str = dspy.OutputField(desc="Bulleted list of main facts")
 ```
 
 ### Multi-Model Configuration
@@ -179,11 +198,11 @@ resources = ResourceConfig(
 ```
 
 **DSPy**: Use `dspy.context(lm=...)` to switch models per call, or store LM
-instances as module attributes.
+instances as module attributes. Use `cache=False` to disable caching for benchmarking.
 
 ```python
-self.fast_lm = dspy.LM('openai/gpt-4o-mini')
-self.smart_lm = dspy.LM('openai/gpt-4o')
+self.fast_lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+self.smart_lm = dspy.LM("openai/gpt-4o", cache=False)
 
 # In forward():
 with dspy.context(lm=self.fast_lm):
