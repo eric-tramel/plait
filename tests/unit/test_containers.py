@@ -1638,3 +1638,165 @@ class TestParameterListMutationsKeepContainerPrefix:
         assert m.prompts[1]._get_hierarchical_name() == "prompts.1"
         assert m.prompts[0].value == "first"
         assert m.prompts[1].value == "third"
+
+
+# ============================================================================
+# Negative Indexing Tests (PR #16 review)
+# ============================================================================
+
+
+class TestModuleListNegativeIndexInsert:
+    """Tests for negative index handling in ModuleList.insert (PR #16 review).
+
+    The review identified that insert(-1, ...) was appending instead of
+    inserting before the last element, due to using `len + idx + 1` instead
+    of `len + idx` for normalization.
+    """
+
+    def test_insert_negative_one_before_last(self) -> None:
+        """insert(-1, ...) inserts before the last element, not at the end.
+
+        Python list semantics: list.insert(-1, x) inserts x before the last element.
+        """
+        ml = ModuleList([DummyModule("a"), DummyModule("b"), DummyModule("c")])
+        new_mod = DummyModule("new")
+
+        ml.insert(-1, new_mod)
+
+        # After insert(-1, new), the order should be: [a, b, new, c]
+        # NOT [a, b, c, new] (which would be append behavior)
+        assert len(ml) == 4
+        assert cast(DummyModule, ml[0]).value == "a"
+        assert cast(DummyModule, ml[1]).value == "b"
+        assert cast(DummyModule, ml[2]).value == "new"
+        assert cast(DummyModule, ml[3]).value == "c"
+
+    def test_insert_negative_two_before_second_to_last(self) -> None:
+        """insert(-2, ...) inserts before the second-to-last element."""
+        ml = ModuleList([DummyModule("a"), DummyModule("b"), DummyModule("c")])
+        new_mod = DummyModule("new")
+
+        ml.insert(-2, new_mod)
+
+        # After insert(-2, new), the order should be: [a, new, b, c]
+        assert len(ml) == 4
+        assert cast(DummyModule, ml[0]).value == "a"
+        assert cast(DummyModule, ml[1]).value == "new"
+        assert cast(DummyModule, ml[2]).value == "b"
+        assert cast(DummyModule, ml[3]).value == "c"
+
+    def test_insert_negative_beyond_length_inserts_at_beginning(self) -> None:
+        """insert(-N, ...) where N > len inserts at the beginning."""
+        ml = ModuleList([DummyModule("a"), DummyModule("b")])
+        new_mod = DummyModule("new")
+
+        ml.insert(-10, new_mod)
+
+        # Should insert at beginning when index is too negative
+        assert len(ml) == 3
+        assert cast(DummyModule, ml[0]).value == "new"
+        assert cast(DummyModule, ml[1]).value == "a"
+        assert cast(DummyModule, ml[2]).value == "b"
+
+    def test_insert_negative_matches_python_list_behavior(self) -> None:
+        """ModuleList.insert negative index behavior matches Python list.
+
+        This is a comprehensive test that verifies parity with Python list semantics.
+        """
+        # Test with Python list for reference
+        py_list = ["a", "b", "c"]
+        py_list.insert(-1, "new")
+        expected = py_list.copy()
+
+        # Now test ModuleList
+        ml = ModuleList([DummyModule("a"), DummyModule("b"), DummyModule("c")])
+        ml.insert(-1, DummyModule("new"))
+
+        actual = [cast(DummyModule, m).value for m in ml]
+        assert actual == expected
+
+
+class TestParameterListNegativeIndexSetItem:
+    """Tests for negative index handling in ParameterList.__setitem__ (PR #16 review).
+
+    The review identified that negative indices were passed directly to
+    _set_param_name without normalization, creating names like '-1' instead
+    of the correct positive index.
+    """
+
+    def test_setitem_negative_one_normalizes_name(self) -> None:
+        """Setting pl[-1] = param should give param a positive index name.
+
+        The parameter name should be the normalized positive index (e.g., '2'),
+        not the negative index (e.g., '-1').
+        """
+        from plait.parameter import Parameter
+
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        new_param = Parameter("new_value", description="replacement")
+
+        pl[-1] = new_param
+
+        # The new parameter should have name '2', not '-1'
+        assert new_param._name == "2"
+        # And it should be at the last position
+        assert pl[2] is new_param
+        assert pl[-1] is new_param
+
+    def test_setitem_negative_two_normalizes_name(self) -> None:
+        """Setting pl[-2] = param should give param the correct positive index name."""
+        from plait.parameter import Parameter
+
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        new_param = Parameter("new_value", description="replacement")
+
+        pl[-2] = new_param
+
+        # The new parameter should have name '1', not '-2'
+        assert new_param._name == "1"
+        assert pl[1] is new_param
+        assert pl[-2] is new_param
+
+    def test_setitem_negative_index_in_module_preserves_hierarchy(self) -> None:
+        """Setting pl[-1] on a module-attached list preserves full hierarchical name."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [_make_param("a"), _make_param("b"), _make_param("c")]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        new_param = Parameter("new", description="replacement")
+
+        m.prompts[-1] = new_param
+
+        # Should have proper hierarchical name with positive index
+        assert new_param._get_hierarchical_name() == "prompts.2"
+        # NOT 'prompts.-1'
+
+    def test_setitem_negative_index_valueify_produces_correct_ref(self) -> None:
+        """valueify() on parameter set via negative index produces correct ref."""
+        from plait.parameter import Parameter
+        from plait.values import valueify
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([_make_param("a"), _make_param("b")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        new_param = Parameter("new", description="replacement")
+        m.prompts[-1] = new_param
+
+        # valueify should produce 'param:prompts.1', not 'param:prompts.-1'
+        v = valueify(new_param)
+        assert v.ref == "param:prompts.1"

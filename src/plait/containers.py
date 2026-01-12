@@ -451,9 +451,10 @@ class ModuleList(Module):
             raise TypeError(
                 f"ModuleList only accepts Module instances, got {type(module).__name__}"
             )
-        # Handle negative indices
+        # Handle negative indices - match Python list semantics
+        # list.insert(-1, x) inserts before the last element, not at the end
         if idx < 0:
-            idx = max(0, len(self._modules) + idx + 1)
+            idx = max(0, len(self._modules) + idx)
         # Clamp to valid range
         idx = min(idx, len(self._modules))
 
@@ -885,7 +886,10 @@ class ParameterList(MutableSequence["Parameter"]):
                     f"ParameterList only accepts Parameter objects, got {type(value)}"
                 )
             self._parameters[index] = value
-            self._set_param_name(index, value)
+            # Normalize negative index before setting the name
+            # to ensure param gets a positive index name (e.g., '2' not '-1')
+            normalized_index = index if index >= 0 else len(self._parameters) + index
+            self._set_param_name(normalized_index, value)
         else:
             # Handle slice assignment
             if not isinstance(value, Iterable):
