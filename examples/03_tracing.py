@@ -21,7 +21,7 @@ from plait.tracing.tracer import Tracer
 # --- Sequential Pipeline ---
 
 
-class Sequential(Module):
+class TwoStage(Module):
     """Linear two-step pipeline."""
 
     def __init__(self) -> None:
@@ -106,9 +106,9 @@ if __name__ == "__main__":
     tracer = Tracer()
 
     # Sequential
-    print("\n1. Sequential Pipeline")
+    print("\n1. Two-Stage Pipeline")
     print("-" * 40)
-    seq_graph = tracer.trace(Sequential(), "input text")
+    seq_graph = tracer.trace(TwoStage(), "input text")
     print(f"   Nodes: {len(seq_graph.nodes)}")
     print("   Execution order:")
     for i, node_id in enumerate(seq_graph.topological_order(), 1):

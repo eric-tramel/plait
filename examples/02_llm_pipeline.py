@@ -7,6 +7,7 @@ Demonstrates:
 - Parallel fan-out (multiple perspectives)
 - Fan-in synthesis (combine parallel results)
 - Learnable system prompts via Parameter
+- Container modules: Sequential, ModuleDict
 
 Note: These pipelines define structure only. To execute with real LLMs,
 bind resources and use await. See 04_execution.py.
@@ -14,6 +15,9 @@ bind resources and use await. See 04_execution.py.
 Run: python examples/02_llm_pipeline.py
 """
 
+from collections import OrderedDict
+
+from plait import ModuleDict, Sequential
 from plait.module import LLMInference, Module
 from plait.parameter import Parameter
 
@@ -111,6 +115,65 @@ class ComprehensiveAnalyzer(Module):
             f"## User\n{analyses['user']}"
         )
         return self.synthesizer(combined)
+
+
+# --- Container-Based Pipelines ---
+
+
+def create_summarize_analyze_pipeline() -> Sequential:
+    """Create a two-stage pipeline using Sequential container.
+
+    Sequential chains modules together, passing each output as input
+    to the next module. This is equivalent to SummarizeAndAnalyze but
+    with less boilerplate.
+    """
+    return Sequential(
+        OrderedDict(
+            [
+                (
+                    "summarizer",
+                    LLMInference(alias="fast", system_prompt="Summarize concisely."),
+                ),
+                (
+                    "analyzer",
+                    LLMInference(
+                        alias="smart",
+                        system_prompt="Analyze key themes and implications.",
+                        temperature=0.7,
+                    ),
+                ),
+            ]
+        )
+    )
+
+
+class MultiPerspectiveDict(Module):
+    """Analyze from multiple perspectives using ModuleDict.
+
+    ModuleDict provides dict-like access to named modules while
+    properly registering them for parameter collection.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.analyzers = ModuleDict(
+            {
+                "technical": LLMInference(
+                    alias="fast", system_prompt="Analyze from a technical perspective."
+                ),
+                "business": LLMInference(
+                    alias="fast", system_prompt="Analyze from a business perspective."
+                ),
+                "user": LLMInference(
+                    alias="fast",
+                    system_prompt="Analyze from a user experience perspective.",
+                ),
+            }
+        )
+
+    def forward(self, text: str) -> dict[str, str]:
+        # Access analyzers by key - they run in parallel during execution
+        return {key: self.analyzers[key](text) for key in self.analyzers}
 
 
 # --- Learnable System Prompts ---
@@ -228,6 +291,26 @@ if __name__ == "__main__":
             indent = "      " + "  " * depth
             short_name = name.split(".")[-1]
             print(f"{indent}{short_name}: {type(mod).__name__}")
+
+    # Container-based pipelines
+    print("\n7. Sequential Container")
+    seq_pipeline = create_summarize_analyze_pipeline()
+    print(f"   Modules: {len(seq_pipeline)}")
+    print("   Named access:")
+    print(f"      seq_pipeline.summarizer: {type(seq_pipeline.summarizer).__name__}")
+    print(f"      seq_pipeline.analyzer: {type(seq_pipeline.analyzer).__name__}")
+    print("   Indexing:")
+    print(f"      seq_pipeline[0]: {type(seq_pipeline[0]).__name__}")
+    print(f"      seq_pipeline[1]: {type(seq_pipeline[1]).__name__}")
+
+    print("\n8. ModuleDict Container (MultiPerspectiveDict)")
+    multi_dict = MultiPerspectiveDict()
+    print(f"   Keys: {list(multi_dict.analyzers.keys())}")
+    print("   Access by key:")
+    for key in multi_dict.analyzers:
+        print(f"      analyzers['{key}']: alias={multi_dict.analyzers[key].alias}")
+    print("   Attribute access:")
+    print(f"      analyzers.technical: alias={multi_dict.analyzers.technical.alias}")
 
     print("\n" + "=" * 60)
     print("Use bind() or ExecutionSettings to connect to real endpoints.")

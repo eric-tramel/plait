@@ -48,6 +48,7 @@ class Module:
 
     _children: dict[str, Module]
     _parameters: dict[str, Parameter]
+    _parameter_containers: dict[str, Any]
     _name: str | None
     _parent: Module | None
     _module_state_version: int
@@ -70,6 +71,7 @@ class Module:
         object.__setattr__(self, "_bound_resources", None)
         object.__setattr__(self, "_bound_config", {})
         object.__setattr__(self, "_training", False)
+        object.__setattr__(self, "_parameter_containers", {})
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Set an attribute with automatic registration of modules and parameters.
@@ -77,6 +79,7 @@ class Module:
         When a value is assigned to an attribute:
         - If it's an Module, it's registered as a child module
         - If it's a Parameter, it's registered in the parameters dict
+        - If it's a ParameterList or ParameterDict, it's registered for iteration
         - The value's _name is set to the attribute name for introspection
 
         Args:
@@ -89,6 +92,7 @@ class Module:
             are not modules or parameters are set directly.
         """
         # Import here to avoid circular imports at module load time
+        from plait.containers import ParameterDict, ParameterList
         from plait.parameter import Parameter
 
         if isinstance(value, Module):
@@ -99,6 +103,16 @@ class Module:
             self._parameters[name] = value
             object.__setattr__(value, "_name", name)
             object.__setattr__(value, "_parent", self)
+        elif isinstance(value, (ParameterList, ParameterDict)):
+            # Register parameter containers for iteration
+            self._parameter_containers[name] = value
+            object.__setattr__(value, "_name", name)
+            object.__setattr__(value, "_parent", self)
+            # Set parameters' _parent to the container (not the module) so that
+            # _get_hierarchical_name() can walk up through the container to build
+            # the full path (e.g., "prompts.0" instead of just "0")
+            for param in value.parameters():
+                object.__setattr__(param, "_parent", value)
 
         object.__setattr__(self, name, value)
 
@@ -214,7 +228,8 @@ class Module:
         """Iterate over all parameters in the module tree.
 
         Recursively yields parameters from this module and all
-        descendant modules in depth-first order.
+        descendant modules in depth-first order. Also yields parameters
+        from ParameterList and ParameterDict containers.
 
         Yields:
             All Parameter objects in the subtree.
@@ -231,6 +246,9 @@ class Module:
             [Parameter(value='test', ...)]
         """
         yield from self._parameters.values()
+        # Yield parameters from ParameterList and ParameterDict containers
+        for container in self._parameter_containers.values():
+            yield from container.parameters()
         for child in self.children():
             yield from child.parameters()
 
@@ -238,7 +256,8 @@ class Module:
         """Iterate over all parameters with hierarchical dot-separated names.
 
         Recursively yields (name, parameter) pairs from this module
-        and all descendants. Names reflect the module hierarchy.
+        and all descendants. Names reflect the module hierarchy. Also yields
+        parameters from ParameterList and ParameterDict containers.
 
         Args:
             prefix: Prefix to prepend to parameter names. Used internally
@@ -267,6 +286,10 @@ class Module:
         for name, param in self._parameters.items():
             param_name = f"{prefix}.{name}" if prefix else name
             yield param_name, param
+        # Yield parameters from ParameterList and ParameterDict containers
+        for name, container in self._parameter_containers.items():
+            container_prefix = f"{prefix}.{name}" if prefix else name
+            yield from container.named_parameters(container_prefix)
         for name, child in self.named_children():
             child_prefix = f"{prefix}.{name}" if prefix else name
             yield from child.named_parameters(child_prefix)
