@@ -179,7 +179,7 @@ async def run_plait(text: str) -> str:
         def __init__(self) -> None:
             super().__init__()
             self.instructions = Parameter(
-                value="Be concise and highlight key insights.",
+                value="Be concise and highlight key insights. Analyze the summary provided.",
                 description="Controls the style of analysis output.",
             )
             self.summarizer = LLMInference(
@@ -193,7 +193,8 @@ async def run_plait(text: str) -> str:
 
         def forward(self, text: str) -> str:
             summary = self.summarizer(text)
-            return self.analyzer(f"Analyze this summary:\n{summary}")
+            # Pass summary Value directly - plait handles dependency tracking
+            return self.analyzer(summary)
 
     resources = ResourceConfig(
         endpoints={
@@ -210,7 +211,8 @@ async def run_plait(text: str) -> str:
 
     pipeline = SummarizeAndAnalyze().bind(resources=resources)
     result = await pipeline(text)
-    return str(result)
+    # Extract payload from Value object
+    return str(result.payload if hasattr(result, "payload") else result)
 
 
 # =============================================================================

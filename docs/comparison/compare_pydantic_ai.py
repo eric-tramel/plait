@@ -129,7 +129,7 @@ async def measure_execution_async(
 # =============================================================================
 
 
-def run_pydantic_ai(text: str) -> str:
+async def run_pydantic_ai(text: str) -> str:
     """Run the summarize-and-analyze pipeline using Pydantic AI."""
     from pydantic_ai import Agent  # type: ignore[import-not-found]
 
@@ -143,14 +143,11 @@ def run_pydantic_ai(text: str) -> str:
         system_prompt="Be concise and highlight key insights.",
     )
 
-    async def run() -> str:
-        summary_result = await summarizer.run(text)
-        analysis_result = await analyzer.run(
-            f"Analyze this summary:\n{summary_result.data}"
-        )
-        return str(analysis_result.data)
-
-    return asyncio.run(run())
+    summary_result = await summarizer.run(text)
+    analysis_result = await analyzer.run(
+        f"Analyze this summary:\n{summary_result.output}"
+    )
+    return str(analysis_result.output)
 
 
 # =============================================================================
@@ -167,7 +164,7 @@ async def run_plait(text: str) -> str:
         def __init__(self) -> None:
             super().__init__()
             self.instructions = Parameter(
-                value="Be concise and highlight key insights.",
+                value="Be concise and highlight key insights. Analyze the summary provided.",
                 description="Controls the style of analysis output.",
             )
             self.summarizer = LLMInference(
@@ -181,7 +178,8 @@ async def run_plait(text: str) -> str:
 
         def forward(self, text: str) -> str:
             summary = self.summarizer(text)
-            return self.analyzer(f"Analyze this summary:\n{summary}")
+            # Pass summary Value directly - plait handles dependency tracking
+            return self.analyzer(summary)
 
     resources = ResourceConfig(
         endpoints={
@@ -198,7 +196,8 @@ async def run_plait(text: str) -> str:
 
     pipeline = SummarizeAndAnalyze().bind(resources=resources)
     result = await pipeline(text)
-    return str(result)
+    # Extract payload from Value object
+    return str(result.payload if hasattr(result, "payload") else result)
 
 
 # =============================================================================
@@ -285,7 +284,7 @@ async def main() -> int:
 
     # Run Pydantic AI
     print("\nRunning Pydantic AI...")
-    result = measure_execution("Pydantic AI", lambda: run_pydantic_ai(text))
+    result = await measure_execution_async("Pydantic AI", lambda: run_pydantic_ai(text))
     results.append(result)
 
     # Run plait
