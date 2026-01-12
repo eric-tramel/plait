@@ -160,8 +160,9 @@ def run_dspy(doc1: str, doc2: str) -> str:
     class ExtractAndCompare(dspy.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.fast_lm = dspy.LM("openai/gpt-4o-mini")
-            self.smart_lm = dspy.LM("openai/gpt-4o")
+            # Disable caching to ensure fair comparison with plait
+            self.fast_lm = dspy.LM("openai/gpt-4o-mini", cache=False)
+            self.smart_lm = dspy.LM("openai/gpt-4o", cache=False)
             self.extract = dspy.Predict(ExtractFacts)
             self.compare = dspy.Predict(CompareAndContrast)
 
@@ -187,6 +188,76 @@ def run_dspy(doc1: str, doc2: str) -> str:
 # plait Implementation
 # =============================================================================
 
+# Import plait modules at module level for efficiency
+from plait import LLMInference, Module, Parameter
+from plait.resources import OpenAIEndpointConfig, ResourceConfig
+
+
+class _FactsCombiner(Module):
+    """Combine two facts into a comparison prompt.
+
+    This module formats the facts from two documents into a single
+    prompt for comparison. Using a module ensures proper tracing
+    during the forward pass (Proxy objects are resolved correctly).
+    """
+
+    def forward(self, facts1: str, facts2: str) -> str:
+        return (
+            f"Compare and contrast these facts:\n\n"
+            f"Document 1 Facts:\n{facts1}\n\n"
+            f"Document 2 Facts:\n{facts2}"
+        )
+
+
+class _PlaitExtractAndCompare(Module):
+    """Extract facts from two documents and compare them.
+
+    This module demonstrates plait's automatic parallel execution:
+    the two fact extractions are independent and run in parallel.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.comparison_style = Parameter(
+            value="Highlight key similarities and differences. Be thorough but concise.",
+            description="Controls the style of comparison output.",
+        )
+        self.extractor = LLMInference(
+            alias="fast",
+            system_prompt="Extract the main facts from the document as a bulleted list.",
+        )
+        self.combiner = _FactsCombiner()
+        self.comparer = LLMInference(
+            alias="smart",
+            system_prompt=self.comparison_style,
+        )
+
+    def forward(self, doc1: str, doc2: str) -> str:
+        # These two calls are INDEPENDENT - plait runs them in PARALLEL
+        facts1 = self.extractor(doc1)
+        facts2 = self.extractor(doc2)
+
+        # Combine facts using the combiner module (resolves Proxy objects)
+        combined = self.combiner(facts1, facts2)
+
+        # This depends on both facts, so it waits for both to complete
+        return self.comparer(combined)
+
+
+# Pre-configured resources for plait - created once at module load
+_PLAIT_RESOURCES = ResourceConfig(
+    endpoints={
+        "fast": OpenAIEndpointConfig(
+            model="gpt-4o-mini",
+            max_concurrent=20,
+        ),
+        "smart": OpenAIEndpointConfig(
+            model="gpt-4o",
+            max_concurrent=5,
+        ),
+    }
+)
+
 
 async def run_plait(doc1: str, doc2: str) -> str:
     """Run the extract-and-compare pipeline using plait.
@@ -194,66 +265,7 @@ async def run_plait(doc1: str, doc2: str) -> str:
     The two fact extractions are independent operations that plait
     automatically executes in parallel, reducing total execution time.
     """
-    from plait import LLMInference, Module, Parameter
-    from plait.resources import OpenAIEndpointConfig, ResourceConfig
-
-    class FactsCombiner(Module):
-        """Combine two facts into a comparison prompt.
-
-        This module formats the facts from two documents into a single
-        prompt for comparison. Using a module ensures proper tracing
-        during the forward pass (Proxy objects are resolved correctly).
-        """
-
-        def forward(self, facts1: str, facts2: str) -> str:
-            return (
-                f"Compare and contrast these facts:\n\n"
-                f"Document 1 Facts:\n{facts1}\n\n"
-                f"Document 2 Facts:\n{facts2}"
-            )
-
-    class ExtractAndCompare(Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.comparison_style = Parameter(
-                value="Highlight key similarities and differences. Be thorough but concise.",
-                description="Controls the style of comparison output.",
-            )
-            self.extractor = LLMInference(
-                alias="fast",
-                system_prompt="Extract the main facts from the document as a bulleted list.",
-            )
-            self.combiner = FactsCombiner()
-            self.comparer = LLMInference(
-                alias="smart",
-                system_prompt=self.comparison_style,
-            )
-
-        def forward(self, doc1: str, doc2: str) -> str:
-            # These two calls are INDEPENDENT - plait runs them in PARALLEL
-            facts1 = self.extractor(doc1)
-            facts2 = self.extractor(doc2)
-
-            # Combine facts using the combiner module (resolves Proxy objects)
-            combined = self.combiner(facts1, facts2)
-
-            # This depends on both facts, so it waits for both to complete
-            return self.comparer(combined)
-
-    resources = ResourceConfig(
-        endpoints={
-            "fast": OpenAIEndpointConfig(
-                model="gpt-4o-mini",
-                max_concurrent=20,
-            ),
-            "smart": OpenAIEndpointConfig(
-                model="gpt-4o",
-                max_concurrent=5,
-            ),
-        }
-    )
-
-    pipeline = ExtractAndCompare().bind(resources=resources)
+    pipeline = _PlaitExtractAndCompare().bind(resources=_PLAIT_RESOURCES)
     result = await pipeline(doc1, doc2)
     # Extract payload from Value object
     return str(result.payload if hasattr(result, "payload") else result)
@@ -303,8 +315,14 @@ def print_comparison(results: list[BenchmarkResult]) -> None:
     if len(successful) == 2:
         time_diff = successful[1].execution_time_ms - successful[0].execution_time_ms
         time_pct = (time_diff / successful[0].execution_time_ms) * 100
+        mem_diff = successful[1].peak_memory_mb - successful[0].peak_memory_mb
+        mem_pct = (mem_diff / successful[0].peak_memory_mb) * 100
         table.add_section()
-        table.add_row("Difference", f"{time_diff:+.2f} ({time_pct:+.1f}%)", "")
+        table.add_row(
+            "Difference",
+            f"{time_diff:+.2f} ({time_pct:+.1f}%)",
+            f"{mem_diff:+.2f} ({mem_pct:+.1f}%)",
+        )
 
     console.print(table)
 
