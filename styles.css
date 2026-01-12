@@ -866,6 +866,12 @@ img {
     border: 1px solid rgba(246, 198, 103, 0.3);
 }
 
+.dag-formatter {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
 .dag-compare {
     background: rgba(104, 211, 145, 0.15);
     color: var(--success);

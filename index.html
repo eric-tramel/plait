@@ -376,7 +376,8 @@
                         <pre><code class="language-python">def forward(self, doc1: str, doc2: str) -> str:
     facts1 = self.extractor(doc1)  # These run
     facts2 = self.extractor(doc2)  # in parallel!
-    return self.comparer(f"{facts1}\n\n{facts2}")</code></pre>
+    prompt = self.formatter(facts1, facts2)  # Sub-module
+    return self.comparer(prompt)</code></pre>
                     </div>
                     <div class="parallelism-card">
                         <div class="parallelism-header">
@@ -434,6 +435,13 @@ facts2 = self.extract(document=doc2).facts  # Runs second</code></pre>
 from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
+class CompareFormatter(Module):
+    """Format two fact lists for comparison (traced sub-module)."""
+
+    def forward(self, facts1: str, facts2: str) -> str:
+        return f"Compare:\n{facts1}\n\nvs:\n{facts2}"
+
+
 class ExtractAndCompare(Module):
     """Extract facts from two documents and compare them."""
 
@@ -448,6 +456,7 @@ class ExtractAndCompare(Module):
             alias="fast",
             system_prompt="Extract the main facts as a bulleted list.",
         )
+        self.formatter = CompareFormatter()  # Traced sub-module
         self.comparer = LLMInference(
             alias="smart",
             system_prompt=self.comparison_style,
@@ -458,8 +467,9 @@ class ExtractAndCompare(Module):
         facts1 = self.extractor(doc1)
         facts2 = self.extractor(doc2)
 
-        # This depends on both facts, waits for both to complete
-        return self.comparer(f"Compare:\n{facts1}\n\nvs:\n{facts2}")
+        # Formatter is a sub-module - participates in tracing
+        prompt = self.formatter(facts1, facts2)
+        return self.comparer(prompt)
 
 
 # Configure endpoints separately from module definition
@@ -511,7 +521,7 @@ result = await pipeline(doc1, doc2)</code></pre>
                 <h3>Execution DAG</h3>
                 <p class="dag-description">
                     The tracer captures the dependency graph from your <code>forward()</code> method.
-                    Independent branches execute in parallel automatically.
+                    Independent branches execute in parallel automatically. Sub-modules like <code>formatter</code> participate in tracing.
                 </p>
                 <div class="dag-diagram">
                     <div class="dag-node dag-input">Input</div>
@@ -529,6 +539,8 @@ result = await pipeline(doc1, doc2)</code></pre>
                         <div class="dag-arrow-down"></div>
                         <div class="dag-arrow-down"></div>
                     </div>
+                    <div class="dag-node dag-formatter">formatter</div>
+                    <div class="dag-arrow-final"></div>
                     <div class="dag-node dag-compare">comparer</div>
                     <div class="dag-arrow-final"></div>
                     <div class="dag-node dag-output">Output</div>
