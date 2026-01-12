@@ -31,6 +31,9 @@ import tracemalloc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from plait import LLMInference, Module, Parameter
+from plait.resources import OpenAIEndpointConfig, ResourceConfig
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -187,10 +190,6 @@ def run_dspy(doc1: str, doc2: str) -> str:
 # =============================================================================
 # plait Implementation
 # =============================================================================
-
-# Import plait modules at module level for efficiency
-from plait import LLMInference, Module, Parameter
-from plait.resources import OpenAIEndpointConfig, ResourceConfig
 
 
 class _FactsCombiner(Module):
