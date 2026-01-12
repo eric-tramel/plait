@@ -164,14 +164,15 @@ class Sequential(Module):
             children of the original container.
         """
         if isinstance(idx, slice):
-            keys = list(self._modules.keys())[idx]
+            modules = list(self._modules.values())[idx]
             # Create a new Sequential without reparenting modules
+            # Renumber keys sequentially (0, 1, 2, ...) so append() works correctly
             new_seq = Sequential.__new__(Sequential)
             Module.__init__(new_seq)
             object.__setattr__(new_seq, "_modules", OrderedDict())
-            for k in keys:
+            for i, mod in enumerate(modules):
                 # Store module reference without calling setattr (no reparenting)
-                new_seq._modules[k] = self._modules[k]
+                new_seq._modules[str(i)] = mod
             return new_seq
         elif isinstance(idx, int):
             if idx < 0:
@@ -936,7 +937,9 @@ class ParameterList(MutableSequence["Parameter"]):
         """Insert a parameter at the given index.
 
         Args:
-            index: Index to insert at.
+            index: Index to insert at. Negative indices work like Python list.insert():
+                insert(-1, x) inserts before the last element, and very negative
+                indices (beyond the start) insert at the beginning.
             value: Parameter to insert.
 
         Raises:
@@ -949,8 +952,11 @@ class ParameterList(MutableSequence["Parameter"]):
                 f"ParameterList only accepts Parameter objects, got {type(value)}"
             )
         self._parameters.insert(index, value)
-        # Re-index all parameters from index onwards
-        for i in range(index, len(self._parameters)):
+        # Re-index all parameters from the insertion point onwards
+        # We need to reindex the entire list after the inserted element because
+        # Python's list.insert() clamps negative indices, so we start from 0
+        # to ensure all parameters get correct names
+        for i in range(len(self._parameters)):
             self._set_param_name(i, self._parameters[i])
 
     # Parameter iteration for Module integration

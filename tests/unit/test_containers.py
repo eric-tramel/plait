@@ -1800,3 +1800,889 @@ class TestParameterListNegativeIndexSetItem:
         # valueify should produce 'param:prompts.1', not 'param:prompts.-1'
         v = valueify(new_param)
         assert v.ref == "param:prompts.1"
+
+
+# ============================================================================
+# Edge Case Tests - Empty Containers
+# ============================================================================
+
+
+class TestEmptyContainerEdgeCases:
+    """Tests for edge cases with empty containers."""
+
+    def test_empty_sequential_forward_returns_input(self) -> None:
+        """Empty Sequential returns input unchanged."""
+        seq = Sequential()
+        assert seq("test") == "test"
+        assert seq(123) == 123
+        assert seq(None) is None
+
+    def test_empty_sequential_slicing(self) -> None:
+        """Slicing empty Sequential works correctly."""
+        seq = Sequential()
+        sliced = seq[:]
+        assert isinstance(sliced, Sequential)
+        assert len(sliced) == 0
+
+    def test_empty_module_list_iteration(self) -> None:
+        """Empty ModuleList iteration yields nothing."""
+        ml = ModuleList()
+        assert list(ml) == []
+        assert len(ml) == 0
+
+    def test_empty_module_list_slicing(self) -> None:
+        """Slicing empty ModuleList works correctly."""
+        ml = ModuleList()
+        sliced = ml[:]
+        assert isinstance(sliced, ModuleList)
+        assert len(sliced) == 0
+
+    def test_empty_module_list_contains(self) -> None:
+        """Empty ModuleList contains check returns False."""
+        ml = ModuleList()
+        assert DummyModule() not in ml
+
+    def test_empty_module_dict_iteration(self) -> None:
+        """Empty ModuleDict iteration yields nothing."""
+        md = ModuleDict()
+        assert list(md) == []
+        assert list(md.keys()) == []
+        assert list(md.values()) == []
+        assert list(md.items()) == []
+
+    def test_empty_module_dict_contains(self) -> None:
+        """Empty ModuleDict contains check returns False."""
+        md = ModuleDict()
+        assert "key" not in md
+
+    def test_empty_module_dict_clear(self) -> None:
+        """Clearing an already empty ModuleDict is safe."""
+        md = ModuleDict()
+        md.clear()  # Should not raise
+        assert len(md) == 0
+
+    def test_empty_parameter_list_iteration(self) -> None:
+        """Empty ParameterList iteration yields nothing."""
+        pl = ParameterList()
+        assert list(pl) == []
+        assert list(pl.parameters()) == []
+        assert list(pl.named_parameters()) == []
+
+    def test_empty_parameter_dict_iteration(self) -> None:
+        """Empty ParameterDict iteration yields nothing."""
+        pd = ParameterDict()
+        assert list(pd) == []
+        assert list(pd.parameters()) == []
+        assert list(pd.named_parameters()) == []
+
+    def test_empty_containers_in_module_yield_no_parameters(self) -> None:
+        """Module with empty containers yields no parameters."""
+
+        class EmptyContainers(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList()
+                self.tasks = ParameterDict()
+                self.layers = ModuleList()
+                self.modules_dict = ModuleDict()
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = EmptyContainers()
+        assert list(m.parameters()) == []
+        assert list(m.named_parameters()) == []
+        assert m.state_dict() == {}
+
+
+# ============================================================================
+# Edge Case Tests - Deeply Nested Containers
+# ============================================================================
+
+
+class TestDeeplyNestedContainers:
+    """Tests for deeply nested container structures."""
+
+    def test_triple_nested_sequential(self) -> None:
+        """Sequential containing Sequential containing Sequential works."""
+        inner = Sequential(ModuleWithParam("deep"))
+        middle = Sequential(inner)
+        outer = Sequential(middle)
+
+        params = list(outer.parameters())
+        assert len(params) == 1
+        assert params[0].value == "deep"
+
+        named = dict(outer.named_parameters())
+        # Path: 0.0.0.prompt
+        assert "0.0.0.prompt" in named
+
+    def test_four_level_mixed_nesting(self) -> None:
+        """Four levels of mixed container nesting."""
+        # Level 4: ModuleWithParam
+        mod = ModuleWithParam("level4")
+        # Level 3: ModuleList containing the module
+        ml = ModuleList([mod])
+        # Level 2: ModuleDict containing the list
+        md = ModuleDict({"nested": ml})
+        # Level 1: Sequential containing the dict
+        seq = Sequential(md)
+
+        params = list(seq.parameters())
+        assert len(params) == 1
+        assert params[0].value == "level4"
+
+        named = dict(seq.named_parameters())
+        assert "0.nested.0.prompt" in named
+
+    def test_parameter_container_in_nested_module(self) -> None:
+        """ParameterList inside nested module containers."""
+
+        class Inner(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList(
+                    [_make_param("inner0"), _make_param("inner1")]
+                )
+
+            def forward(self, x: str) -> str:
+                return x
+
+        class Middle(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child = Inner()
+
+            def forward(self, x: str) -> str:
+                return x
+
+        class Outer(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.middle = Middle()
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = Outer()
+        named = dict(m.named_parameters())
+        assert "middle.child.prompts.0" in named
+        assert "middle.child.prompts.1" in named
+        assert len(named) == 2
+
+    def test_deeply_nested_state_dict_round_trip(self) -> None:
+        """state_dict and load_state_dict work with deep nesting."""
+
+        class DeepNested(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                inner = ModuleWithParam("deep_value")
+                ml = ModuleList([inner])
+                self.container = ModuleDict({"layers": ml})
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = DeepNested()
+        state = m.state_dict()
+        assert "container.layers.0.prompt" in state
+        assert state["container.layers.0.prompt"] == "deep_value"
+
+        # Load new state
+        m.load_state_dict({"container.layers.0.prompt": "updated_deep"})
+        new_state = m.state_dict()
+        assert new_state["container.layers.0.prompt"] == "updated_deep"
+
+
+# ============================================================================
+# Edge Case Tests - Type Validation Edge Cases
+# ============================================================================
+
+
+class TestTypeValidationEdgeCases:
+    """Tests for type validation edge cases."""
+
+    def test_sequential_rejects_none(self) -> None:
+        """Sequential raises TypeError for None."""
+        with pytest.raises(TypeError, match="must be a Module"):
+            Sequential(DummyModule(), None)  # type: ignore[arg-type]
+
+    def test_module_list_extend_rejects_mixed_types(self) -> None:
+        """ModuleList.extend rejects list with non-Module items."""
+        ml = ModuleList([DummyModule()])
+        with pytest.raises(TypeError, match="only accepts Module"):
+            ml.extend([DummyModule(), "not a module"])  # type: ignore[list-item]
+
+    def test_module_dict_update_rejects_non_modules(self) -> None:
+        """ModuleDict.update rejects non-Module values."""
+        md = ModuleDict()
+        with pytest.raises(TypeError, match="only accepts Module"):
+            md.update({"key": "not a module"})  # type: ignore[dict-item]
+
+    def test_parameter_list_slice_assignment_validates_types(self) -> None:
+        """ParameterList slice assignment validates all items."""
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        with pytest.raises(TypeError, match="ParameterList only accepts"):
+            pl[0:2] = [_make_param("x"), "not a param"]  # type: ignore[list-item]
+
+    def test_sequential_append_validates_module_type(self) -> None:
+        """Sequential.append validates module type."""
+        seq = Sequential()
+        with pytest.raises(TypeError, match="only accepts Module"):
+            seq.append("string")  # type: ignore[arg-type]
+
+    def test_module_list_insert_validates_module_type(self) -> None:
+        """ModuleList.insert validates module type."""
+        ml = ModuleList()
+        with pytest.raises(TypeError, match="only accepts Module"):
+            ml.insert(0, "string")  # type: ignore[arg-type]
+
+
+# ============================================================================
+# Edge Case Tests - Slicing Edge Cases
+# ============================================================================
+
+
+class TestSlicingEdgeCases:
+    """Tests for slicing edge cases in containers."""
+
+    def test_sequential_step_slicing(self) -> None:
+        """Sequential supports step in slicing."""
+        modules = [DummyModule(str(i)) for i in range(5)]
+        seq = Sequential(*modules)
+
+        # Every other module
+        sliced = seq[::2]
+        assert len(sliced) == 3
+        assert cast(DummyModule, sliced[0]).value == "0"
+        assert cast(DummyModule, sliced[1]).value == "2"
+        assert cast(DummyModule, sliced[2]).value == "4"
+
+    def test_sequential_reverse_slicing(self) -> None:
+        """Sequential supports reverse slicing."""
+        modules = [DummyModule(str(i)) for i in range(3)]
+        seq = Sequential(*modules)
+
+        sliced = seq[::-1]
+        assert len(sliced) == 3
+        assert cast(DummyModule, sliced[0]).value == "2"
+        assert cast(DummyModule, sliced[1]).value == "1"
+        assert cast(DummyModule, sliced[2]).value == "0"
+
+    def test_module_list_step_slicing(self) -> None:
+        """ModuleList supports step in slicing."""
+        modules = [DummyModule(str(i)) for i in range(6)]
+        ml = ModuleList(modules)
+
+        sliced = ml[1:5:2]  # indices 1 and 3
+        assert len(sliced) == 2
+        assert cast(DummyModule, sliced[0]).value == "1"
+        assert cast(DummyModule, sliced[1]).value == "3"
+
+    def test_module_list_negative_step_slicing(self) -> None:
+        """ModuleList supports negative step slicing."""
+        modules = [DummyModule(str(i)) for i in range(4)]
+        ml = ModuleList(modules)
+
+        sliced = ml[::-1]
+        assert len(sliced) == 4
+        values = [cast(DummyModule, m).value for m in sliced]
+        assert values == ["3", "2", "1", "0"]
+
+    def test_parameter_list_slice_assignment_shrinks(self) -> None:
+        """ParameterList slice assignment can shrink the list."""
+        pl = ParameterList([_make_param(f"p{i}") for i in range(5)])
+        pl[1:4] = [_make_param("new")]
+
+        assert len(pl) == 3
+        assert pl[0].value == "p0"
+        assert pl[1].value == "new"
+        assert pl[2].value == "p4"
+
+    def test_parameter_list_slice_assignment_grows(self) -> None:
+        """ParameterList slice assignment can grow the list."""
+        pl = ParameterList([_make_param("a"), _make_param("b")])
+        pl[1:1] = [_make_param("x"), _make_param("y"), _make_param("z")]
+
+        assert len(pl) == 5
+        assert [p.value for p in pl] == ["a", "x", "y", "z", "b"]
+
+    def test_parameter_list_slice_delete(self) -> None:
+        """ParameterList supports slice deletion."""
+        pl = ParameterList([_make_param(f"p{i}") for i in range(5)])
+        del pl[1:4]
+
+        assert len(pl) == 2
+        assert pl[0].value == "p0"
+        assert pl[1].value == "p4"
+
+    def test_sliced_sequential_is_independent(self) -> None:
+        """Modifications to sliced Sequential don't affect original."""
+        modules = [DummyModule(str(i)) for i in range(5)]
+        original = Sequential(*modules)
+
+        sliced = original[1:4]
+        sliced.append(DummyModule("new"))
+
+        assert len(original) == 5  # Original unchanged
+        assert len(sliced) == 4  # Sliced has the new module
+
+    def test_sliced_module_list_is_independent(self) -> None:
+        """Modifications to sliced ModuleList don't affect original."""
+        modules = [DummyModule(str(i)) for i in range(5)]
+        original = ModuleList(modules)
+
+        sliced = original[1:4]
+        sliced.append(DummyModule("new"))
+
+        assert len(original) == 5  # Original unchanged
+        assert len(sliced) == 4  # Sliced has the new module
+
+
+# ============================================================================
+# Edge Case Tests - ParameterList Insert with Negative Indices
+# ============================================================================
+
+
+class TestParameterListInsertNegativeIndex:
+    """Tests for ParameterList.insert with negative indices (PR #16 review).
+
+    The review identified that insert could fail with very negative indices
+    due to incorrect reindexing logic.
+    """
+
+    def test_insert_negative_one_before_last(self) -> None:
+        """insert(-1, ...) inserts before the last element."""
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        new_param = _make_param("new")
+
+        pl.insert(-1, new_param)
+
+        # Should match Python list behavior: [a, b, new, c]
+        assert len(pl) == 4
+        assert [p.value for p in pl] == ["a", "b", "new", "c"]
+
+    def test_insert_negative_two_before_second_last(self) -> None:
+        """insert(-2, ...) inserts before the second-to-last element."""
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+        new_param = _make_param("new")
+
+        pl.insert(-2, new_param)
+
+        # Should match Python list behavior: [a, new, b, c]
+        assert len(pl) == 4
+        assert [p.value for p in pl] == ["a", "new", "b", "c"]
+
+    def test_insert_very_negative_index(self) -> None:
+        """insert() with very negative index inserts at beginning."""
+        pl = ParameterList([_make_param("a"), _make_param("b")])
+        new_param = _make_param("new")
+
+        pl.insert(-100, new_param)
+
+        # Should insert at beginning like Python list
+        assert len(pl) == 3
+        assert [p.value for p in pl] == ["new", "a", "b"]
+
+    def test_insert_matches_python_list_behavior(self) -> None:
+        """ParameterList.insert matches Python list semantics for negative indices."""
+        # Test against Python list behavior
+        for negative_idx in [-1, -2, -3, -5, -10]:
+            py_list = ["a", "b", "c"]
+            py_list.insert(negative_idx, "new")
+
+            pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+            pl.insert(negative_idx, _make_param("new"))
+
+            actual = [p.value for p in pl]
+            assert actual == py_list, f"Mismatch for insert({negative_idx})"
+
+    def test_insert_preserves_hierarchical_names_after_negative_insert(self) -> None:
+        """Hierarchical names are correct after negative index insert."""
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([_make_param("a"), _make_param("b")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        m.prompts.insert(-1, _make_param("new"))
+
+        # All parameters should have correct hierarchical names
+        for i, p in enumerate(m.prompts):
+            assert p._get_hierarchical_name() == f"prompts.{i}"
+
+
+# ============================================================================
+# Edge Case Tests - Non-Identifier Keys in ModuleDict
+# ============================================================================
+
+
+class TestModuleDictNonIdentifierKeys:
+    """Tests for ModuleDict with non-identifier keys."""
+
+    def test_numeric_string_key(self) -> None:
+        """ModuleDict handles numeric string keys."""
+        md = ModuleDict({"123": DummyModule("num")})
+        assert "123" in md
+        assert cast(DummyModule, md["123"]).value == "num"
+
+    def test_key_with_spaces(self) -> None:
+        """ModuleDict handles keys with spaces."""
+        md = ModuleDict({"key with spaces": DummyModule("spacy")})
+        assert "key with spaces" in md
+        assert cast(DummyModule, md["key with spaces"]).value == "spacy"
+
+    def test_key_with_special_chars(self) -> None:
+        """ModuleDict handles keys with special characters."""
+        md = ModuleDict({"key-with-dashes": DummyModule("dashes")})
+        assert "key-with-dashes" in md
+        assert cast(DummyModule, md["key-with-dashes"]).value == "dashes"
+
+    def test_non_identifier_keys_no_attribute_access(self) -> None:
+        """Non-identifier keys are not accessible as attributes."""
+        md = ModuleDict({"123": DummyModule("num")})
+
+        # Should be accessible via []
+        assert md["123"] is not None
+
+        # Should not be accessible as attribute (would cause syntax error anyway)
+        with pytest.raises(AttributeError):
+            _ = md.nonexistent
+
+    def test_non_identifier_key_still_registered_as_child(self) -> None:
+        """Non-identifier keys are still registered as children."""
+        md = ModuleDict({"123": ModuleWithParam("num_param")})
+
+        # Parameters should be collected
+        params = list(md.parameters())
+        assert len(params) == 1
+        assert params[0].value == "num_param"
+
+        # Named parameters should use the key
+        named = dict(md.named_parameters())
+        assert "123.prompt" in named
+
+    def test_delete_non_identifier_key(self) -> None:
+        """Deleting non-identifier key cleans up properly."""
+        md = ModuleDict({"123": DummyModule("num"), "abc": DummyModule("alpha")})
+
+        del md["123"]
+
+        assert "123" not in md
+        assert "abc" in md
+        assert len(md) == 1
+
+
+# ============================================================================
+# Edge Case Tests - Module Replacement in Containers
+# ============================================================================
+
+
+class TestModuleReplacementInContainers:
+    """Tests for replacing modules in containers."""
+
+    def test_sequential_replace_via_setattr(self) -> None:
+        """Sequential module replacement via setattr."""
+        seq = Sequential(
+            OrderedDict(
+                [
+                    ("first", DummyModule("a")),
+                    ("second", DummyModule("b")),
+                ]
+            )
+        )
+
+        new_module = DummyModule("new")
+        seq.first = new_module
+
+        # The new module should be set
+        assert cast(DummyModule, seq.first).value == "new"
+
+    def test_module_list_setitem_reparents(self) -> None:
+        """ModuleList setitem properly reparents the new module."""
+        ml = ModuleList([DummyModule("old")])
+        new_module = DummyModule("new")
+
+        ml[0] = new_module
+
+        assert new_module._parent is ml
+        assert new_module._name == "0"
+
+    def test_module_dict_setitem_reparents(self) -> None:
+        """ModuleDict setitem properly reparents the new module."""
+        md = ModuleDict({"key": DummyModule("old")})
+        new_module = DummyModule("new")
+
+        md["key"] = new_module
+
+        assert new_module._parent is md
+        assert new_module._name == "key"
+
+    def test_parameter_list_setitem_reparents(self) -> None:
+        """ParameterList setitem properly reparents the parameter."""
+        pl = ParameterList([_make_param("old")])
+        new_param = _make_param("new")
+
+        pl[0] = new_param
+
+        assert new_param._parent is pl
+        assert new_param._name == "0"
+
+
+# ============================================================================
+# Edge Case Tests - Index Bounds
+# ============================================================================
+
+
+class TestIndexBoundsEdgeCases:
+    """Tests for index bounds edge cases."""
+
+    def test_sequential_single_element_negative_index(self) -> None:
+        """Sequential with single element handles negative index."""
+        seq = Sequential(DummyModule("only"))
+        assert cast(DummyModule, seq[-1]).value == "only"
+        assert cast(DummyModule, seq[0]).value == "only"
+
+    def test_module_list_single_element_negative_index(self) -> None:
+        """ModuleList with single element handles negative index."""
+        ml = ModuleList([DummyModule("only")])
+        assert cast(DummyModule, ml[-1]).value == "only"
+        assert cast(DummyModule, ml[0]).value == "only"
+
+    def test_module_list_setitem_negative_index_bounds(self) -> None:
+        """ModuleList setitem with out-of-bounds negative index raises."""
+        ml = ModuleList([DummyModule("a")])
+
+        with pytest.raises(IndexError):
+            ml[-5] = DummyModule("fail")
+
+    def test_module_list_getitem_negative_index_bounds(self) -> None:
+        """ModuleList getitem with out-of-bounds negative index raises."""
+        ml = ModuleList([DummyModule("a"), DummyModule("b")])
+
+        with pytest.raises(IndexError):
+            _ = ml[-10]
+
+    def test_module_list_delitem_negative_index_bounds(self) -> None:
+        """ModuleList delitem with out-of-bounds negative index raises."""
+        ml = ModuleList([DummyModule("a")])
+
+        with pytest.raises(IndexError):
+            del ml[-5]
+
+    def test_parameter_list_index_out_of_bounds(self) -> None:
+        """ParameterList raises IndexError for out-of-bounds index."""
+        pl = ParameterList([_make_param("a")])
+
+        with pytest.raises(IndexError):
+            _ = pl[10]
+
+        with pytest.raises(IndexError):
+            _ = pl[-10]
+
+
+# ============================================================================
+# Edge Case Tests - Repr and String Representations
+# ============================================================================
+
+
+class TestContainerRepresentations:
+    """Tests for container string representations."""
+
+    def test_parameter_list_repr(self) -> None:
+        """ParameterList has useful repr."""
+        pl = ParameterList([_make_param("a"), _make_param("b")])
+        repr_str = repr(pl)
+
+        assert "ParameterList" in repr_str
+        assert "a" in repr_str or "Parameter" in repr_str
+
+    def test_parameter_dict_repr(self) -> None:
+        """ParameterDict has useful repr."""
+        pd = ParameterDict({"key": _make_param("value")})
+        repr_str = repr(pd)
+
+        assert "ParameterDict" in repr_str
+        assert "key" in repr_str or "Parameter" in repr_str
+
+    def test_empty_parameter_list_repr(self) -> None:
+        """Empty ParameterList repr works."""
+        pl = ParameterList()
+        repr_str = repr(pl)
+        assert "ParameterList" in repr_str
+        assert "[]" in repr_str
+
+    def test_empty_parameter_dict_repr(self) -> None:
+        """Empty ParameterDict repr works."""
+        pd = ParameterDict()
+        repr_str = repr(pd)
+        assert "ParameterDict" in repr_str
+        assert "{}" in repr_str
+
+
+# ============================================================================
+# Edge Case Tests - Container Module Equality and Identity
+# ============================================================================
+
+
+class TestContainerModuleIdentity:
+    """Tests for module identity within containers."""
+
+    def test_same_module_in_multiple_positions(self) -> None:
+        """Same module instance can be referenced multiple times."""
+        shared = DummyModule("shared")
+        ml = ModuleList([shared, DummyModule("other")])
+
+        # The shared module is at index 0
+        assert ml[0] is shared
+        # But if we access the module, it's the same instance
+        assert shared in ml
+
+    def test_module_identity_preserved_in_slice(self) -> None:
+        """Module identity is preserved in sliced containers."""
+        modules = [DummyModule(str(i)) for i in range(5)]
+        seq = Sequential(*modules)
+
+        sliced = seq[1:4]
+
+        # The sliced modules should be the same instances
+        assert sliced[0] is modules[1]
+        assert sliced[1] is modules[2]
+        assert sliced[2] is modules[3]
+
+
+# ============================================================================
+# Edge Case Tests - Parameter Update Propagation
+# ============================================================================
+
+
+class TestParameterUpdatePropagation:
+    """Tests for parameter update propagation through containers."""
+
+    def test_nested_container_state_version_increments_owning_module(self) -> None:
+        """State version updates increment the parameter's owning module's version.
+
+        When a parameter inside a nested module (within a container) is updated,
+        the state version of the module that directly owns that parameter is
+        incremented. The parent container's state version is not affected.
+        """
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                inner = ModuleWithParam("nested")
+                self.layers = ModuleList([inner])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        inner = cast(ModuleWithParam, m.layers[0])
+        initial_inner_version = inner._module_state_version
+
+        # Get the nested parameter and update it
+        param = inner.prompt
+        param.apply_update("updated")
+
+        # The inner module's state version should have increased
+        assert inner._module_state_version > initial_inner_version
+        # Note: The root module's state version is NOT affected because
+        # each Module tracks its own parameter state independently
+
+    def test_parameter_container_update_propagates_to_module(self) -> None:
+        """Parameter in container updates the owning module's state version."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([Parameter("test", description="test")])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        initial = m._module_state_version
+
+        m.prompts[0].apply_update("new value")
+
+        assert m._module_state_version > initial
+
+    def test_parameter_dict_update_propagates_to_module(self) -> None:
+        """Parameter in ParameterDict updates the owning module's state version."""
+        from plait.parameter import Parameter
+
+        class TestModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.tasks = ParameterDict({"a": Parameter("val", description="d")})
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = TestModule()
+        initial = m._module_state_version
+
+        m.tasks["a"].apply_update("new")
+
+        assert m._module_state_version > initial
+
+
+# ============================================================================
+# Edge Case Tests - Clearing and Re-populating Containers
+# ============================================================================
+
+
+class TestClearAndRepopulate:
+    """Tests for clearing and re-populating containers."""
+
+    def test_module_dict_clear_and_repopulate(self) -> None:
+        """ModuleDict can be cleared and repopulated."""
+        md = ModuleDict({"a": DummyModule("1"), "b": DummyModule("2")})
+
+        md.clear()
+        assert len(md) == 0
+
+        md["c"] = DummyModule("3")
+        md["d"] = DummyModule("4")
+
+        assert len(md) == 2
+        assert "c" in md
+        assert "d" in md
+        assert "a" not in md
+
+    def test_module_list_pop_all_and_repopulate(self) -> None:
+        """ModuleList can be emptied via pop and repopulated."""
+        ml = ModuleList([DummyModule("a"), DummyModule("b")])
+
+        # Pop all
+        while len(ml) > 0:
+            ml.pop()
+
+        assert len(ml) == 0
+
+        # Repopulate
+        ml.append(DummyModule("new"))
+        assert len(ml) == 1
+
+    def test_parameter_list_clear_via_slice_and_repopulate(self) -> None:
+        """ParameterList can be cleared via slice deletion and repopulated."""
+        pl = ParameterList([_make_param("a"), _make_param("b"), _make_param("c")])
+
+        del pl[:]
+        assert len(pl) == 0
+
+        pl.append(_make_param("new"))
+        assert len(pl) == 1
+        assert pl[0].value == "new"
+
+
+# ============================================================================
+# Edge Case Tests - Concurrent-like Scenarios (Sequential Operations)
+# ============================================================================
+
+
+class TestSequentialModificationPatterns:
+    """Tests for patterns that might occur in complex modification scenarios."""
+
+    def test_module_list_reindex_after_multiple_deletes(self) -> None:
+        """ModuleList maintains correct indices after multiple deletes."""
+        ml = ModuleList([DummyModule(str(i)) for i in range(10)])
+
+        # Delete from various positions
+        del ml[0]  # Delete first
+        del ml[-1]  # Delete last (now at index 7)
+        del ml[3]  # Delete from middle
+
+        assert len(ml) == 7
+        # Verify indices are sequential
+        for i in range(len(ml)):
+            assert str(i) in ml._modules
+
+    def test_parameter_list_reindex_consistency(self) -> None:
+        """ParameterList maintains consistent indices after mutations."""
+        pl = ParameterList([_make_param(f"p{i}") for i in range(5)])
+
+        # Insert, delete, and replace
+        pl.insert(2, _make_param("inserted"))
+        del pl[0]
+        pl[-1] = _make_param("replaced")
+
+        # Verify all parameters have correct sequential indices
+        for i, p in enumerate(pl):
+            assert p._name == str(i)
+
+
+# ============================================================================
+# Edge Case Tests - ModuleDict Type Index Access
+# ============================================================================
+
+
+class TestModuleDictTypeEdgeCases:
+    """Tests for ModuleDict access with edge case key types."""
+
+    def test_module_dict_integer_type_index_fails(self) -> None:
+        """ModuleDict with integer key requires string access."""
+        # Note: Keys must be strings, but users might try integer access
+        md = ModuleDict({"0": DummyModule("zero")})
+
+        # Access with string works
+        assert md["0"] is not None
+
+        # Access with int would raise KeyError (not TypeError)
+        # because int is not in the dict
+        with pytest.raises(KeyError):
+            _ = md[0]  # type: ignore[index]
+
+
+# ============================================================================
+# Edge Case Tests - Large Container Operations
+# ============================================================================
+
+
+class TestLargeContainerOperations:
+    """Tests for operations on larger containers."""
+
+    def test_large_sequential_forward(self) -> None:
+        """Sequential with many modules executes correctly."""
+
+        class Counter(Module):
+            def forward(self, x: int) -> int:
+                return x + 1
+
+        seq = Sequential(*[Counter() for _ in range(100)])
+        result = seq(0)
+
+        assert result == 100
+
+    def test_large_module_list_iteration(self) -> None:
+        """ModuleList with many modules iterates correctly."""
+        count = 1000
+        ml = ModuleList([DummyModule(str(i)) for i in range(count)])
+
+        values = [cast(DummyModule, m).value for m in ml]
+        assert len(values) == count
+        assert values == [str(i) for i in range(count)]
+
+    def test_large_parameter_list_named_parameters(self) -> None:
+        """ParameterList with many parameters names correctly."""
+
+        class LargeModule(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.prompts = ParameterList([_make_param(f"p{i}") for i in range(100)])
+
+            def forward(self, x: str) -> str:
+                return x
+
+        m = LargeModule()
+        named = dict(m.named_parameters())
+
+        assert len(named) == 100
+        for i in range(100):
+            assert f"prompts.{i}" in named
+            assert named[f"prompts.{i}"].value == f"p{i}"
