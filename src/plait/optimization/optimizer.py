@@ -291,7 +291,10 @@ class Optimizer(ABC):
         Returns:
             A string key identifying this parameter.
         """
-        return param._name or str(id(param))
+        name = param._get_hierarchical_name()
+        if name:
+            return name
+        return param._id
 
     def _aggregator_system_prompt(self) -> str:
         """System prompt for the feedback aggregator LLM.
