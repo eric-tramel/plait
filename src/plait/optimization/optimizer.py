@@ -451,8 +451,8 @@ class SFAOptimizer(Optimizer):
         previous_values = {self._param_key(param): param.value for param in self.params}
 
         # Build parameter dependency graph across all records (tapes)
-        param_nodes, edges, reverse_edges, param_topo_index = (
-            self._build_param_dag(self._records)
+        param_nodes, edges, reverse_edges, param_topo_index = self._build_param_dag(
+            self._records
         )
 
         # Restrict to parameters managed by this optimizer
@@ -698,7 +698,7 @@ class SFAOptimizer(Optimizer):
         param_order: dict[str, int],
     ) -> list[list[Parameter]]:
         """Compute topological levels from a parameter dependency DAG."""
-        indegree: dict[str, int] = {key: 0 for key in param_nodes}
+        indegree: dict[str, int] = dict.fromkeys(param_nodes, 0)
         for src, dests in edges.items():
             indegree.setdefault(src, 0)
             for dst in dests:

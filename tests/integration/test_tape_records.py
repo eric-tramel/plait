@@ -46,9 +46,7 @@ async def test_per_record_tape_tracks_runtime_branch_parameters() -> None:
     # Record with left branch
     module.use_left = True
     left_output, left_record = await run(module, "hello", record=True)
-    left_params = [
-        p for params in left_record.node_parameters.values() for p in params
-    ]
+    left_params = [p for params in left_record.node_parameters.values() for p in params]
 
     assert "left_prompt" in left_output
     assert any(p is module.left.prompt for p in left_params)

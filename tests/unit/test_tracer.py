@@ -1,10 +1,5 @@
 """Unit tests for Value-driven tracing."""
 
-from typing import Any
-
-import pytest
-
-from plait.graph import GraphNode, InferenceGraph
 from plait.module import LLMInference, Module
 from plait.tracing.context import get_trace_context, trace_context
 from plait.tracing.tracer import GetItemOp, InputNode, IterOp, MethodOp, Tracer

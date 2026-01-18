@@ -172,7 +172,11 @@ async def train() -> None:
                 cleaned = " ".join(str(text).split())
                 return cleaned if len(cleaned) <= limit else cleaned[:limit] + "..."
 
-            async def _debug_backward_trace() -> None:
+            async def _debug_backward_trace(
+                outputs=outputs,
+                feedback=feedback,
+                queries=queries,
+            ) -> None:
                 from plait.optimization.backward import (
                     BackwardContext,
                     _combine_feedback,
@@ -211,14 +215,12 @@ async def train() -> None:
                         module = record.module_map[node_id]
                         result = await module.backward(combined, ctx)
                         module_name = (
-                            getattr(module, "_name", None)
-                            or module.__class__.__name__
+                            getattr(module, "_name", None) or module.__class__.__name__
                         )
                         params = record.node_parameters.get(node_id, [])
                         if params:
                             param_labels = ", ".join(
-                                f"{(p._name or 'param')}#{p._id[:8]}"
-                                for p in params
+                                f"{(p._name or 'param')}#{p._id[:8]}" for p in params
                             )
                         else:
                             param_labels = "none"
@@ -226,9 +228,7 @@ async def train() -> None:
                         print(
                             f"  Node {node_id} [{module_name}] params: {param_labels}"
                         )
-                        print(
-                            f"    combined_feedback: {_snippet(combined.content)}"
-                        )
+                        print(f"    combined_feedback: {_snippet(combined.content)}")
 
                         for param_name, param_fb in result.parameter_feedback.items():
                             print(

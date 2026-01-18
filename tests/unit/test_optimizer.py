@@ -945,7 +945,9 @@ class TestSFAOptimizerIntegration:
         # Record A: A -> B
         graph_a = InferenceGraph(
             nodes={
-                "A": GraphNode(id="A", module=None, args=(), kwargs={}, dependencies=[]),
+                "A": GraphNode(
+                    id="A", module=None, args=(), kwargs={}, dependencies=[]
+                ),
                 "B": GraphNode(
                     id="B", module=None, args=(), kwargs={}, dependencies=["A"]
                 ),
@@ -964,7 +966,9 @@ class TestSFAOptimizerIntegration:
         # Record B: A -> C
         graph_b = InferenceGraph(
             nodes={
-                "A": GraphNode(id="A", module=None, args=(), kwargs={}, dependencies=[]),
+                "A": GraphNode(
+                    id="A", module=None, args=(), kwargs={}, dependencies=[]
+                ),
                 "C": GraphNode(
                     id="C", module=None, args=(), kwargs={}, dependencies=["A"]
                 ),

@@ -4,7 +4,11 @@ import pytest
 
 from plait.graph import GraphNode, InferenceGraph, NodeRef
 from plait.module import Module
-from plait.optimization.backward import BackwardContext, BackwardResult, _propagate_backward
+from plait.optimization.backward import (
+    BackwardContext,
+    BackwardResult,
+    _propagate_backward,
+)
 from plait.optimization.feedback import Feedback, FeedbackType
 from plait.optimization.optimizer import Optimizer
 from plait.optimization.record import ForwardRecord

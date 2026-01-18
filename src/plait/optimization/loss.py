@@ -1304,7 +1304,9 @@ You must respond with a JSON object containing exactly these fields:
         # Get structured response
         response = await self.judge(prompt)
         try:
-            raw_score, justification, actionable_improvements = _parse_response(response)
+            raw_score, justification, actionable_improvements = _parse_response(
+                response
+            )
         except ValueError:
             retry_prompt = (
                 f"{prompt}\n\nReturn a JSON object with keys: "
