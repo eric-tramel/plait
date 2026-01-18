@@ -307,10 +307,15 @@ if __name__ == "__main__":
     multi_dict = MultiPerspectiveDict()
     print(f"   Keys: {list(multi_dict.analyzers.keys())}")
     print("   Access by key:")
-    for key in multi_dict.analyzers:
-        print(f"      analyzers['{key}']: alias={multi_dict.analyzers[key].alias}")
+    for key, module in multi_dict.analyzers.items():
+        alias = module.alias if isinstance(module, LLMInference) else "<unknown>"
+        print(f"      analyzers['{key}']: alias={alias}")
     print("   Attribute access:")
-    print(f"      analyzers.technical: alias={multi_dict.analyzers.technical.alias}")
+    technical = multi_dict.analyzers.technical
+    technical_alias = (
+        technical.alias if isinstance(technical, LLMInference) else "<unknown>"
+    )
+    print(f"      analyzers.technical: alias={technical_alias}")
 
     print("\n" + "=" * 60)
     print("Use bind() or ExecutionSettings to connect to real endpoints.")

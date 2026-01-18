@@ -102,6 +102,7 @@ class TestValueOps:
         with trace_context(tracer):
             result = tracer.record_getitem(value, "key")
 
+        assert result.ref is not None
         node = tracer.nodes[result.ref]
         assert isinstance(node.module, GetItemOp)
         assert node.dependencies == ["input:0"]
@@ -112,6 +113,7 @@ class TestValueOps:
         with trace_context(tracer):
             result = tracer.record_iter(value)
 
+        assert result.ref is not None
         node = tracer.nodes[result.ref]
         assert isinstance(node.module, IterOp)
         assert node.dependencies == ["input:0"]
@@ -122,6 +124,7 @@ class TestValueOps:
         with trace_context(tracer):
             result = tracer.record_method(value, "keys")
 
+        assert result.ref is not None
         node = tracer.nodes[result.ref]
         assert isinstance(node.module, MethodOp)
         assert node.dependencies == ["input:0"]
