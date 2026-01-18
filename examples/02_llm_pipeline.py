@@ -108,7 +108,7 @@ class ComprehensiveAnalyzer(Module):
     def forward(self, text: str) -> str:
         analyses = self.perspectives(text)
         # Use explicit key access instead of .items() iteration
-        # (Proxy objects don't support iteration during tracing)
+        # (Value objects don't support full iteration during tracing)
         combined = (
             f"## Technical\n{analyses['technical']}\n\n"
             f"## Business\n{analyses['business']}\n\n"
@@ -307,10 +307,15 @@ if __name__ == "__main__":
     multi_dict = MultiPerspectiveDict()
     print(f"   Keys: {list(multi_dict.analyzers.keys())}")
     print("   Access by key:")
-    for key in multi_dict.analyzers:
-        print(f"      analyzers['{key}']: alias={multi_dict.analyzers[key].alias}")
+    for key, module in multi_dict.analyzers.items():
+        alias = module.alias if isinstance(module, LLMInference) else "<unknown>"
+        print(f"      analyzers['{key}']: alias={alias}")
     print("   Attribute access:")
-    print(f"      analyzers.technical: alias={multi_dict.analyzers.technical.alias}")
+    technical = multi_dict.analyzers.technical
+    technical_alias = (
+        technical.alias if isinstance(technical, LLMInference) else "<unknown>"
+    )
+    print(f"      analyzers.technical: alias={technical_alias}")
 
     print("\n" + "=" * 60)
     print("Use bind() or ExecutionSettings to connect to real endpoints.")

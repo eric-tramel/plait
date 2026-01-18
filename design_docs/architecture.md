@@ -478,7 +478,6 @@ plait/
 │       │   ├── __init__.py
 │       │   ├── tracer.py       # Tracer
 │       │   ├── values.py       # Value, ValueKind, helpers
-│       │   ├── proxy.py        # (legacy) Proxy helpers, if needed
 │       │   └── context.py      # TraceContext
 │       ├── execution/
 │       │   ├── __init__.py

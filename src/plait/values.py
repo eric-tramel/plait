@@ -110,6 +110,16 @@ class Value:
             the functional module is available.
         """
         try:
+            from plait.tracing.context import get_trace_context
+        except ModuleNotFoundError:
+            get_trace_context = None  # type: ignore[assignment]
+
+        if get_trace_context is not None:
+            tracer = get_trace_context()
+            if tracer is not None and self.ref is not None:
+                return tracer.record_getitem(self, key)
+
+        try:
             F = import_module("plait.functional")
         except ModuleNotFoundError:
             F = None
@@ -133,6 +143,77 @@ class Value:
         if isinstance(selected, Value):
             return selected
         return Value(kind=_infer_kind(selected), payload=selected)
+
+    def __iter__(self) -> Any:
+        """Graph-aware iteration.
+
+        During tracing, returns an iterator yielding a single Value tied to an
+        IterOp node. Outside tracing, iterates over the payload when possible.
+        """
+        try:
+            from plait.tracing.context import get_trace_context
+        except ModuleNotFoundError:
+            get_trace_context = None  # type: ignore[assignment]
+
+        if get_trace_context is not None:
+            tracer = get_trace_context()
+            if tracer is not None and self.ref is not None:
+                return iter([tracer.record_iter(self)])
+
+        if self.kind == ValueKind.ERROR:
+            return iter([])
+        try:
+            return iter(self.payload)
+        except TypeError:
+            return iter([])
+
+    def keys(self) -> Any:
+        """Graph-aware dict keys access."""
+        try:
+            from plait.tracing.context import get_trace_context
+        except ModuleNotFoundError:
+            get_trace_context = None  # type: ignore[assignment]
+
+        if get_trace_context is not None:
+            tracer = get_trace_context()
+            if tracer is not None and self.ref is not None:
+                return tracer.record_method(self, "keys")
+
+        if isinstance(self.payload, dict):
+            return self.payload.keys()
+        raise AttributeError("Value payload has no keys()")
+
+    def values(self) -> Any:
+        """Graph-aware dict values access."""
+        try:
+            from plait.tracing.context import get_trace_context
+        except ModuleNotFoundError:
+            get_trace_context = None  # type: ignore[assignment]
+
+        if get_trace_context is not None:
+            tracer = get_trace_context()
+            if tracer is not None and self.ref is not None:
+                return tracer.record_method(self, "values")
+
+        if isinstance(self.payload, dict):
+            return self.payload.values()
+        raise AttributeError("Value payload has no values()")
+
+    def items(self) -> Any:
+        """Graph-aware dict items access."""
+        try:
+            from plait.tracing.context import get_trace_context
+        except ModuleNotFoundError:
+            get_trace_context = None  # type: ignore[assignment]
+
+        if get_trace_context is not None:
+            tracer = get_trace_context()
+            if tracer is not None and self.ref is not None:
+                return tracer.record_method(self, "items")
+
+        if isinstance(self.payload, dict):
+            return self.payload.items()
+        raise AttributeError("Value payload has no items()")
 
     def get(self, key: str | int, default: Any = None) -> Value:
         """Graph-aware structured access with default.

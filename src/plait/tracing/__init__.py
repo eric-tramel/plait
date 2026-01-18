@@ -10,7 +10,7 @@ Note:
 
     Internal usage:
         - `Module.__call__` checks context to record calls during tracing
-        - `Tracer.trace()` establishes the context for graph capture
+        - `Tracer.trace_values()` establishes the context for graph capture
         - `branch` decorator checks context to handle conditional tracing
 
     Users typically interact with higher-level APIs like `Tracer`, `run()`,
@@ -18,7 +18,6 @@ Note:
 """
 
 from plait.tracing.context import get_trace_context, trace_context
-from plait.tracing.proxy import Proxy
 from plait.tracing.tracer import InputNode, Tracer
 
-__all__ = ["InputNode", "Proxy", "Tracer", "get_trace_context", "trace_context"]
+__all__ = ["InputNode", "Tracer", "get_trace_context", "trace_context"]

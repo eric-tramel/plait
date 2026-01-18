@@ -195,7 +195,7 @@ plait/
 │       ├── values.py           # Value, ValueKind, helpers
 │       ├── functional.py       # plait.functional
 │       ├── graph.py            # InferenceGraph, GraphNode
-│       ├── tracing/            # Tracer + trace context (+ legacy proxy)
+│       ├── tracing/            # Tracer + trace context (Value-driven)
 │       ├── execution/          # Scheduler, ExecutionState, checkpoints
 │       ├── resources/          # ResourceConfig/ResourceManager, rate limiting
 │       ├── optimization/       # Loss/Feedback/Optimizer, backward propagation

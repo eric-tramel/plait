@@ -2300,7 +2300,7 @@ class TestModuleReplacementInContainers:
         seq.first = new_module
 
         # The new module should be set
-        assert cast(DummyModule, seq.first).value == "new"
+        assert seq.first.value == "new"
 
     def test_module_list_setitem_reparents(self) -> None:
         """ModuleList setitem properly reparents the new module."""

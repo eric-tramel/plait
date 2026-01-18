@@ -75,6 +75,7 @@ class _LossLLMWrapper:
         self,
         alias: str,
         system_prompt: str,
+        temperature: float = 0.0,
         response_format: type | None = None,
     ) -> None:
         """Initialize the wrapper with LLM configuration.
@@ -82,6 +83,7 @@ class _LossLLMWrapper:
         Args:
             alias: Resource alias for the LLM endpoint.
             system_prompt: System prompt for the LLM.
+            temperature: Sampling temperature for the LLM.
             response_format: Optional structured output format.
         """
         from plait.module import LLMInference, Module
@@ -97,6 +99,7 @@ class _LossLLMWrapper:
                 inner_self.llm = LLMInference(
                     alias=alias,
                     system_prompt=system_prompt,
+                    temperature=temperature,
                     response_format=response_format,
                 )
 
@@ -175,12 +178,12 @@ class RubricResponse:
     Attributes:
         score: The numeric score assigned (matching a RubricLevel.score).
         justification: Explanation of why this score was assigned.
-        feedback: Actionable suggestions for improvement.
+        actionable_improvements: Actionable improvements only.
     """
 
     score: int
     justification: str
-    feedback: str
+    actionable_improvements: list[str]
 
 
 @dataclass
@@ -656,17 +659,17 @@ class VerifierLoss(Loss):
 
 
 class LLMJudge(Loss):
-    """Freeform LLM feedback without structured scoring.
+    """Freeform LLM actionable improvements without structured scoring.
 
-    The LLM provides critical feedback on the output without being
-    constrained to a specific rubric or scale. Useful for open-ended
-    improvement suggestions and qualitative evaluation.
+    The LLM provides ONLY actionable improvements on the output without
+    being constrained to a specific rubric or scale. Useful for
+    open-ended improvement suggestions and qualitative evaluation.
 
     The internal LLMInference module must be bound to resources before
     calling the loss function. Use the bind() method to configure resources.
 
     Attributes:
-        criteria: Optional focus areas for feedback.
+        criteria: Optional focus areas for improvements.
         judge: Internal LLMInference module for evaluation.
 
     Example:
@@ -699,9 +702,10 @@ class LLMJudge(Loss):
         self.judge = _LossLLMWrapper(
             alias=alias,
             system_prompt=(
-                "You are a critical reviewer. Provide specific, actionable "
-                "feedback on how the output could be improved. Be constructive "
-                "but thorough in identifying weaknesses."
+                "You are a critical reviewer. Provide ONLY actionable "
+                "improvements (no general reviews or praise). Respond with a "
+                "JSON array of strings. If no improvement is needed, respond "
+                "with []"
             ),
         )
 
@@ -743,8 +747,8 @@ class LLMJudge(Loss):
             context: Optional additional context for evaluation.
 
         Returns:
-            Feedback containing the LLM's freeform critique. The score
-            is None since this is qualitative evaluation.
+            Feedback containing the LLM's actionable improvements. The
+            score is None since this is qualitative evaluation.
 
         Raises:
             RuntimeError: If the judge has not been bound to resources.
@@ -761,16 +765,43 @@ class LLMJudge(Loss):
         if self.criteria:
             prompt_parts.append(f"Focus areas: {self.criteria}")
 
-        prompt_parts.append("\nProvide detailed, actionable feedback:")
+        prompt_parts.append(
+            "\nProvide ONLY actionable improvements as a JSON array of strings. "
+            "If no improvement is needed, return []."
+        )
         prompt = "\n\n".join(prompt_parts)
 
         # Get LLM feedback
         response = await self.judge(prompt)
+        actionable_improvements: list[str] | None = None
+        if isinstance(response, str):
+            stripped = response.strip()
+            if stripped.startswith("["):
+                import json
+
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, list):
+                    actionable_improvements = [
+                        str(item).strip() for item in parsed if str(item).strip()
+                    ]
+
+        if actionable_improvements is not None:
+            content = "\n".join(f"- {item}" for item in actionable_improvements)
+        else:
+            content = response
+
+        metadata: dict[str, Any] = {}
+        if actionable_improvements is not None:
+            metadata["actionable_improvements"] = actionable_improvements
 
         return Feedback(
-            content=response,
+            content=content,
             score=None,  # Freeform feedback has no structured score
             feedback_type=FeedbackType.LLM_JUDGE,
+            metadata=metadata,
         )
 
 
@@ -920,10 +951,16 @@ class CompositeLoss(Loss):
             This method should only be called when self.aggregator is not None.
         """
         assert self.aggregator is not None  # Caller ensures this
-        prompt = "Synthesize the following feedback into a coherent summary:\n\n"
+        prompt = (
+            "Synthesize the following items into a concise list of actionable "
+            "improvements:\n\n"
+        )
         for fb, weight in feedbacks:
             prompt += f"--- Feedback (weight: {weight}) ---\n{fb.content}\n\n"
-        prompt += "Provide a unified summary of the key points and suggestions."
+        prompt += (
+            "Provide ONLY actionable improvements (no general reviews). If no "
+            "improvements are needed, return []."
+        )
         return await self.aggregator(prompt)
 
 
@@ -933,10 +970,10 @@ class CompositeLoss(Loss):
 
 
 class HumanFeedbackLoss(Loss):
-    """Freeform human feedback collected via stdout/stdin.
+    """Freeform human actionable improvements collected via stdout/stdin.
 
-    Prompts the user to provide critical feedback on each output.
-    Useful for RLHF-style training with human-in-the-loop or for
+    Prompts the user to provide ONLY actionable improvements on each
+    output. Useful for RLHF-style training with human-in-the-loop or for
     manual evaluation during development.
 
     The output is displayed to the user via print(), and feedback is
@@ -977,10 +1014,10 @@ class HumanFeedbackLoss(Loss):
         *,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
-        """Collect human feedback on the output.
+        """Collect human actionable improvements on the output.
 
         Displays the output to the user via stdout and collects
-        feedback via stdin until an empty line is entered.
+        actionable improvements via stdin until an empty line is entered.
 
         Args:
             output: The module output to evaluate.
@@ -988,8 +1025,8 @@ class HumanFeedbackLoss(Loss):
             context: Optional additional context for evaluation.
 
         Returns:
-            Feedback containing the human's critique. Score is None
-            since this is freeform evaluation.
+            Feedback containing the human's actionable improvements.
+            Score is None since this is freeform evaluation.
         """
         from plait.optimization.feedback import Feedback, FeedbackType
 
@@ -1015,8 +1052,11 @@ class HumanFeedbackLoss(Loss):
             )
             print(prompt)
         else:
-            print("Please provide feedback on this output.")
-            print("What could be improved? (Enter empty line to finish)")
+            print("Please provide actionable improvements only.")
+            print(
+                "Enter one improvement per line. If no improvement is needed, "
+                "press Enter on an empty line."
+            )
 
         lines = []
         while True:
@@ -1025,7 +1065,7 @@ class HumanFeedbackLoss(Loss):
                 break
             lines.append(line)
 
-        content = "\n".join(lines) if lines else "No feedback provided."
+        content = "\n".join(lines)
 
         return Feedback(
             content=content,
@@ -1092,10 +1132,16 @@ class LLMRubricLoss(Loss):
         self._min_score = min(r.score for r in rubric)
 
         # Internal LLM module with structured output (wrapped for execution)
+        system_prompt = self._build_system_prompt()
         self.judge = _LossLLMWrapper(
             alias=alias,
-            system_prompt=self._build_system_prompt(),
+            system_prompt=system_prompt,
             response_format=RubricResponse,
+        )
+        # Fallback judge without structured output for recovery
+        self._fallback_judge = _LossLLMWrapper(
+            alias=alias,
+            system_prompt=system_prompt,
         )
 
     def _build_system_prompt(self) -> str:
@@ -1114,7 +1160,8 @@ Rating Scale:
 You must respond with a JSON object containing exactly these fields:
 - "score": integer from the rating scale above
 - "justification": string explaining why you assigned this score
-- "feedback": string with actionable suggestions for improvement"""
+- "actionable_improvements": array of strings with ONLY actionable improvements.
+  If no improvement is needed, return an empty array []"""
 
     def bind(self, resources: ResourceConfig | ResourceManager) -> Self:
         """Bind the internal judge module to resources.
@@ -1129,6 +1176,7 @@ You must respond with a JSON object containing exactly these fields:
             Self for method chaining.
         """
         self.judge.bind(resources)
+        self._fallback_judge.bind(resources)
         return self
 
     async def _evaluate_single(
@@ -1156,36 +1204,149 @@ You must respond with a JSON object containing exactly these fields:
             prompt_parts.append(f"Expected/Target: {target}")
         prompt = "\n\n".join(prompt_parts)
 
+        def _normalize_actionable_improvements(value: Any) -> list[str]:
+            if value is None:
+                return []
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    return []
+                if stripped.startswith("["):
+                    import json
+
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, list):
+                            value = parsed
+                    except json.JSONDecodeError:
+                        return [stripped]
+                if isinstance(value, str):
+                    return [stripped]
+            if isinstance(value, (list, tuple)):
+                return [str(item).strip() for item in value if str(item).strip()]
+            return [str(value).strip()] if str(value).strip() else []
+
+        def _parse_response(payload: Any) -> tuple[float, str, list[str]]:
+            """Parse judge output into (score, justification, improvements)."""
+            if isinstance(payload, str):
+                import json
+
+                try:
+                    payload = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "LLMRubricLoss expected JSON but received non-JSON response."
+                    ) from exc
+
+            if isinstance(payload, dict):
+                normalized = {
+                    str(key).strip().lower(): value for key, value in payload.items()
+                }
+
+                def _pick(keys: list[str], default: str) -> str:
+                    for key in keys:
+                        value = normalized.get(key)
+                        if value is not None:
+                            return str(value)
+                    return default
+
+                raw_score = normalized.get("score")
+                if raw_score is None:
+                    for key in ("rating", "grade", "score_value", "overall_score"):
+                        if key in normalized:
+                            raw_score = normalized[key]
+                            break
+
+                if raw_score is None:
+                    raise ValueError(
+                        "LLMRubricLoss expected a 'score' field in the judge "
+                        f"response. Received keys: {sorted(normalized.keys())}"
+                    )
+
+                if isinstance(raw_score, str):
+                    try:
+                        raw_score = int(raw_score)
+                    except ValueError:
+                        raw_score = float(raw_score)
+
+                justification = _pick(
+                    ["justification", "reason", "rationale", "explanation"],
+                    "No justification provided",
+                )
+                improvements_raw = normalized.get("actionable_improvements")
+                if improvements_raw is None:
+                    for key in (
+                        "actionableimprovements",
+                        "actionable_improvement",
+                        "actionableimprovement",
+                        "improvements",
+                        "suggestions",
+                        "recommendations",
+                        "feedback",
+                    ):
+                        if key in normalized:
+                            improvements_raw = normalized[key]
+                            break
+                actionable_improvements = _normalize_actionable_improvements(
+                    improvements_raw
+                )
+                return float(raw_score), justification, actionable_improvements
+
+            improvements_value = getattr(payload, "actionable_improvements", None)
+            if improvements_value is None and hasattr(payload, "feedback"):
+                improvements_value = payload.feedback
+            return (
+                float(payload.score),
+                payload.justification,
+                _normalize_actionable_improvements(improvements_value),
+            )
+
         # Get structured response
         response = await self.judge(prompt)
-
-        # Handle string (JSON), dict (parsed JSON), and object responses
-        if isinstance(response, str):
-            import json
-
-            response = json.loads(response)
-
-        if isinstance(response, dict):
-            raw_score = response["score"]
-            justification = response.get("justification", "No justification provided")
-            feedback_text = response.get("feedback", "No feedback provided")
-        else:
-            raw_score = response.score
-            justification = response.justification
-            feedback_text = response.feedback
+        try:
+            raw_score, justification, actionable_improvements = _parse_response(
+                response
+            )
+        except ValueError:
+            retry_prompt = (
+                f"{prompt}\n\nReturn a JSON object with keys: "
+                "score, justification, actionable_improvements. "
+                "Do not include any other text."
+            )
+            fallback_response = await self._fallback_judge(retry_prompt)
+            try:
+                raw_score, justification, actionable_improvements = _parse_response(
+                    fallback_response
+                )
+            except ValueError as fallback_exc:
+                raise ValueError(
+                    "LLMRubricLoss failed to parse judge response. "
+                    f"Primary response: {response!r}. "
+                    f"Fallback response: {fallback_response!r}"
+                ) from fallback_exc
 
         # Normalize score to 0-1 range
         normalized_score = (raw_score - self._min_score) / (
             self._max_score - self._min_score
         )
 
-        content = f"Justification: {justification}\n\nFeedback: {feedback_text}"
+        content_parts = [f"Justification: {justification}"]
+        if actionable_improvements:
+            improvements_text = "\n".join(
+                f"- {item}" for item in actionable_improvements
+            )
+            content_parts.append(f"Actionable improvements:\n{improvements_text}")
+        content = "\n\n".join(content_parts)
 
         return Feedback(
             content=content,
             score=normalized_score,
             feedback_type=FeedbackType.LLM_JUDGE,
-            metadata={"raw_score": raw_score, "criteria": self.criteria},
+            metadata={
+                "raw_score": raw_score,
+                "criteria": self.criteria,
+                "actionable_improvements": actionable_improvements,
+            },
         )
 
 
@@ -1193,7 +1354,7 @@ class HumanRubricLoss(Loss):
     """Human evaluation against a structured Likert scale rubric.
 
     Displays the output and rubric to the user via stdout, then
-    collects their score and optional feedback via stdin.
+    collects their score and optional actionable improvements via stdin.
 
     Attributes:
         criteria: What aspect to evaluate.
@@ -1243,10 +1404,10 @@ class HumanRubricLoss(Loss):
         *,
         context: dict[str, Any] | None = None,
     ) -> Feedback:
-        """Collect human score and feedback against the rubric.
+        """Collect human score and actionable improvements against the rubric.
 
         Displays the output, target, and rubric, then collects
-        the user's score and optional written feedback.
+        the user's score and optional written improvements.
 
         Args:
             output: The module output to evaluate.
@@ -1254,7 +1415,7 @@ class HumanRubricLoss(Loss):
             context: Optional additional context for evaluation.
 
         Returns:
-            Feedback with normalized score (0-1) and human feedback.
+            Feedback with normalized score (0-1) and human improvements.
         """
         from plait.optimization.feedback import Feedback, FeedbackType
 
@@ -1293,7 +1454,7 @@ class HumanRubricLoss(Loss):
         # Collect feedback
         feedback_text = ""
         if self.require_feedback:
-            print("\nProvide feedback (enter empty line to finish):")
+            print("\nProvide actionable improvements only (empty line to finish):")
             lines = []
             while True:
                 line = input("> ")
@@ -1308,7 +1469,7 @@ class HumanRubricLoss(Loss):
         )
 
         return Feedback(
-            content=feedback_text or f"Score: {score}/{self._max_score}",
+            content=feedback_text,
             score=normalized_score,
             feedback_type=FeedbackType.HUMAN,
             metadata={"raw_score": score},
@@ -1762,7 +1923,9 @@ class LLMRankingLoss(ContrastiveLoss):
                 "Respond in JSON format with these fields:\n"
                 '- "ranking": array of indices in order from best to worst (e.g., [2, 0, 1, 3])\n'
                 '- "reasoning": string explaining the ranking decisions\n'
-                '- "per_output_feedback": array of strings with feedback for each output'
+                '- "per_output_actionable_improvements": array of arrays of strings. '
+                "Each inner array contains ONLY actionable improvements for that output "
+                "(use [] when no improvements are needed)."
             ),
             response_format=RankingResponse,
         )

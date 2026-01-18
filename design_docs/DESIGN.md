@@ -321,7 +321,6 @@ plait/
 ├── src/
 │   ├── op.py           # Op base class
 │   ├── values.py       # Value, ValueKind, helpers
-│   ├── proxy.py        # (legacy) Proxy helpers, if needed
 │   ├── tracer.py       # Tracer implementation
 │   ├── dag.py          # DAG and Node definitions
 │   ├── scheduler.py    # Priority queue + rate limiter

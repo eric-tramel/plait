@@ -77,7 +77,7 @@ def trace_context(tracer: Tracer) -> Generator[Tracer]:
         >>> tracer = Tracer()
         >>> with trace_context(tracer):
         ...     # All module calls here are recorded
-        ...     output = module(input_proxy)
+        ...     output = module(input_value)
         >>> # tracer.nodes now contains the recorded call
     """
     token = _trace_context.set(tracer)

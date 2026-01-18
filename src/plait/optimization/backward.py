@@ -334,14 +334,11 @@ async def _propagate_backward(
     if optimizer is not None:
         optimizer.capture_record(record)
     graph = record.graph
-    feedback_map: dict[str, Feedback] = {}
-
-    # Build reverse dependency map (node -> nodes that depend on it)
-    dependents_map = _build_dependents_map(graph)
+    feedback_map: dict[str, list[Feedback]] = {}
 
     # Initialize with output feedback
     for output_id in graph.output_ids:
-        feedback_map[output_id] = feedback
+        feedback_map.setdefault(output_id, []).append(feedback)
 
     # Process in reverse topological order
     for node_id in reversed(graph.topological_order()):
@@ -349,15 +346,7 @@ async def _propagate_backward(
         if node_id in graph.input_ids:
             continue
 
-        # Gather feedback from downstream nodes (nodes that depend on this node)
-        downstream_feedback: list[Feedback] = []
-        for dependent_id in dependents_map.get(node_id, []):
-            if dependent_id in feedback_map:
-                downstream_feedback.append(feedback_map[dependent_id])
-
-        # Also check if this is an output node (no dependents but has feedback)
-        if not downstream_feedback and node_id in feedback_map:
-            downstream_feedback.append(feedback_map[node_id])
+        downstream_feedback = feedback_map.get(node_id, [])
 
         if not downstream_feedback:
             continue
@@ -384,7 +373,7 @@ async def _propagate_backward(
         for input_name, input_fb in result.input_feedback.items():
             input_node_id = _resolve_input_node(node_id, input_name, record)
             if input_node_id:
-                feedback_map[input_node_id] = input_fb
+                feedback_map.setdefault(input_node_id, []).append(input_fb)
 
         # Accumulate parameter feedback
         for param_name, param_fb in result.parameter_feedback.items():

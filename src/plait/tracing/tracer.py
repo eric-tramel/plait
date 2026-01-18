@@ -7,17 +7,18 @@ executing actual computations.
 Example:
     >>> from plait.tracing.tracer import Tracer
     >>> from plait.module import Module, LLMInference
+    >>> from plait.values import Value
     >>>
     >>> class Pipeline(Module):
     ...     def __init__(self):
     ...         super().__init__()
     ...         self.llm = LLMInference(alias="fast")
     ...
-    ...     def forward(self, text: str) -> str:
+    ...     def forward(self, text: Value) -> Value:
     ...         return self.llm(text)
     >>>
     >>> tracer = Tracer()
-    >>> graph = tracer.trace(Pipeline(), "input text")
+    >>> graph = tracer.trace_values(Pipeline(), "input text")
     >>> graph.input_ids
     ['input:input_0']
 """
@@ -27,9 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from plait.graph import GraphNode, InferenceGraph, NodeRef
+from plait.graph import GraphNode, InferenceGraph
 from plait.tracing.context import trace_context
-from plait.tracing.proxy import Proxy
 from plait.values import (
     Value,
     ValueKind,
@@ -61,8 +61,8 @@ class InputNode:
 
         >>> # During tracing, input nodes are created automatically
         >>> tracer = Tracer()
-        >>> proxy = tracer._create_input_node("text", "input text")
-        >>> input_node = tracer.nodes[proxy.node_id].module
+        >>> graph = tracer.trace_values(LLMInference(alias="test"), "input text")
+        >>> input_node = graph.nodes[graph.input_ids[0]].module
         >>> input_node.value
         'input text'
     """
@@ -74,7 +74,7 @@ class InputNode:
 class GetItemOp:
     """Operation node representing dictionary/list indexing.
 
-    Created when a Proxy is indexed with proxy[key]. During execution,
+    Created when a Value is indexed during tracing. During execution,
     this operation retrieves the value at the specified key from the
     source node's output.
 
@@ -92,9 +92,9 @@ class GetItemOp:
 
 @dataclass
 class IterOp:
-    """Operation node representing iteration over a proxy.
+    """Operation node representing iteration over a Value.
 
-    Created when a Proxy is iterated. During execution, this operation
+    Created when a Value is iterated during tracing. During execution, this operation
     yields elements from the source node's output.
 
     Example:
@@ -106,10 +106,10 @@ class IterOp:
 
 @dataclass
 class MethodOp:
-    """Operation node representing a method call on a proxy.
+    """Operation node representing a method call on a Value.
 
     Created when methods like keys(), values(), or items() are called
-    on a Proxy. During execution, this operation calls the specified
+    on a Value during tracing. During execution, this operation calls the specified
     method on the source node's output.
 
     Attributes:
@@ -227,46 +227,6 @@ class Tracer:
         self._module_stack.clear()
         self._branch_stack.clear()
 
-    def _create_input_node(self, name: str, value: Any) -> Proxy:
-        """Create a node representing an input to the traced graph.
-
-        Creates an InputNode that wraps the given value and registers it
-        in the tracer's node storage. The node ID is added to input_ids
-        to mark it as a graph entry point.
-
-        Args:
-            name: A descriptive name for this input (e.g., "input_0", "text").
-            value: The actual input value to capture.
-
-        Returns:
-            A Proxy representing this input node. The proxy can be passed
-            to other modules to create dependency edges.
-
-        Example:
-            >>> tracer = Tracer()
-            >>> proxy = tracer._create_input_node("text", "Hello, world!")
-            >>> proxy.node_id
-            'input:text'
-            >>> tracer.input_ids
-            ['input:text']
-            >>> tracer.nodes['input:text'].module.value
-            'Hello, world!'
-        """
-        node_id = f"input:{name}"
-        self.input_ids.append(node_id)
-
-        node = GraphNode(
-            id=node_id,
-            module=InputNode(value),
-            args=(),
-            kwargs={},
-            dependencies=[],
-            module_name=f"Input({name})",
-        )
-        self.nodes[node_id] = node
-
-        return Proxy(node_id=node_id, tracer=self)
-
     def bind_inputs(self, inputs: Any, prefix: str = "input") -> Any:
         """Bind input values with refs and create input nodes.
 
@@ -304,12 +264,12 @@ class Tracer:
         """
         counter = [0]  # Mutable counter for nested calls
 
-        def _bind(obj: Any, key_prefix: str) -> Any:
+        def _bind(obj: Any, key_prefix: str, use_index: bool) -> Any:
             if isinstance(obj, Value):
                 # Create input node and assign ref
                 idx = counter[0]
                 counter[0] += 1
-                name = f"{key_prefix}_{idx}"
+                name = f"{key_prefix}_{idx}" if use_index else key_prefix
                 node_id = f"input:{name}"
 
                 self.input_ids.append(node_id)
@@ -331,17 +291,21 @@ class Tracer:
                     meta=obj.meta.copy(),
                 )
             elif isinstance(obj, dict):
-                return {k: _bind(v, f"{key_prefix}_{k}") for k, v in obj.items()}
+                return {
+                    k: _bind(v, f"{key_prefix}_{k}", use_index=use_index)
+                    for k, v in obj.items()
+                }
             elif isinstance(obj, list):
-                return [_bind(item, key_prefix) for item in obj]
+                return [_bind(item, key_prefix, use_index=True) for item in obj]
             elif isinstance(obj, tuple):
-                return tuple(_bind(item, key_prefix) for item in obj)
+                return tuple(_bind(item, key_prefix, use_index=True) for item in obj)
             else:
                 # Literal value - convert to Value first, then bind
                 val = valueify(obj)
-                return _bind(val, key_prefix)
+                return _bind(val, key_prefix, use_index=use_index)
 
-        return _bind(inputs, prefix)
+        use_index = not isinstance(inputs, dict)
+        return _bind(inputs, prefix, use_index=use_index)
 
     def record_call(
         self,
@@ -353,15 +317,12 @@ class Tracer:
 
         Called by Module.__call__ when tracing is active. Creates
         a graph node representing the module call and tracks dependencies
-        based on Proxy or Value objects in the arguments.
+        based on Value objects in the arguments.
 
-        Dependencies are collected from:
-        - Proxy objects: via their .node_id attribute
-        - Value objects: via their .ref attribute (using collect_refs)
+        Dependencies are collected from Value objects via their .ref
+        attributes (using collect_refs).
 
-        Args are stored with:
-        - Proxy objects replaced with NodeRef(node_id)
-        - Value objects replaced with ValueRef(ref)
+        Args are stored with Value objects replaced by ValueRef(ref).
 
         Args:
             module: The module being called.
@@ -388,34 +349,12 @@ class Tracer:
         """
         node_id = self._generate_id(module)
 
-        # Extract dependencies from both Proxy and Value arguments
-        dependencies: list[str] = []
-
-        # Process args: extract Proxy dependencies and replace with NodeRef
-        processed_args: list[NodeRef | ValueRef | Any] = []
-        for arg in args:
-            if isinstance(arg, Proxy):
-                dependencies.append(arg.node_id)
-                processed_args.append(NodeRef(arg.node_id))
-            else:
-                processed_args.append(arg)
-
-        # Process kwargs: extract Proxy dependencies and replace with NodeRef
-        processed_kwargs: dict[str, NodeRef | ValueRef | Any] = {}
-        for key, value in kwargs.items():
-            if isinstance(value, Proxy):
-                dependencies.append(value.node_id)
-                processed_kwargs[key] = NodeRef(value.node_id)
-            else:
-                processed_kwargs[key] = value
-
         # Collect dependencies from Value objects (via collect_refs)
-        value_deps = collect_refs(*args, **kwargs)
-        dependencies.extend(value_deps)
+        dependencies = collect_refs(*args, **kwargs)
 
         # Replace Value objects with ValueRef placeholders in args/kwargs
-        processed_args = list(replace_values_with_refs(tuple(processed_args)))
-        processed_kwargs = replace_values_with_refs(processed_kwargs)
+        processed_args = list(replace_values_with_refs(args))
+        processed_kwargs = replace_values_with_refs(kwargs)
 
         # Get branch context if we're inside a conditional
         branch_condition: str | None = None
@@ -439,29 +378,11 @@ class Tracer:
         # Return Value with ref pointing to this node
         return Value(kind=ValueKind.RESPONSE, payload=None, ref=node_id)
 
-    def record_getitem(self, proxy: Proxy, key: Any) -> Proxy:
-        """Record a getitem operation on a proxy.
+    def record_getitem(self, value: Value, key: Any) -> Value:
+        """Record a getitem operation on a Value during tracing."""
+        if value.ref is None:
+            return value
 
-        Creates a new graph node representing the indexing operation
-        and returns a proxy for that node. This enables tracing of
-        dictionary/list access patterns.
-
-        Args:
-            proxy: The proxy being indexed.
-            key: The key or index being accessed.
-
-        Returns:
-            A new Proxy representing the result of the indexing operation.
-
-        Example:
-            >>> tracer = Tracer()
-            >>> input_proxy = tracer._create_input_node("data", {"key": "value"})
-            >>> result = tracer.record_getitem(input_proxy, "key")
-            >>> result.node_id
-            'getitem_1'
-            >>> tracer.nodes['getitem_1'].dependencies
-            ['input:data']
-        """
         self._node_counter += 1
         node_id = f"getitem_{self._node_counter}"
 
@@ -474,36 +395,36 @@ class Tracer:
         node = GraphNode(
             id=node_id,
             module=GetItemOp(key=key),
-            args=(NodeRef(proxy.node_id),),
+            args=(ValueRef(value.ref),),
             kwargs={},
-            dependencies=[proxy.node_id],
+            dependencies=[value.ref],
             branch_condition=branch_condition,
             branch_value=branch_value,
             module_name=f"getitem[{key!r}]",
         )
         self.nodes[node_id] = node
 
-        return Proxy(node_id=node_id, tracer=self)
+        payload = None
+        kind = ValueKind.STRUCTURED
+        try:
+            payload = value.payload[key]
+            from plait.values import _infer_kind
 
-    def record_iter(self, proxy: Proxy) -> Proxy:
-        """Record an iteration operation on a proxy.
+            kind = (
+                ValueKind.STRUCTURED
+                if isinstance(payload, (dict, list, tuple))
+                else _infer_kind(payload)
+            )
+        except Exception:
+            payload = None
 
-        Creates a new graph node representing iteration over the proxy's
-        value. This enables tracing of iteration patterns like for loops.
+        return Value(kind=kind, payload=payload, ref=node_id)
 
-        Args:
-            proxy: The proxy being iterated.
+    def record_iter(self, value: Value) -> Value:
+        """Record an iteration operation on a Value during tracing."""
+        if value.ref is None:
+            return value
 
-        Returns:
-            A new Proxy representing the iterator.
-
-        Example:
-            >>> tracer = Tracer()
-            >>> input_proxy = tracer._create_input_node("data", [1, 2, 3])
-            >>> result = tracer.record_iter(input_proxy)
-            >>> result.node_id
-            'iter_1'
-        """
         self._node_counter += 1
         node_id = f"iter_{self._node_counter}"
 
@@ -516,39 +437,22 @@ class Tracer:
         node = GraphNode(
             id=node_id,
             module=IterOp(),
-            args=(NodeRef(proxy.node_id),),
+            args=(ValueRef(value.ref),),
             kwargs={},
-            dependencies=[proxy.node_id],
+            dependencies=[value.ref],
             branch_condition=branch_condition,
             branch_value=branch_value,
             module_name="iter",
         )
         self.nodes[node_id] = node
 
-        return Proxy(node_id=node_id, tracer=self)
+        return Value(kind=ValueKind.STRUCTURED, payload=None, ref=node_id)
 
-    def record_method(self, proxy: Proxy, method: str) -> Proxy:
-        """Record a method call on a proxy.
+    def record_method(self, value: Value, method: str) -> Value:
+        """Record a method call on a Value during tracing."""
+        if value.ref is None:
+            return value
 
-        Creates a new graph node representing a method call like
-        keys(), values(), or items() on the proxy's value.
-
-        Args:
-            proxy: The proxy on which the method is called.
-            method: The name of the method being called.
-
-        Returns:
-            A new Proxy representing the result of the method call.
-
-        Example:
-            >>> tracer = Tracer()
-            >>> input_proxy = tracer._create_input_node("data", {"a": 1})
-            >>> result = tracer.record_method(input_proxy, "keys")
-            >>> result.node_id
-            'method_1'
-            >>> tracer.nodes['method_1'].module.method
-            'keys'
-        """
         self._node_counter += 1
         node_id = f"method_{self._node_counter}"
 
@@ -561,61 +465,33 @@ class Tracer:
         node = GraphNode(
             id=node_id,
             module=MethodOp(method=method),
-            args=(NodeRef(proxy.node_id),),
+            args=(ValueRef(value.ref),),
             kwargs={},
-            dependencies=[proxy.node_id],
+            dependencies=[value.ref],
             branch_condition=branch_condition,
             branch_value=branch_value,
             module_name=f".{method}()",
         )
         self.nodes[node_id] = node
 
-        return Proxy(node_id=node_id, tracer=self)
+        return Value(kind=ValueKind.STRUCTURED, payload=None, ref=node_id)
 
     def _collect_output_ids(self, output: Any) -> list[str]:
         """Extract node IDs from the output structure.
 
-        Recursively traverses the output to find all Proxy and Value objects
+        Recursively traverses the output to find all Value objects
         and collect their node IDs/refs. Supports nested structures including
         dictionaries, lists, and tuples.
 
         Args:
-            output: The output from forward(), which may be a Proxy, Value,
-                a collection containing Proxies/Values, or a literal value.
+            output: The output from forward(), which may be a Value,
+                a collection containing Values, or a literal value.
 
         Returns:
             A list of node IDs representing the outputs of the traced graph.
-            Returns an empty list if the output contains no Proxy/Value objects.
-
-        Example:
-            >>> tracer = Tracer()
-            >>> proxy1 = tracer._create_input_node("a", "val1")
-            >>> proxy2 = tracer._create_input_node("b", "val2")
-            >>>
-            >>> # Single proxy output
-            >>> tracer._collect_output_ids(proxy1)
-            ['input:a']
-            >>>
-            >>> # Value output
-            >>> v = Value(ValueKind.TEXT, "hello", ref="node_1")
-            >>> tracer._collect_output_ids(v)
-            ['node_1']
-            >>>
-            >>> # Dict output
-            >>> tracer._collect_output_ids({"x": proxy1, "y": proxy2})
-            ['input:a', 'input:b']
-            >>>
-            >>> # List output
-            >>> tracer._collect_output_ids([proxy1, proxy2])
-            ['input:a', 'input:b']
-            >>>
-            >>> # Literal output (no proxies/values)
-            >>> tracer._collect_output_ids("literal string")
-            []
+            Returns an empty list if the output contains no Values.
         """
-        if isinstance(output, Proxy):
-            return [output.node_id]
-        elif isinstance(output, Value):
+        if isinstance(output, Value):
             # Use collect_refs for Values - handles nested structures too
             refs = collect_refs(output)
             return refs
@@ -638,45 +514,22 @@ class Tracer:
         """Capture the original structure of forward() output with node IDs.
 
         Preserves the structure of the output (dict keys, list order) while
-        replacing Proxy and Value objects with their node IDs/refs. This allows
+        replacing Value objects with their node IDs/refs. This allows
         reconstruction of results with user-defined keys after execution.
 
         Args:
-            output: The output from forward(), which may be a Proxy, Value,
-                a collection containing Proxies/Values, or a literal value.
+            output: The output from forward(), which may be a Value,
+                a collection containing Values, or a literal value.
 
         Returns:
-            The output structure with Proxy/Value objects replaced by node IDs.
-            - For a single Proxy/Value: returns the node_id/ref string
+            The output structure with Value objects replaced by node IDs.
+            - For a single Value: returns the ref string
             - For a dict: returns dict with same keys, node_ids/refs as values
             - For a list/tuple: returns list with node_ids/refs
-            - For non-Proxy/Value values: returns None
+            - For non-Value values: returns None
 
-        Example:
-            >>> tracer = Tracer()
-            >>> proxy1 = tracer._create_input_node("a", "val1")
-            >>> proxy2 = tracer._create_input_node("b", "val2")
-            >>>
-            >>> # Single proxy output
-            >>> tracer._capture_output_structure(proxy1)
-            'input:a'
-            >>>
-            >>> # Value output
-            >>> v = Value(ValueKind.TEXT, "hello", ref="node_1")
-            >>> tracer._capture_output_structure(v)
-            'node_1'
-            >>>
-            >>> # Dict output preserves keys
-            >>> tracer._capture_output_structure({"summary": proxy1, "analysis": proxy2})
-            {'summary': 'input:a', 'analysis': 'input:b'}
-            >>>
-            >>> # List output preserves order
-            >>> tracer._capture_output_structure([proxy1, proxy2])
-            ['input:a', 'input:b']
         """
-        if isinstance(output, Proxy):
-            return output.node_id
-        elif isinstance(output, Value):
+        if isinstance(output, Value):
             return output.ref
         elif isinstance(output, dict):
             result: dict[str, Any] = {}
@@ -701,78 +554,11 @@ class Tracer:
         *args: Any,
         **kwargs: Any,
     ) -> InferenceGraph:
-        """Trace a module's forward() and return the captured graph.
+        """Trace a module's forward() using Value-driven capture.
 
-        Executes the module's forward() method with Proxy objects representing
-        the inputs, capturing all module invocations into an InferenceGraph.
-        The trace context is set so that nested module calls are recorded.
-
-        Args:
-            module: The Module to trace.
-            *args: Positional arguments to pass to forward(). Each argument
-                becomes an input node in the graph.
-            **kwargs: Keyword arguments to pass to forward(). Each kwarg
-                becomes an input node in the graph.
-
-        Returns:
-            An InferenceGraph containing all traced nodes, input IDs,
-            output IDs, and parameters from the module tree.
-
-        Note:
-            This method resets the tracer state before tracing, so each
-            call produces an independent graph. The trace context is
-            automatically cleaned up when tracing completes.
-
-        Example:
-            >>> from plait.module import Module, LLMInference
-            >>>
-            >>> class SimplePipeline(Module):
-            ...     def __init__(self):
-            ...         super().__init__()
-            ...         self.llm = LLMInference(alias="fast")
-            ...
-            ...     def forward(self, text: str) -> str:
-            ...         return self.llm(text)
-            >>>
-            >>> tracer = Tracer()
-            >>> graph = tracer.trace(SimplePipeline(), "input text")
-            >>> len(graph.nodes)  # 1 input + 1 LLM call = 2
-            2
-            >>> graph.input_ids
-            ['input:input_0']
-            >>> "LLMInference_1" in graph.output_ids
-            True
+        This is an alias for trace_values() to preserve API compatibility.
         """
-        # Reset to ensure clean state
-        self.reset()
-
-        with trace_context(self):
-            # Create input proxies for positional arguments
-            input_proxies: list[Proxy] = []
-            for i, arg in enumerate(args):
-                proxy = self._create_input_node(f"input_{i}", arg)
-                input_proxies.append(proxy)
-
-            # Create input proxies for keyword arguments
-            kwarg_proxies: dict[str, Proxy] = {}
-            for key, value in kwargs.items():
-                proxy = self._create_input_node(f"input_{key}", value)
-                kwarg_proxies[key] = proxy
-
-            # Execute forward with proxies
-            output = module.forward(*input_proxies, **kwarg_proxies)
-
-            # Collect output node IDs and preserve structure
-            self.output_ids = self._collect_output_ids(output)
-            output_structure = self._capture_output_structure(output)
-
-        return InferenceGraph(
-            nodes=dict(self.nodes),
-            input_ids=list(self.input_ids),
-            output_ids=list(self.output_ids),
-            output_structure=output_structure,
-            parameters=dict(module.named_parameters()),
-        )
+        return self.trace_values(module, *args, **kwargs)
 
     def trace_values(
         self,

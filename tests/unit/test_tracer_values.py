@@ -81,9 +81,55 @@ class TestBindInputs:
         assert isinstance(bound, dict)
         assert "text" in bound
         assert "context" in bound
-        # Dict keys are used in naming - counter increments for each Value
-        assert bound["text"].ref.startswith("input:input_text_")
-        assert bound["context"].ref.startswith("input:input_context_")
+        # Dict keys are used in naming.
+        assert bound["text"].ref == "input:input_text"
+        assert bound["context"].ref == "input:input_context"
+
+    def test_bind_list_of_dicts_uses_unique_ids(self) -> None:
+        """bind_inputs ensures dict entries in lists get unique refs."""
+        tracer = Tracer()
+        values = [
+            {"text": Value(ValueKind.TEXT, "a")},
+            {"text": Value(ValueKind.TEXT, "b")},
+        ]
+
+        bound = tracer.bind_inputs(values, prefix="input")
+
+        assert bound[0]["text"].ref == "input:input_text_0"
+        assert bound[1]["text"].ref == "input:input_text_1"
+        assert bound[0]["text"].ref != bound[1]["text"].ref
+        assert bound[0]["text"].ref in tracer.nodes
+        assert bound[1]["text"].ref in tracer.nodes
+
+    def test_bind_tuple_of_dicts_uses_unique_ids(self) -> None:
+        """bind_inputs ensures dict entries in tuples get unique refs."""
+        tracer = Tracer()
+        values = (
+            {"text": Value(ValueKind.TEXT, "a")},
+            {"text": Value(ValueKind.TEXT, "b")},
+        )
+
+        bound = tracer.bind_inputs(values, prefix="input")
+
+        assert bound[0]["text"].ref == "input:input_text_0"
+        assert bound[1]["text"].ref == "input:input_text_1"
+        assert bound[0]["text"].ref != bound[1]["text"].ref
+
+    def test_bind_nested_dict_list_dict_uses_unique_ids(self) -> None:
+        """bind_inputs ensures nested list-of-dicts get unique refs."""
+        tracer = Tracer()
+        values = {
+            "items": [
+                {"text": Value(ValueKind.TEXT, "a")},
+                {"text": Value(ValueKind.TEXT, "b")},
+            ]
+        }
+
+        bound = tracer.bind_inputs(values, prefix="input")
+
+        assert bound["items"][0]["text"].ref == "input:input_items_text_0"
+        assert bound["items"][1]["text"].ref == "input:input_items_text_1"
+        assert bound["items"][0]["text"].ref != bound["items"][1]["text"].ref
 
     def test_bind_nested_structure(self) -> None:
         """bind_inputs handles nested list/dict structures."""
@@ -136,7 +182,7 @@ class TestRecordCallWithValues:
     """Tests for record_call with Value arguments."""
 
     def test_record_call_returns_value(self) -> None:
-        """record_call returns a Value (not Proxy)."""
+        """record_call returns a Value."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 

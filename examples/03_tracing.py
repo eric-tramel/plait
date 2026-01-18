@@ -15,8 +15,8 @@ from typing import Any
 
 from plait.graph import visualize_graph
 from plait.module import LLMInference, Module
-from plait.tracing.proxy import Proxy
 from plait.tracing.tracer import Tracer
+from plait.values import Value
 
 # --- Sequential Pipeline ---
 
@@ -29,7 +29,7 @@ class TwoStage(Module):
         self.step1 = LLMInference(alias="fast", system_prompt="Summarize.")
         self.step2 = LLMInference(alias="smart", system_prompt="Analyze.")
 
-    def forward(self, text: str) -> Proxy:
+    def forward(self, text: Value) -> Value:
         summary = self.step1(text)
         return self.step2(summary)
 
@@ -46,7 +46,7 @@ class Parallel(Module):
         self.b = LLMInference(alias="llm", system_prompt="Perspective B")
         self.c = LLMInference(alias="llm", system_prompt="Perspective C")
 
-    def forward(self, text: str) -> dict[str, Proxy]:
+    def forward(self, text: Value) -> dict[str, Value]:
         # All three depend only on input - can run in parallel
         return {"a": self.a(text), "b": self.b(text), "c": self.c(text)}
 
@@ -63,7 +63,7 @@ class Diamond(Module):
         self.branch_b = LLMInference(alias="fast", system_prompt="View B")
         self.synth = LLMInference(alias="smart", system_prompt="Synthesize")
 
-    def forward(self, text: str) -> Proxy:
+    def forward(self, text: Value) -> Value:
         a = self.branch_a(text)
         b = self.branch_b(text)
         return self.synth(a, b)  # Waits for both branches
@@ -82,7 +82,7 @@ class MultiStage(Module):
         self.analyze_b = LLMInference(alias="llm", system_prompt="Aspect B")
         self.combine = LLMInference(alias="smart", system_prompt="Combine")
 
-    def forward(self, text: str) -> Proxy:
+    def forward(self, text: Value) -> Value:
         cleaned = self.preprocess(text)
         a = self.analyze_a(cleaned)  # Fan-out from cleaned
         b = self.analyze_b(cleaned)
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     # Sequential
     print("\n1. Two-Stage Pipeline")
     print("-" * 40)
-    seq_graph = tracer.trace(TwoStage(), "input text")
+    seq_graph = tracer.trace_values(TwoStage(), "input text")
     print(f"   Nodes: {len(seq_graph.nodes)}")
     print("   Execution order:")
     for i, node_id in enumerate(seq_graph.topological_order(), 1):
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     # Parallel
     print("\n2. Parallel Fan-out")
     print("-" * 40)
-    par_graph = tracer.trace(Parallel(), "input text")
+    par_graph = tracer.trace_values(Parallel(), "input text")
     print(f"   Nodes: {len(par_graph.nodes)}")
     print(f"   Outputs (independent): {len(par_graph.output_ids)}")
     input_id = par_graph.input_ids[0]
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # Diamond
     print("\n3. Diamond Pattern (Fan-out + Fan-in)")
     print("-" * 40)
-    diamond_graph = tracer.trace(Diamond(), "input text")
+    diamond_graph = tracer.trace_values(Diamond(), "input text")
     print(f"   Nodes: {len(diamond_graph.nodes)}")
     print("   Structure:")
     print("      input")
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     # Multi-stage
     print("\n4. Multi-Stage Pipeline")
     print("-" * 40)
-    multi_graph = tracer.trace(MultiStage(), "input text")
+    multi_graph = tracer.trace_values(MultiStage(), "input text")
     print(f"   Nodes: {len(multi_graph.nodes)}")
     print("   Topological order:")
     for i, node_id in enumerate(multi_graph.topological_order(), 1):

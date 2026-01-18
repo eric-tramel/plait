@@ -138,8 +138,16 @@ async def train() -> None:
     ]
 
     print("Initial prompts:")
-    for param in pipeline.parameters():
+    params = list(pipeline.parameters())
+    for param in params:
         print(f"  {param._name}: '{param.value}'")
+    unique_params = {param._id: param for param in params}
+    print(f"\nTotal parameters (including references): {len(params)}")
+    print(f"Unique parameters: {len(unique_params)}")
+    print("Unique parameter ids:")
+    for param_id, param in unique_params.items():
+        name = param._name or "<unnamed>"
+        print(f"  {name}: {param_id}")
     print()
 
     # Training loop
@@ -160,12 +168,113 @@ async def train() -> None:
             feedback = await loss_fn(outputs)
             print(f"Average score: {feedback.score:.2f}")
 
+            def _snippet(text: str, limit: int = 200) -> str:
+                cleaned = " ".join(str(text).split())
+                return cleaned if len(cleaned) <= limit else cleaned[:limit] + "..."
+
+            async def _debug_backward_trace(
+                outputs=outputs,
+                feedback=feedback,
+                queries=queries,
+            ) -> None:
+                from plait.optimization.backward import (
+                    BackwardContext,
+                    _combine_feedback,
+                    _resolve_input_node,
+                )
+
+                print("\nBackward trace (per record):")
+                for idx, output in enumerate(outputs, start=1):
+                    record = output._record
+                    query = queries[idx - 1]
+                    print(f"\nRecord {idx}: {query}")
+                    graph = record.graph
+                    feedback_map = {
+                        output_id: [feedback] for output_id in graph.output_ids
+                    }
+
+                    for node_id in reversed(graph.topological_order()):
+                        if node_id in graph.input_ids:
+                            continue
+
+                        downstream = feedback_map.get(node_id, [])
+                        if not downstream:
+                            continue
+
+                        combined = _combine_feedback(downstream)
+                        ctx = BackwardContext(
+                            node_id=node_id,
+                            inputs=record.node_inputs.get(node_id, {}),
+                            output=record.node_outputs.get(node_id),
+                            graph=graph,
+                            all_results=record.node_outputs,
+                            downstream_feedback=downstream,
+                            reasoning_llm=None,
+                        )
+
+                        module = record.module_map[node_id]
+                        result = await module.backward(combined, ctx)
+                        module_name = (
+                            getattr(module, "_name", None) or module.__class__.__name__
+                        )
+                        params = record.node_parameters.get(node_id, [])
+                        if params:
+                            param_labels = ", ".join(
+                                f"{(p._name or 'param')}#{p._id[:8]}" for p in params
+                            )
+                        else:
+                            param_labels = "none"
+
+                        print(
+                            f"  Node {node_id} [{module_name}] params: {param_labels}"
+                        )
+                        print(f"    combined_feedback: {_snippet(combined.content)}")
+
+                        for param_name, param_fb in result.parameter_feedback.items():
+                            print(
+                                f"    param_feedback[{param_name}]: "
+                                f"{_snippet(param_fb)}"
+                            )
+
+                        for input_name, input_fb in result.input_feedback.items():
+                            input_node_id = _resolve_input_node(
+                                node_id, input_name, record
+                            )
+                            target = input_node_id or "unknown"
+                            print(
+                                f"    input_feedback[{input_name}] -> {target}: "
+                                f"{_snippet(input_fb.content)}"
+                            )
+
+                        for input_name, input_fb in result.input_feedback.items():
+                            input_node_id = _resolve_input_node(
+                                node_id, input_name, record
+                            )
+                            if input_node_id:
+                                feedback_map.setdefault(input_node_id, []).append(
+                                    input_fb
+                                )
+
+            await _debug_backward_trace()
+
             # Backward pass (propagates to all parameters)
             await feedback.backward(optimizer=optimizer)
+
+            print("\nParameter feedback buffers:")
+            for param in pipeline.parameters():
+                if param._feedback_buffer:
+                    print(
+                        f"  {param._name or 'param'}#{param._id[:8]}: "
+                        f"{_snippet(param._feedback_buffer[-1])}"
+                    )
 
             # Update parameters
             updates = await optimizer.step()
             print(f"Updated {len(updates)} parameters")
+            if updates:
+                print("Applied updates:")
+                for key, value in updates.items():
+                    print(f"  {key}: {_snippet(value, 160)}")
 
         pipeline.eval()  # Back to eval mode
 

@@ -201,6 +201,7 @@ class ForwardRecord:
     node_inputs: dict[str, dict[str, Any]]   # node_id -> resolved input values
     node_outputs: dict[str, Any]              # node_id -> output value
     module_map: dict[str, Module]    # node_id -> module instance
+    node_parameters: dict[str, list[Parameter]]  # node_id -> direct parameters
 
     # Optional metadata
     execution_order: list[str] = field(default_factory=list)
