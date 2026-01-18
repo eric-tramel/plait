@@ -2,6 +2,7 @@
 
 import pytest
 
+import plait.values as values_module
 from plait.values import (
     Value,
     ValueKind,
@@ -11,6 +12,13 @@ from plait.values import (
     unwrap,
     valueify,
 )
+
+
+def _disable_functional(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _missing(_: str) -> None:
+        raise ModuleNotFoundError
+
+    monkeypatch.setattr(values_module, "import_module", _missing)
 
 
 class TestValueKind:
@@ -154,6 +162,102 @@ class TestValueGet:
         err = Value(ValueKind.ERROR, Exception("failed"))
         result = err.get("key", "default")
         assert result is err
+
+
+class TestValueContainerMethods:
+    """Tests for container-like methods on Value."""
+
+    def test_iter_over_list_payload(self) -> None:
+        """__iter__ yields payload items for iterable payloads."""
+        v = Value(ValueKind.STRUCTURED, ["a", "b"])
+        assert list(iter(v)) == ["a", "b"]
+
+    def test_iter_over_error_returns_empty(self) -> None:
+        """__iter__ returns empty iterator for error Values."""
+        v = Value(ValueKind.ERROR, ValueError("boom"))
+        assert list(iter(v)) == []
+
+    def test_iter_over_non_iterable_returns_empty(self) -> None:
+        """__iter__ returns empty iterator for non-iterable payloads."""
+        v = Value(ValueKind.INT, 123)
+        assert list(iter(v)) == []
+
+    def test_keys_values_items_on_dict(self) -> None:
+        """keys/values/items delegate to dict payload."""
+        payload = {"a": 1, "b": 2}
+        v = Value(ValueKind.STRUCTURED, payload)
+
+        assert list(v.keys()) == list(payload.keys())
+        assert list(v.values()) == list(payload.values())
+        assert list(v.items()) == list(payload.items())
+
+    def test_keys_values_items_on_non_dict_raise(self) -> None:
+        """keys/values/items raise for non-dict payloads."""
+        v = Value(ValueKind.TEXT, "hello")
+
+        with pytest.raises(AttributeError, match="keys\\(\\)"):
+            v.keys()
+        with pytest.raises(AttributeError, match="values\\(\\)"):
+            v.values()
+        with pytest.raises(AttributeError, match="items\\(\\)"):
+            v.items()
+
+
+class TestValueFallbackWithoutFunctional:
+    """Tests for Value fallbacks when functional is unavailable."""
+
+    def test_getitem_fallback_structured_and_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """__getitem__ uses direct implementation when functional is missing."""
+        _disable_functional(monkeypatch)
+        inner = Value(ValueKind.TEXT, "hi")
+        v = Value(
+            ValueKind.STRUCTURED,
+            {"nested": {"a": 1}, "items": [1, 2], "value": inner},
+        )
+
+        nested = v["nested"]
+        assert nested.kind == ValueKind.STRUCTURED
+        assert nested.payload == {"a": 1}
+
+        items = v["items"]
+        assert items.kind == ValueKind.STRUCTURED
+        assert items.payload == [1, 2]
+
+        picked = v["value"]
+        assert picked is inner
+
+    def test_getitem_fallback_missing_key_returns_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """__getitem__ returns ERROR Value for missing key in fallback path."""
+        _disable_functional(monkeypatch)
+        v = Value(ValueKind.STRUCTURED, {"a": 1}, ref="input:0")
+
+        result = v["missing"]
+        assert result.kind == ValueKind.ERROR
+        assert isinstance(result.payload, KeyError)
+        assert result.meta["source_ref"] == "input:0"
+        assert result.meta["key"] == "missing"
+
+    def test_get_fallback_default_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get returns default Value when missing key in fallback path."""
+        _disable_functional(monkeypatch)
+        v = Value(ValueKind.STRUCTURED, {"a": 1})
+        default = Value(ValueKind.TEXT, "fallback")
+
+        result = v.get("missing", default)
+        assert result is default
+
+    def test_get_fallback_default_raw(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """get wraps raw default when missing key in fallback path."""
+        _disable_functional(monkeypatch)
+        v = Value(ValueKind.STRUCTURED, {"a": 1})
+
+        result = v.get("missing", ["x"])
+        assert result.kind == ValueKind.STRUCTURED
+        assert result.payload == ["x"]
 
 
 class TestValueRef:

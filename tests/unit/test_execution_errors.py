@@ -125,6 +125,18 @@ class TestFirstErrorValue:
         result = first_error_value([ok, {"inner": error}])
         assert result is error
 
+    def test_nested_dict_without_error_returns_none(self) -> None:
+        """Returns None when nested dict has no error Values."""
+        ok = Value(ValueKind.TEXT, "hello")
+        result = first_error_value({"inner": {"ok": ok}})
+        assert result is None
+
+    def test_nested_list_without_error_returns_none(self) -> None:
+        """Returns None when nested list has no error Values."""
+        ok = Value(ValueKind.TEXT, "hello")
+        result = first_error_value([ok, [Value(ValueKind.INT, 1)]])
+        assert result is None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Scheduler Short-Circuit Tests
