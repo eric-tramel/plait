@@ -108,7 +108,7 @@ class GraphNode:
             cannot execute until all dependencies have completed.
         priority: Execution priority for scheduling. Lower values indicate
             higher precedence (0 runs before 1). Defaults to 0.
-        branch_condition: Node ID of the condition proxy for conditional
+        branch_condition: Node ID of the condition node for conditional
             execution. None if this node is unconditional.
         branch_value: The branch value (True/False) this node belongs to.
             Only meaningful when branch_condition is set.
@@ -167,7 +167,7 @@ class InferenceGraph:
         input_ids: List of node IDs that are entry points (no dependencies).
         output_ids: List of node IDs that are exit points (graph outputs).
         output_structure: The original structure of the forward() return value,
-            with node IDs in place of Proxy objects. Used to reconstruct
+            with node IDs in place of Value objects. Used to reconstruct
             results with user-defined keys. Can be a string (single node ID),
             dict (mapping user keys to node IDs), list, or None.
         parameters: Dictionary mapping parameter names to Parameter instances

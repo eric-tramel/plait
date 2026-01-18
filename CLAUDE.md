@@ -99,7 +99,7 @@ plait/
 │       ├── graph.py         # InferenceGraph, GraphNode
 │       ├── types.py         # Core type definitions
 │       ├── errors.py        # Exception hierarchy
-│       ├── tracing/         # Tracer, Proxy, context
+│       ├── tracing/         # Tracer (Value-driven), context
 │       ├── execution/       # Scheduler, Executor, ExecutionState
 │       ├── resources/       # ResourceManager, config, rate limiting
 │       ├── optimization/    # Loss, Optimizer, backward, feedback
@@ -142,7 +142,7 @@ plait/
 The system has four main layers:
 
 1. **User Code**: `Module`, `LLMInference`, `Parameter`
-2. **Tracing**: `Tracer`, `Proxy`, `InferenceGraph` - captures DAG from forward()
+2. **Tracing**: `Tracer`, `Value`, `InferenceGraph` - captures DAG from forward()
 3. **Execution**: `Scheduler`, `ExecutionState` - async execution with priority queue
 4. **Infrastructure**: LLM clients, rate limiting, checkpointing
 
@@ -183,11 +183,11 @@ def record_call(
     module: Module,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
-) -> Proxy:
+) -> Value:
     """Record a module invocation and return a proxy for its output.
 
     Creates a new graph node representing this call and tracks dependencies
-    based on any Proxy objects in the arguments.
+    based on any Value objects in the arguments.
 
     Args:
         module: The module being called.
@@ -195,7 +195,7 @@ def record_call(
         kwargs: Keyword arguments passed to the module.
 
     Returns:
-        A Proxy representing the eventual output of this call.
+        A Value representing the eventual output of this call.
 
     Raises:
         TracingError: If called outside of an active trace context.

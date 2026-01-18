@@ -42,11 +42,13 @@ def create_pipeline_record(
                 dependencies[node_id] = []
 
     module_map: dict[str, Module] = {}
+    node_parameters: dict[str, list[Parameter]] = {}
     for param, node_id in param_configs:
         mock_module = MagicMock(spec=LLMInference)
         mock_module.named_parameters.return_value = [(param._name, param)]
         mock_module.parameters.return_value = [param]
         module_map[node_id] = mock_module
+        node_parameters[node_id] = [param]
 
     # Create nodes with specified dependencies
     nodes: dict[str, GraphNode] = {}
@@ -79,6 +81,7 @@ def create_pipeline_record(
         node_inputs={nid: {} for nid in node_ids},
         node_outputs={nid: f"output_{nid}" for nid in node_ids},
         module_map=module_map,
+        node_parameters=node_parameters,
     )
 
 

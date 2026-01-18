@@ -81,9 +81,9 @@ class TestBindInputs:
         assert isinstance(bound, dict)
         assert "text" in bound
         assert "context" in bound
-        # Dict keys are used in naming - counter increments for each Value
-        assert bound["text"].ref.startswith("input:input_text_")
-        assert bound["context"].ref.startswith("input:input_context_")
+        # Dict keys are used in naming.
+        assert bound["text"].ref == "input:input_text"
+        assert bound["context"].ref == "input:input_context"
 
     def test_bind_nested_structure(self) -> None:
         """bind_inputs handles nested list/dict structures."""
@@ -136,7 +136,7 @@ class TestRecordCallWithValues:
     """Tests for record_call with Value arguments."""
 
     def test_record_call_returns_value(self) -> None:
-        """record_call returns a Value (not Proxy)."""
+        """record_call returns a Value."""
         tracer = Tracer()
         module = LLMInference(alias="test")
 

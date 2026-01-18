@@ -167,7 +167,7 @@ class TestTraceContextIntegration:
             if ctx is not None:
                 # During tracing, record the call
                 call_recorded = True
-                return "proxy_result"
+                return "traced_result"
             else:
                 # During execution, run forward
                 return "actual_result"
@@ -180,5 +180,5 @@ class TestTraceContextIntegration:
         # Inside trace context - records the call
         with trace_context(tracer):
             result = mock_module_call()
-            assert result == "proxy_result"
+            assert result == "traced_result"
             assert call_recorded

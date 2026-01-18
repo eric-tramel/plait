@@ -783,17 +783,17 @@ class ExecutionState:
             from outputs that have completed so far.
 
         Example:
-            >>> # forward() returned {"summary": proxy1, "analysis": proxy2}
+            >>> # forward() returned {"summary": value1, "analysis": value2}
             >>> outputs = state.get_outputs()
             >>> outputs
             {'summary': 'Summary text', 'analysis': 'Analysis text'}
 
-            >>> # forward() returned a single proxy
+            >>> # forward() returned a single Value
             >>> outputs = state.get_outputs()
             >>> outputs
             {'LLMInference_1': 'result text'}
 
-            >>> # forward() returned [proxy1, proxy2]
+            >>> # forward() returned [value1, value2]
             >>> outputs = state.get_outputs()
             >>> outputs
             {0: 'result A', 1: 'result B'}
@@ -810,7 +810,7 @@ class ExecutionState:
 
         Args:
             structure: The output structure from InferenceGraph, containing
-                node IDs in place of Proxy objects.
+                node IDs in place of Value objects.
 
         Returns:
             A dictionary with resolved values. Dict structures preserve

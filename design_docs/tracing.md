@@ -14,7 +14,7 @@ embedded in args/kwargs.
 
 ## Tracing Modes
 
-The Tracer supports two modes for backwards compatibility:
+The Tracer uses a single Value-driven mode:
 
 ### Value-Driven Mode (Recommended)
 
@@ -30,22 +30,8 @@ tracer = Tracer()
 graph = tracer.trace_values(module, "input text")
 ```
 
-### Proxy-Based Mode (Legacy)
-
-Use `Tracer.trace()` for backwards-compatible Proxy-based tracing:
-
-- Inputs are wrapped as Proxy objects with node IDs
-- Module calls return Proxy objects
-- Dependencies are tracked via `Proxy.node_id`
-- Arguments are stored with `NodeRef` placeholders
-
-```python
-tracer = Tracer()
-graph = tracer.trace(module, "input text")
-```
-
-Both modes produce equivalent `InferenceGraph` structures. Value-driven mode
-is preferred for new code as it aligns with the broader Value-based data model.
+Value-driven mode aligns with the broader Value-based data model and is the
+only supported tracing approach.
 
 ## Core Concepts
 

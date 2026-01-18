@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
     from plait.module import Module
+    from plait.parameter import Parameter
 
 
 @dataclass
@@ -49,6 +50,9 @@ class ForwardRecord:
             produced by each node during execution.
         module_map: Dictionary mapping node_id to the Module instance
             that was executed for that node. Used to call module.backward().
+        node_parameters: Dictionary mapping node_id to the list of
+            Parameters directly used by that node's module during
+            the forward pass.
         execution_order: List of node IDs in the order they were executed.
             Useful for debugging and understanding execution flow.
         timing: Dictionary mapping node_id to execution time in seconds.
@@ -70,6 +74,10 @@ class ForwardRecord:
         >>> record.module_map["LLMInference_1"]
         <LLMInference alias='assistant'>
 
+        >>> # Access direct parameters used by a node
+        >>> record.node_parameters.get("LLMInference_1", [])
+        [Parameter(...)]
+
     Note:
         ForwardRecord instances should be passed to loss functions via
         the `record=record` parameter to enable `feedback.backward()`.
@@ -79,6 +87,7 @@ class ForwardRecord:
     node_inputs: dict[str, dict[str, Any]]
     node_outputs: dict[str, Any]
     module_map: dict[str, Module]
+    node_parameters: dict[str, list[Parameter]] = field(default_factory=dict)
     execution_order: list[str] = field(default_factory=list)
     timing: dict[str, float] = field(default_factory=dict)
 

@@ -7,8 +7,8 @@ shared inputs, dict outputs, and complete tracing flows.
 
 from plait.module import LLMInference, Module
 from plait.parameter import Parameter
-from plait.tracing.proxy import Proxy
 from plait.tracing.tracer import Tracer
+from plait.values import Value
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Nested Module Tracing Tests
@@ -26,11 +26,11 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.child = LLMInference(alias="test")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.child(text)
 
         tracer = Tracer()
-        graph = tracer.trace(Parent(), "input text")
+        graph = tracer.trace_values(Parent(), "input text")
 
         # Should have: 1 input node + 1 LLMInference call
         assert len(graph.nodes) == 2
@@ -56,7 +56,7 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.llm = LLMInference(alias="inner")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.llm(text)
 
         class Outer(Module):
@@ -64,13 +64,13 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.inner = Inner()
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 # self.inner() goes through __call__ which records the call
-                # and returns a Proxy, without executing Inner.forward()
+                # and returns a Value, without executing Inner.forward()
                 return self.inner(text)
 
         tracer = Tracer()
-        graph = tracer.trace(Outer(), "input text")
+        graph = tracer.trace_values(Outer(), "input text")
 
         # Should have: 1 input + 1 Inner call (as opaque node)
         # The LLMInference inside Inner is not traced because
@@ -95,7 +95,7 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.llm = LLMInference(alias="deep")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.llm(text)
 
         class Level2(Module):
@@ -103,7 +103,7 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.level3 = Level3()
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.level3(text)
 
         class Level1(Module):
@@ -111,11 +111,11 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.level2 = Level2()
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.level2(text)
 
         tracer = Tracer()
-        graph = tracer.trace(Level1(), "input")
+        graph = tracer.trace_values(Level1(), "input")
 
         # Level2 is the only captured node (Level3 and LLM are inside it)
         assert len(graph.nodes) == 2
@@ -130,7 +130,7 @@ class TestNestedModuleTracing:
                 super().__init__()
                 self.llm = LLMInference(alias="inner", system_prompt="Inner prompt")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.llm(text)
 
         class Outer(Module):
@@ -139,11 +139,11 @@ class TestNestedModuleTracing:
                 self.prefix = Parameter("Outer prefix", description="test")
                 self.inner = Inner()
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.inner(text)
 
         tracer = Tracer()
-        graph = tracer.trace(Outer(), "input")
+        graph = tracer.trace_values(Outer(), "input")
 
         # Should collect parameters from both outer and inner modules
         assert "prefix" in graph.parameters
@@ -160,13 +160,13 @@ class TestNestedModuleTracing:
                 self.step1 = LLMInference(alias="step1")
                 self.step2 = LLMInference(alias="step2")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 result1 = self.step1(text)
                 result2 = self.step2(result1)
                 return result2
 
         tracer = Tracer()
-        graph = tracer.trace(MultiChild(), "input")
+        graph = tracer.trace_values(MultiChild(), "input")
 
         # Should have: 1 input + 2 LLM calls
         assert len(graph.nodes) == 3
@@ -193,7 +193,7 @@ class TestSharedInputTracing:
                 self.branch_b = LLMInference(alias="b")
                 self.branch_c = LLMInference(alias="c")
 
-            def forward(self, text: str) -> dict[str, Proxy]:
+            def forward(self, text: str) -> dict[str, Value]:
                 return {
                     "a": self.branch_a(text),
                     "b": self.branch_b(text),
@@ -201,7 +201,7 @@ class TestSharedInputTracing:
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(FanOut(), "shared input")
+        graph = tracer.trace_values(FanOut(), "shared input")
 
         # Should have: 1 input + 3 LLM calls
         assert len(graph.nodes) == 4
@@ -227,14 +227,14 @@ class TestSharedInputTracing:
                 self.branch_b = LLMInference(alias="b")
                 self.merger = LLMInference(alias="merge")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 a_result = self.branch_a(text)
                 b_result = self.branch_b(text)
                 # In tracing, merger receives both proxy results
                 return self.merger(a_result, b_result)
 
         tracer = Tracer()
-        graph = tracer.trace(Diamond(), "input")
+        graph = tracer.trace_values(Diamond(), "input")
 
         # Should have: 1 input + 3 LLM calls
         assert len(graph.nodes) == 4
@@ -261,7 +261,7 @@ class TestSharedInputTracing:
                 self.analyze_a = LLMInference(alias="a")
                 self.analyze_b = LLMInference(alias="b")
 
-            def forward(self, text: str) -> dict[str, Proxy]:
+            def forward(self, text: str) -> dict[str, Value]:
                 # Preprocess once, then use result in two branches
                 preprocessed = self.preprocess(text)
                 return {
@@ -270,7 +270,7 @@ class TestSharedInputTracing:
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(SharedIntermediate(), "input")
+        graph = tracer.trace_values(SharedIntermediate(), "input")
 
         # Should have: 1 input + 3 LLM calls
         assert len(graph.nodes) == 4
@@ -295,7 +295,7 @@ class TestSharedInputTracing:
                 self.uses_second = LLMInference(alias="second")
                 self.uses_both = LLMInference(alias="both")
 
-            def forward(self, a: str, b: str) -> dict[str, Proxy]:
+            def forward(self, a: str, b: str) -> dict[str, Value]:
                 return {
                     "first_only": self.uses_first(a),
                     "second_only": self.uses_second(b),
@@ -303,7 +303,7 @@ class TestSharedInputTracing:
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(MultiInput(), "first input", "second input")
+        graph = tracer.trace_values(MultiInput(), "first input", "second input")
 
         # Should have: 2 inputs + 3 LLM calls
         assert len(graph.nodes) == 5
@@ -336,14 +336,14 @@ class TestDictOutputTracing:
                 self.llm_a = LLMInference(alias="a")
                 self.llm_b = LLMInference(alias="b")
 
-            def forward(self, text: str) -> dict[str, Proxy]:
+            def forward(self, text: str) -> dict[str, Value]:
                 return {
                     "result_a": self.llm_a(text),
                     "result_b": self.llm_b(text),
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(DictOutput(), "input")
+        graph = tracer.trace_values(DictOutput(), "input")
 
         # Both LLM outputs should be in output_ids
         assert len(graph.output_ids) == 2
@@ -372,7 +372,7 @@ class TestDictOutputTracing:
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(NestedDictOutput(), "input")
+        graph = tracer.trace_values(NestedDictOutput(), "input")
 
         # All three LLM outputs should be collected
         assert len(graph.output_ids) == 3
@@ -397,7 +397,7 @@ class TestDictOutputTracing:
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(DictWithLists(), "input")
+        graph = tracer.trace_values(DictWithLists(), "input")
 
         # All outputs should be collected
         assert len(graph.output_ids) == 3
@@ -413,12 +413,12 @@ class TestDictOutputTracing:
                 return {}
 
         tracer = Tracer()
-        graph = tracer.trace(EmptyDictOutput(), "input")
+        graph = tracer.trace_values(EmptyDictOutput(), "input")
 
         assert graph.output_ids == []
 
     def test_dict_output_with_mixed_values(self) -> None:
-        """Dict with both Proxy and literal values is traced correctly."""
+        """Dict with both Value and literal values is traced correctly."""
 
         class MixedDict(Module):
             def __init__(self) -> None:
@@ -433,9 +433,9 @@ class TestDictOutputTracing:
                 }
 
         tracer = Tracer()
-        graph = tracer.trace(MixedDict(), "input")
+        graph = tracer.trace_values(MixedDict(), "input")
 
-        # Only the Proxy should be in output_ids
+        # Only the Value should be in output_ids
         assert graph.output_ids == ["LLMInference_1"]
 
 
@@ -457,14 +457,14 @@ class TestCompleteTracingFlow:
                 self.analyze = LLMInference(alias="smart")
                 self.format = LLMInference(alias="fast")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 summary = self.summarize(text)
                 analysis = self.analyze(summary)
                 formatted = self.format(analysis)
                 return formatted
 
         tracer = Tracer()
-        graph = tracer.trace(AnalysisPipeline(), "Some long document...")
+        graph = tracer.trace_values(AnalysisPipeline(), "Some long document...")
 
         # Verify graph structure
         assert len(graph.nodes) == 4  # 1 input + 3 LLM calls
@@ -488,7 +488,7 @@ class TestCompleteTracingFlow:
                 self.combine = LLMInference(alias="combiner")
                 self.analyze = LLMInference(alias="analyzer")
 
-            def forward(self, text: str, context: str) -> Proxy:
+            def forward(self, text: str, context: str) -> Value:
                 encoded_text = self.encode_text(text)
                 encoded_context = self.encode_context(context)
                 combined = self.combine(encoded_text, encoded_context)
@@ -496,7 +496,7 @@ class TestCompleteTracingFlow:
                 return result
 
         tracer = Tracer()
-        graph = tracer.trace(ComplexPipeline(), "main text", "context info")
+        graph = tracer.trace_values(ComplexPipeline(), "main text", "context info")
 
         # Verify structure
         assert len(graph.nodes) == 6  # 2 inputs + 4 LLM calls
@@ -522,14 +522,14 @@ class TestCompleteTracingFlow:
                 self.step2 = LLMInference(alias="2")
                 self.step3 = LLMInference(alias="3")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 r1 = self.step1(text)
                 r2 = self.step2(r1)
                 r3 = self.step3(r2)
                 return r3
 
         tracer = Tracer()
-        graph = tracer.trace(Pipeline(), "input")
+        graph = tracer.trace_values(Pipeline(), "input")
 
         # Verify ancestors
         assert graph.ancestors("LLMInference_1") == {"input:input_0"}
@@ -562,12 +562,12 @@ class TestCompleteTracingFlow:
                     alias="test", system_prompt="Test prompt", temperature=0.5
                 )
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.llm(text)
 
         pipeline = Pipeline()
         tracer = Tracer()
-        graph = tracer.trace(pipeline, "input")
+        graph = tracer.trace_values(pipeline, "input")
 
         # Get the node's module
         node = graph.nodes["LLMInference_1"]
@@ -585,11 +585,11 @@ class TestCompleteTracingFlow:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
 
-            def forward(self, *, text: str, context: str) -> Proxy:
+            def forward(self, *, text: str, context: str) -> Value:
                 return self.llm(text, context=context)
 
         tracer = Tracer()
-        graph = tracer.trace(KwargModule(), text="hello", context="world")
+        graph = tracer.trace_values(KwargModule(), text="hello", context="world")
 
         # Should have input nodes for kwargs
         assert "input:input_text" in graph.nodes
@@ -605,13 +605,13 @@ class TestCompleteTracingFlow:
                 super().__init__()
                 self.llm = LLMInference(alias="test")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 return self.llm(text)
 
         tracer = Tracer()
 
-        graph1 = tracer.trace(Simple(), "first input")
-        graph2 = tracer.trace(Simple(), "second input")
+        graph1 = tracer.trace_values(Simple(), "first input")
+        graph2 = tracer.trace_values(Simple(), "second input")
 
         # Graphs should be independent
         assert graph1 is not graph2
@@ -646,12 +646,12 @@ class TestTracingBestPractices:
                 self.llm1 = LLMInference(alias="a")
                 self.llm2 = LLMInference(alias="b")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 r1 = self.llm1(text)
                 return self.llm2(r1)
 
         tracer = Tracer()
-        graph = tracer.trace(ProperModule(), "input")
+        graph = tracer.trace_values(ProperModule(), "input")
 
         # Both modules should be traced
         assert len(graph.nodes) == 3  # 1 input + 2 LLM calls
@@ -667,7 +667,7 @@ class TestTracingBestPractices:
                 self.step1 = LLMInference(alias="1")
                 self.step2 = LLMInference(alias="2")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 # Pure: no side effects, deterministic
                 r1 = self.step1(text)
                 return self.step2(r1)
@@ -676,8 +676,8 @@ class TestTracingBestPractices:
         module = PureModule()
 
         # Trace twice with same input
-        graph1 = tracer.trace(module, "same input")
-        graph2 = tracer.trace(module, "same input")
+        graph1 = tracer.trace_values(module, "same input")
+        graph2 = tracer.trace_values(module, "same input")
 
         # Structure should be identical
         assert len(graph1.nodes) == len(graph2.nodes)
@@ -694,7 +694,7 @@ class TestTracingBestPractices:
                 self.llm2 = LLMInference(alias="2")
                 self.llm3 = LLMInference(alias="3")
 
-            def forward(self, text: str) -> list[Proxy]:
+            def forward(self, text: str) -> list[Value]:
                 return [
                     self.llm1(text),
                     self.llm2(text),
@@ -702,7 +702,7 @@ class TestTracingBestPractices:
                 ]
 
         tracer = Tracer()
-        graph = tracer.trace(ListOutput(), "input")
+        graph = tracer.trace_values(ListOutput(), "input")
 
         # All three outputs should be collected
         assert len(graph.output_ids) == 3
@@ -719,11 +719,11 @@ class TestTracingBestPractices:
                 self.llm1 = LLMInference(alias="1")
                 self.llm2 = LLMInference(alias="2")
 
-            def forward(self, text: str) -> tuple[Proxy, Proxy]:
+            def forward(self, text: str) -> tuple[Value, Value]:
                 return (self.llm1(text), self.llm2(text))
 
         tracer = Tracer()
-        graph = tracer.trace(TupleOutput(), "input")
+        graph = tracer.trace_values(TupleOutput(), "input")
 
         # Both outputs should be collected
         assert len(graph.output_ids) == 2
@@ -739,7 +739,7 @@ class TestTracingBestPractices:
                 self.c = LLMInference(alias="c")
                 self.d = LLMInference(alias="d")
 
-            def forward(self, text: str) -> Proxy:
+            def forward(self, text: str) -> Value:
                 # Create a diamond-ish pattern
                 r_a = self.a(text)
                 r_b = self.b(text)
@@ -748,7 +748,7 @@ class TestTracingBestPractices:
                 return r_d
 
         tracer = Tracer()
-        graph = tracer.trace(ComplexGraph(), "input")
+        graph = tracer.trace_values(ComplexGraph(), "input")
 
         # Get topological order
         order = graph.topological_order()

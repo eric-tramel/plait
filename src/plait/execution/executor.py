@@ -190,9 +190,9 @@ async def run(
     """
     from plait.execution.context import get_execution_settings
 
-    # Trace the module to build the execution graph
+    # Trace the module to build the execution graph (Value-driven)
     tracer = Tracer()
-    graph = tracer.trace(module, *args, **kwargs)
+    graph = tracer.trace_values(module, *args, **kwargs)
 
     # Create execution state from the graph
     # Enable recording mode if we need to return a ForwardRecord
@@ -291,17 +291,23 @@ def _build_forward_record(graph: Any, state: ExecutionState) -> ForwardRecord:
         node_id: result.duration_ms / 1000 for node_id, result in state.results.items()
     }
 
-    # Build module map from graph nodes
+    # Build module map and direct parameter mapping from graph nodes
     module_map: dict[str, Module] = {}
+    node_parameters: dict[str, list[Any]] = {}
     for node_id, node in graph.nodes.items():
         if isinstance(node.module, Module):
-            module_map[node_id] = node.module
+            module = node.module
+            module_map[node_id] = module
+            direct_params = list(module.direct_parameters())
+            if direct_params:
+                node_parameters[node_id] = direct_params
 
     return ForwardRecord(
         graph=graph,
         node_inputs=state.recorded_inputs,
         node_outputs=node_outputs,
         module_map=module_map,
+        node_parameters=node_parameters,
         execution_order=state.execution_order,
         timing=timing,
     )

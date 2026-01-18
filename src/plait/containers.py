@@ -827,7 +827,7 @@ class ParameterList(MutableSequence["Parameter"]):
         object.__setattr__(param, "_parent", self)
 
     def _increment_state_version(self) -> None:
-        """Proxy state version increment to the owning module.
+        """Propagate state version increment to the owning module.
 
         This is called by Parameter.apply_update() to signal that the module's
         state has changed. We walk up the parent chain to find the actual Module
@@ -1065,7 +1065,7 @@ class ParameterDict(MutableMapping[str, "Parameter"]):
         object.__setattr__(param, "_parent", self)
 
     def _increment_state_version(self) -> None:
-        """Proxy state version increment to the owning module.
+        """Propagate state version increment to the owning module.
 
         This is called by Parameter.apply_update() to signal that the module's
         state has changed. We walk up the parent chain to find the actual Module

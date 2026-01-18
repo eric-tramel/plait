@@ -42,7 +42,7 @@ and this project adheres to [Calendar Versioning](https://calver.org/) with form
 - Add `ForwardRecord` dataclass and `record` parameter to `run()` for backward pass support
 - Add `Module` base class with child/parameter registration and introspection methods
 - Add `LLMInference` atomic module for LLM API calls
-- Add tracing infrastructure with `Tracer`, `Proxy`, `GraphNode`, and `InferenceGraph`
+- Add tracing infrastructure with `Tracer`, `Value`, `GraphNode`, and `InferenceGraph`
 - Add `ExecutionState` for task management with dependency tracking and failure handling
 - Add `Scheduler` with concurrency control and `run()` function for end-to-end execution
 - Add data access operations (`__getitem__`, `__iter__`) and `NodeRef` for type-safe references

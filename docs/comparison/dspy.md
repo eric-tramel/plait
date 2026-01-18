@@ -57,7 +57,7 @@ class ExtractAndCompare(Module):
         facts1 = self.extractor(doc1)
         facts2 = self.extractor(doc2)
 
-        # Combine facts using the combiner module (resolves Proxy objects)
+        # Combine facts using the combiner module (resolves Value objects)
         combined = self.combiner(facts1, facts2)
 
         # This depends on both facts, waits for both to complete

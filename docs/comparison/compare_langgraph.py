@@ -194,7 +194,7 @@ class _FactsCombiner(Module):
 
     This module formats the facts from two documents into a single
     prompt for comparison. Using a module ensures proper tracing
-    during the forward pass (Proxy objects are resolved correctly).
+    during the forward pass (Value objects are resolved correctly).
     """
 
     def forward(self, facts1: str, facts2: str) -> str:
@@ -235,7 +235,7 @@ class _PlaitExtractAndCompare(Module):
         facts1 = self.extractor(doc1)
         facts2 = self.extractor(doc2)
 
-        # Combine facts using the combiner module (resolves Proxy objects)
+        # Combine facts using the combiner module (resolves Value objects)
         combined = self.combiner(facts1, facts2)
 
         # This depends on both facts, so it waits for both to complete

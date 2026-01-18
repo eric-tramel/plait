@@ -162,6 +162,15 @@ class Optimizer(ABC):
             ... )
         """
         self.params = list(params)
+        self._param_key_map: dict[str, str] = {}
+        used_keys: set[str] = set()
+        for param in self.params:
+            base = param._get_hierarchical_name() or param._id
+            key = base
+            if key in used_keys:
+                key = f"{base}:{param._id}"
+            used_keys.add(key)
+            self._param_key_map[param._id] = key
         self._step_count = 0
         self._records: list[ForwardRecord] = []
 
@@ -291,9 +300,9 @@ class Optimizer(ABC):
         Returns:
             A string key identifying this parameter.
         """
-        name = param._get_hierarchical_name()
-        if name:
-            return name
+        key = self._param_key_map.get(param._id)
+        if key:
+            return key
         return param._id
 
     def _aggregator_system_prompt(self) -> str:
@@ -441,16 +450,44 @@ class SFAOptimizer(Optimizer):
         # Snapshot current values before any updates
         previous_values = {self._param_key(param): param.value for param in self.params}
 
-        # Use first record for graph structure (all should have same structure)
-        graph = self._records[0].graph
-        module_map = self._records[0].module_map
+        # Build parameter dependency graph across all records (tapes)
+        param_nodes, edges, reverse_edges, param_topo_index = (
+            self._build_param_dag(self._records)
+        )
 
-        # Build mappings
-        param_to_nodes = self._build_param_to_node_mapping(module_map)
-        node_to_params = self._build_node_to_param_mapping(module_map)
+        # Restrict to parameters managed by this optimizer
+        allowed_keys = {self._param_key(param) for param in self.params}
+        param_nodes = {k: v for k, v in param_nodes.items() if k in allowed_keys}
+        edges = {
+            k: {dst for dst in dests if dst in allowed_keys}
+            for k, dests in edges.items()
+            if k in allowed_keys
+        }
+        reverse_edges = {
+            k: {src for src in srcs if src in allowed_keys}
+            for k, srcs in reverse_edges.items()
+            if k in allowed_keys
+        }
+        param_topo_index = {
+            k: v for k, v in param_topo_index.items() if k in allowed_keys
+        }
 
-        # Compute update levels
-        levels = self._compute_update_levels(graph, param_to_nodes)
+        # Ensure all optimizer params are present in the graph (even if isolated)
+        for param in self.params:
+            key = self._param_key(param)
+            param_nodes.setdefault(key, param)
+            edges.setdefault(key, set())
+            reverse_edges.setdefault(key, set())
+            param_topo_index.setdefault(key, 0)
+
+        # Compute update levels from parameter dependency graph
+        param_order = {self._param_key(p): i for i, p in enumerate(self.params)}
+        levels = self._compute_param_levels(
+            param_nodes,
+            edges,
+            param_topo_index,
+            param_order,
+        )
 
         # Track applied updates for visibility
         applied_updates: dict[str, str] = {}
@@ -472,8 +509,8 @@ class SFAOptimizer(Optimizer):
                         param=param,
                         previous_values=previous_values,
                         applied_updates=applied_updates,
-                        upstream_params=self._get_upstream_params(
-                            param, param_to_nodes, node_to_params, graph
+                        upstream_params=self._get_upstream_params_from_graph(
+                            param, reverse_edges, param_nodes
                         ),
                     )
                     for param in params_to_update
@@ -577,6 +614,148 @@ class SFAOptimizer(Optimizer):
         levels = [index_to_params[idx] for idx in sorted(index_to_params.keys())]
 
         return levels
+
+    def _record_node_parameters(
+        self,
+        record: ForwardRecord,
+    ) -> dict[str, list[Parameter]]:
+        """Return direct parameters used by each node in a record."""
+        if record.node_parameters:
+            return record.node_parameters
+
+        node_parameters: dict[str, list[Parameter]] = {}
+        for node_id, module in record.module_map.items():
+            direct = getattr(module, "direct_parameters", None)
+            if callable(direct):
+                params = list(direct())
+            else:
+                params = list(module.parameters())
+            if params:
+                node_parameters[node_id] = params
+        return node_parameters
+
+    def _build_param_dag(
+        self,
+        records: list[ForwardRecord],
+    ) -> tuple[
+        dict[str, Parameter],
+        dict[str, set[str]],
+        dict[str, set[str]],
+        dict[str, int],
+    ]:
+        """Build a parameter dependency graph across all records."""
+        param_nodes: dict[str, Parameter] = {}
+        edges: dict[str, set[str]] = {}
+        reverse_edges: dict[str, set[str]] = {}
+        param_topo_index: dict[str, int] = {}
+
+        for record in records:
+            node_parameters = self._record_node_parameters(record)
+            if not node_parameters:
+                continue
+
+            topo_order = record.graph.topological_order()
+            node_to_topo_index = {nid: i for i, nid in enumerate(topo_order)}
+
+            for node_id, params in node_parameters.items():
+                idx = node_to_topo_index.get(node_id)
+                if idx is None:
+                    continue
+                for param in params:
+                    key = self._param_key(param)
+                    param_nodes[key] = param
+                    if key not in param_topo_index or idx < param_topo_index[key]:
+                        param_topo_index[key] = idx
+
+            for node_id, params in node_parameters.items():
+                if not params:
+                    continue
+                ancestor_nodes = record.graph.ancestors(node_id)
+                if not ancestor_nodes:
+                    continue
+                for anc_id in ancestor_nodes:
+                    for anc_param in node_parameters.get(anc_id, []):
+                        anc_key = self._param_key(anc_param)
+                        for param in params:
+                            key = self._param_key(param)
+                            if anc_key == key:
+                                continue
+                            edges.setdefault(anc_key, set()).add(key)
+                            reverse_edges.setdefault(key, set()).add(anc_key)
+
+        for key in param_nodes:
+            edges.setdefault(key, set())
+            reverse_edges.setdefault(key, set())
+            param_topo_index.setdefault(key, 0)
+
+        return param_nodes, edges, reverse_edges, param_topo_index
+
+    def _compute_param_levels(
+        self,
+        param_nodes: dict[str, Parameter],
+        edges: dict[str, set[str]],
+        param_topo_index: dict[str, int],
+        param_order: dict[str, int],
+    ) -> list[list[Parameter]]:
+        """Compute topological levels from a parameter dependency DAG."""
+        indegree: dict[str, int] = {key: 0 for key in param_nodes}
+        for src, dests in edges.items():
+            indegree.setdefault(src, 0)
+            for dst in dests:
+                indegree[dst] = indegree.get(dst, 0) + 1
+
+        remaining = set(indegree.keys())
+        levels: list[list[Parameter]] = []
+
+        while remaining:
+            zero_indegree = [k for k in remaining if indegree.get(k, 0) == 0]
+            if not zero_indegree:
+                # Cycle detected; fall back to stable ordering by topo index
+                ordered = sorted(
+                    remaining,
+                    key=lambda k: (
+                        param_topo_index.get(k, 0),
+                        param_order.get(k, 0),
+                    ),
+                )
+                levels.extend([[param_nodes[k]] for k in ordered])
+                break
+
+            zero_indegree = sorted(
+                zero_indegree,
+                key=lambda k: (
+                    param_topo_index.get(k, 0),
+                    param_order.get(k, 0),
+                ),
+            )
+            levels.append([param_nodes[k] for k in zero_indegree])
+
+            for key in zero_indegree:
+                remaining.remove(key)
+                for dst in edges.get(key, set()):
+                    indegree[dst] -= 1
+
+        return levels
+
+    def _get_upstream_params_from_graph(
+        self,
+        param: Parameter,
+        reverse_edges: dict[str, set[str]],
+        param_nodes: dict[str, Parameter],
+    ) -> list[Parameter]:
+        """Get upstream parameters using the parameter dependency graph."""
+        key = self._param_key(param)
+        upstream_keys: set[str] = set()
+        stack = list(reverse_edges.get(key, set()))
+
+        while stack:
+            current = stack.pop()
+            if current in upstream_keys:
+                continue
+            upstream_keys.add(current)
+            stack.extend(reverse_edges.get(current, set()))
+
+        return [param_nodes[k] for k in upstream_keys if k in param_nodes]
 
     def _get_upstream_params(
         self,

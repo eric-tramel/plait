@@ -13,20 +13,20 @@ from plait.optimization.record import ForwardRecord
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Modules
 #
-# NOTE: During tracing, forward() receives Proxy objects. Modules that work
+# NOTE: During tracing, forward() receives Value objects. Modules that work
 # correctly with tracing must either:
 # 1. Return the input unchanged (like EchoModule)
-# 2. Call child modules and return their results (child.__call__ returns Proxy)
+# 2. Call child modules and return their results (child.__call__ returns Value)
 #
 # Modules that do direct string operations (like text.upper()) or use f-strings
-# will fail during tracing because they try to operate on Proxy objects.
+# will fail during tracing because they try to operate on Value objects.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class EchoModule(Module):
     """A simple module that returns its input unchanged.
 
-    Works with tracing because it just passes through the Proxy.
+    Works with tracing because it just passes through the Value.
     """
 
     def forward(self, text: str) -> str:
@@ -37,7 +37,7 @@ class EchoModule(Module):
 class TransformModule(Module):
     """An atomic module that transforms input during execution.
 
-    During tracing, __call__ intercepts and records the call, returning a Proxy.
+    During tracing, __call__ intercepts and records the call, returning a Value.
     During execution, forward() is called with actual values.
     """
 

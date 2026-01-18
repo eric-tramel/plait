@@ -539,11 +539,23 @@ class Scheduler:
             any dependency contains an error.
         """
         from plait.module import LLMInference
+        from plait.tracing.tracer import GetItemOp, IterOp, MethodOp
         from plait.values import first_error_value, has_error_value
 
         # Handle input nodes specially - just return their stored value
         if isinstance(task.module, InputNode):
             return task.module.value
+
+        # Handle structured ops from tracing
+        if isinstance(task.module, GetItemOp):
+            return task.args[0][task.module.key]
+        if isinstance(task.module, MethodOp):
+            return getattr(task.args[0], task.module.method)()
+        if isinstance(task.module, IterOp):
+            try:
+                return next(iter(task.args[0]))
+            except StopIteration:
+                return None
 
         # Short-circuit if any dependency is a Value(ERROR)
         # (functional ops propagate errors as values, not exceptions)

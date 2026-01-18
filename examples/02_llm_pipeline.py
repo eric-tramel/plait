@@ -108,7 +108,7 @@ class ComprehensiveAnalyzer(Module):
     def forward(self, text: str) -> str:
         analyses = self.perspectives(text)
         # Use explicit key access instead of .items() iteration
-        # (Proxy objects don't support iteration during tracing)
+        # (Value objects don't support full iteration during tracing)
         combined = (
             f"## Technical\n{analyses['technical']}\n\n"
             f"## Business\n{analyses['business']}\n\n"

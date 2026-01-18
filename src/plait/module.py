@@ -252,6 +252,20 @@ class Module:
         for child in self.children():
             yield from child.parameters()
 
+    def direct_parameters(self) -> Iterator[Parameter]:
+        """Iterate over parameters directly owned by this module.
+
+        Yields parameters assigned on this module itself, plus parameters in
+        ParameterList and ParameterDict containers attached directly to it.
+        Does not recurse into child modules.
+
+        Returns:
+            An iterator of Parameters directly owned by this module.
+        """
+        yield from self._parameters.values()
+        for container in self._parameter_containers.values():
+            yield from container.parameters()
+
     def named_parameters(self, prefix: str = "") -> Iterator[tuple[str, Parameter]]:
         """Iterate over all parameters with hierarchical dot-separated names.
 
@@ -602,7 +616,7 @@ class Module:
         """Define the inference computation.
 
         Override this method to implement your module's logic.
-        During tracing, this receives Proxy objects representing
+        During tracing, this receives Value objects representing
         symbolic values. During execution, this receives actual values.
 
         Args:
@@ -725,7 +739,7 @@ class Module:
         Note:
             During tracing, the tracer records this call as a node in the
             execution graph. The forward() method is not called; instead,
-            dependencies are tracked based on Proxy arguments.
+            dependencies are tracked based on Value refs.
         """
         from plait.execution.context import get_execution_settings
 

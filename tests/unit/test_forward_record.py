@@ -2,9 +2,12 @@
 
 import pytest
 
+from plait.execution.executor import _build_forward_record
+from plait.execution.state import ExecutionState, TaskResult
 from plait.graph import GraphNode, InferenceGraph
 from plait.module import LLMInference, Module
 from plait.optimization.record import ForwardRecord
+from plait.parameter import Parameter
 from plait.tracing.tracer import InputNode
 
 
@@ -241,3 +244,50 @@ class TestForwardRecordWithModules:
 
         assert isinstance(record.get_module("CustomModule_1"), CustomModule)
         assert record.get_node_output("CustomModule_1") == "HELLO"
+
+    def test_forward_record_direct_parameters_only(self) -> None:
+        """ForwardRecord tracks only direct parameters for a node."""
+
+        class Child(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child_param = Parameter("child", description="Child param")
+
+            def forward(self, x: str) -> str:
+                return f"{self.child_param.value}_{x}"
+
+        class Parent(Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.parent_param = Parameter("parent", description="Parent param")
+                self.child = Child()
+
+            def forward(self, x: str) -> str:
+                return f"{self.parent_param.value}_{self.child(x)}"
+
+        parent = Parent()
+        parent_node = GraphNode(
+            id="Parent_1",
+            module=parent,
+            args=(),
+            kwargs={},
+            dependencies=[],
+        )
+        graph = InferenceGraph(
+            nodes={"Parent_1": parent_node},
+            input_ids=["Parent_1"],
+            output_ids=["Parent_1"],
+        )
+
+        state = ExecutionState(graph, record=True)
+        state.results["Parent_1"] = TaskResult(
+            node_id="Parent_1",
+            value="parent_child_x",
+            duration_ms=1.0,
+        )
+        state.recorded_inputs["Parent_1"] = {"0": "x"}
+        state.execution_order = ["Parent_1"]
+
+        record = _build_forward_record(graph, state)
+
+        assert record.node_parameters["Parent_1"] == [parent.parent_param]

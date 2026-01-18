@@ -75,6 +75,7 @@ class _LossLLMWrapper:
         self,
         alias: str,
         system_prompt: str,
+        temperature: float = 0.0,
         response_format: type | None = None,
     ) -> None:
         """Initialize the wrapper with LLM configuration.
@@ -82,6 +83,7 @@ class _LossLLMWrapper:
         Args:
             alias: Resource alias for the LLM endpoint.
             system_prompt: System prompt for the LLM.
+            temperature: Sampling temperature for the LLM.
             response_format: Optional structured output format.
         """
         from plait.module import LLMInference, Module
@@ -97,6 +99,7 @@ class _LossLLMWrapper:
                 inner_self.llm = LLMInference(
                     alias=alias,
                     system_prompt=system_prompt,
+                    temperature=temperature,
                     response_format=response_format,
                 )
 
@@ -1092,10 +1095,16 @@ class LLMRubricLoss(Loss):
         self._min_score = min(r.score for r in rubric)
 
         # Internal LLM module with structured output (wrapped for execution)
+        system_prompt = self._build_system_prompt()
         self.judge = _LossLLMWrapper(
             alias=alias,
-            system_prompt=self._build_system_prompt(),
+            system_prompt=system_prompt,
             response_format=RubricResponse,
+        )
+        # Fallback judge without structured output for recovery
+        self._fallback_judge = _LossLLMWrapper(
+            alias=alias,
+            system_prompt=system_prompt,
         )
 
     def _build_system_prompt(self) -> str:
@@ -1129,6 +1138,7 @@ You must respond with a JSON object containing exactly these fields:
             Self for method chaining.
         """
         self.judge.bind(resources)
+        self._fallback_judge.bind(resources)
         return self
 
     async def _evaluate_single(
@@ -1156,23 +1166,81 @@ You must respond with a JSON object containing exactly these fields:
             prompt_parts.append(f"Expected/Target: {target}")
         prompt = "\n\n".join(prompt_parts)
 
+        def _parse_response(payload: Any) -> tuple[float, str, str]:
+            """Parse judge output into (score, justification, feedback)."""
+            if isinstance(payload, str):
+                import json
+
+                try:
+                    payload = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "LLMRubricLoss expected JSON but received non-JSON response."
+                    ) from exc
+
+            if isinstance(payload, dict):
+                normalized = {
+                    str(key).strip().lower(): value for key, value in payload.items()
+                }
+
+                def _pick(keys: list[str], default: str) -> str:
+                    for key in keys:
+                        value = normalized.get(key)
+                        if value is not None:
+                            return str(value)
+                    return default
+
+                raw_score = normalized.get("score")
+                if raw_score is None:
+                    for key in ("rating", "grade", "score_value", "overall_score"):
+                        if key in normalized:
+                            raw_score = normalized[key]
+                            break
+
+                if raw_score is None:
+                    raise ValueError(
+                        "LLMRubricLoss expected a 'score' field in the judge "
+                        f"response. Received keys: {sorted(normalized.keys())}"
+                    )
+
+                if isinstance(raw_score, str):
+                    try:
+                        raw_score = int(raw_score)
+                    except ValueError:
+                        raw_score = float(raw_score)
+
+                justification = _pick(
+                    ["justification", "reason", "rationale", "explanation"],
+                    "No justification provided",
+                )
+                feedback_text = _pick(
+                    ["feedback", "suggestions", "improvements", "recommendations"],
+                    "No feedback provided",
+                )
+                return float(raw_score), justification, feedback_text
+
+            return float(payload.score), payload.justification, payload.feedback
+
         # Get structured response
         response = await self.judge(prompt)
-
-        # Handle string (JSON), dict (parsed JSON), and object responses
-        if isinstance(response, str):
-            import json
-
-            response = json.loads(response)
-
-        if isinstance(response, dict):
-            raw_score = response["score"]
-            justification = response.get("justification", "No justification provided")
-            feedback_text = response.get("feedback", "No feedback provided")
-        else:
-            raw_score = response.score
-            justification = response.justification
-            feedback_text = response.feedback
+        try:
+            raw_score, justification, feedback_text = _parse_response(response)
+        except ValueError as exc:
+            retry_prompt = (
+                f"{prompt}\n\nReturn a JSON object with keys: "
+                "score, justification, feedback. Do not include any other text."
+            )
+            fallback_response = await self._fallback_judge(retry_prompt)
+            try:
+                raw_score, justification, feedback_text = _parse_response(
+                    fallback_response
+                )
+            except ValueError as fallback_exc:
+                raise ValueError(
+                    "LLMRubricLoss failed to parse judge response. "
+                    f"Primary response: {response!r}. "
+                    f"Fallback response: {fallback_response!r}"
+                ) from fallback_exc
 
         # Normalize score to 0-1 range
         normalized_score = (raw_score - self._min_score) / (

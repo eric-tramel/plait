@@ -138,8 +138,16 @@ async def train() -> None:
     ]
 
     print("Initial prompts:")
-    for param in pipeline.parameters():
+    params = list(pipeline.parameters())
+    for param in params:
         print(f"  {param._name}: '{param.value}'")
+    unique_params = {param._id: param for param in params}
+    print(f"\nTotal parameters (including references): {len(params)}")
+    print(f"Unique parameters: {len(unique_params)}")
+    print("Unique parameter ids:")
+    for param_id, param in unique_params.items():
+        name = param._name or "<unnamed>"
+        print(f"  {name}: {param_id}")
     print()
 
     # Training loop

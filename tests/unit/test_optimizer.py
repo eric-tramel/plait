@@ -35,6 +35,8 @@ def create_mock_record(
         mock_module.parameters.return_value = []
         module_map[node_id] = mock_module
 
+    node_parameters: dict[str, list[Parameter]] = {}
+
     # If params provided, attach them to the first module
     if params and node_ids:
         first_mock = module_map[node_ids[0]]
@@ -42,6 +44,7 @@ def create_mock_record(
             (p._name or f"param_{i}", p) for i, p in enumerate(params)
         ]
         first_mock.parameters.return_value = params  # type: ignore[attr-defined]
+        node_parameters[node_ids[0]] = params
 
     # Create nodes with proper dependencies
     nodes: dict[str, GraphNode] = {}
@@ -67,6 +70,7 @@ def create_mock_record(
         node_inputs={nid: {} for nid in node_ids},
         node_outputs={nid: f"output_{i}" for i, nid in enumerate(node_ids)},
         module_map=module_map,
+        node_parameters=node_parameters,
     )
 
 
@@ -921,6 +925,84 @@ class TestSFAOptimizerIntegration:
         assert "system_prompt" in updates
 
     @pytest.mark.asyncio
+    async def test_union_of_records_used_for_ordering(self) -> None:
+        """step() uses the union of per-record tapes for ordering."""
+        param_a = Parameter("a", description="Shared upstream param")
+        param_a._name = "param_a"
+        param_a.accumulate_feedback("update a")
+
+        param_b = Parameter("b", description="Downstream param B")
+        param_b._name = "param_b"
+        param_b.accumulate_feedback("update b")
+
+        param_c = Parameter("c", description="Downstream param C")
+        param_c._name = "param_c"
+        param_c.accumulate_feedback("update c")
+
+        optimizer = SFAOptimizer([param_a, param_b, param_c])
+        optimizer._bound = True
+
+        # Record A: A -> B
+        graph_a = InferenceGraph(
+            nodes={
+                "A": GraphNode(id="A", module=None, args=(), kwargs={}, dependencies=[]),
+                "B": GraphNode(
+                    id="B", module=None, args=(), kwargs={}, dependencies=["A"]
+                ),
+            },
+            input_ids=["A"],
+            output_ids=["B"],
+        )
+        record_a = ForwardRecord(
+            graph=graph_a,
+            node_inputs={"A": {}, "B": {}},
+            node_outputs={"A": "a", "B": "b"},
+            module_map={},
+            node_parameters={"A": [param_a], "B": [param_b]},
+        )
+
+        # Record B: A -> C
+        graph_b = InferenceGraph(
+            nodes={
+                "A": GraphNode(id="A", module=None, args=(), kwargs={}, dependencies=[]),
+                "C": GraphNode(
+                    id="C", module=None, args=(), kwargs={}, dependencies=["A"]
+                ),
+            },
+            input_ids=["A"],
+            output_ids=["C"],
+        )
+        record_b = ForwardRecord(
+            graph=graph_b,
+            node_inputs={"A": {}, "C": {}},
+            node_outputs={"A": "a", "C": "c"},
+            module_map={},
+            node_parameters={"A": [param_a], "C": [param_c]},
+        )
+
+        optimizer.capture_record(record_a)
+        optimizer.capture_record(record_b)
+
+        update_order: list[str] = []
+
+        async def mock_updater(prompt: str) -> str:
+            if '<parameter name="param_a">' in prompt:
+                update_order.append("param_a")
+                return "a_new"
+            if '<parameter name="param_b">' in prompt:
+                update_order.append("param_b")
+                return "b_new"
+            update_order.append("param_c")
+            return "c_new"
+
+        optimizer.updater = mock_updater
+
+        await optimizer.step()
+
+        assert update_order[0] == "param_a"
+        assert set(update_order[1:]) == {"param_b", "param_c"}
+
+    @pytest.mark.asyncio
     async def test_multiple_epochs(self) -> None:
         """Test optimizer across multiple training epochs."""
         param = Parameter("v1", description="Evolving param")
@@ -971,6 +1053,7 @@ class TestSFAOptimizerTopologicalOrder:
         """
         node_ids = [f"node_{i}" for i in range(len(params))]
         module_map: dict[str, Module] = {}
+        node_parameters: dict[str, list[Parameter]] = {}
 
         for i, (node_id, param) in enumerate(zip(node_ids, params, strict=True)):
             mock_module = MagicMock(spec=LLMInference)
@@ -979,6 +1062,7 @@ class TestSFAOptimizerTopologicalOrder:
             ]
             mock_module.parameters.return_value = [param]
             module_map[node_id] = mock_module
+            node_parameters[node_id] = [param]
 
         # Create nodes with linear dependencies
         nodes: dict[str, GraphNode] = {}
@@ -1004,6 +1088,7 @@ class TestSFAOptimizerTopologicalOrder:
             node_inputs={nid: {} for nid in node_ids},
             node_outputs={nid: f"output_{i}" for i, nid in enumerate(node_ids)},
             module_map=module_map,
+            node_parameters=node_parameters,
         )
 
     @pytest.mark.asyncio
