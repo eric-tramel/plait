@@ -292,7 +292,7 @@ class Tracer:
                 )
             elif isinstance(obj, dict):
                 return {
-                    k: _bind(v, f"{key_prefix}_{k}", use_index=False)
+                    k: _bind(v, f"{key_prefix}_{k}", use_index=use_index)
                     for k, v in obj.items()
                 }
             elif isinstance(obj, list):
@@ -304,7 +304,8 @@ class Tracer:
                 val = valueify(obj)
                 return _bind(val, key_prefix, use_index=use_index)
 
-        return _bind(inputs, prefix, use_index=True)
+        use_index = not isinstance(inputs, dict)
+        return _bind(inputs, prefix, use_index=use_index)
 
     def record_call(
         self,
