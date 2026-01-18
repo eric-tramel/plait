@@ -262,7 +262,7 @@ For detailed architecture and design documentation, see the [`design_docs/`](des
 - [Tracing](design_docs/tracing.md) - How DAGs are captured from code
 - [Execution](design_docs/execution.md) - Scheduler, state, and error handling
 - [Resources](design_docs/resources.md) - Endpoint configuration and rate limiting
-- [Optimization](design_docs/optimization.md) - Feedback propagation and learning
+- [Optimization](design_docs/optimization.md) - Value propagation and learning
 
 ## Development
 

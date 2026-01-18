@@ -24,8 +24,8 @@ Example:
     >>> optimizer.zero_feedback()
     >>> for example in batch:
     ...     output, record = await run(module, example["input"], record=True)
-    ...     feedback = await loss_fn(output, example["target"], record=record)
-    ...     await feedback.backward(optimizer=optimizer)
+    ...     loss_val = await loss_fn(output, example["target"])
+    ...     await loss_val.backward(optimizer=optimizer)
     >>> updates = await optimizer.step()
 """
 
@@ -240,7 +240,7 @@ class Optimizer(ABC):
             ...     optimizer.zero_feedback()
             ...     for example in batch:
             ...         # Forward, loss, backward
-            ...         await feedback.backward(optimizer=optimizer)
+            ...         await loss_val.backward(optimizer=optimizer)
             ...     await optimizer.step()
         """
         for param in self.params:
@@ -250,7 +250,7 @@ class Optimizer(ABC):
     def capture_record(self, record: ForwardRecord) -> None:
         """Capture a ForwardRecord during backward pass.
 
-        Called by _propagate_backward() to provide graph context for
+        Called by _propagate_backward_value() to provide graph context for
         ordered parameter updates in step(). The captured records are
         used to determine topological ordering and upstream dependencies.
 
@@ -268,7 +268,7 @@ class Optimizer(ABC):
         """Aggregate accumulated feedback and update parameters.
 
         Should be called after accumulating feedback from a mini-batch
-        of examples via feedback.backward(). This method processes all
+        of examples via Value.backward(). This method processes all
         accumulated feedback and generates updated parameter values.
 
         Parameters are updated in forward topological order based on the
@@ -373,8 +373,8 @@ class SFAOptimizer(Optimizer):
         ...     optimizer.zero_feedback()
         ...     for example in batch:
         ...         output, record = await run(module, example["input"], record=True)
-        ...         feedback = await loss_fn(output, example["target"], record=record)
-        ...         await feedback.backward(optimizer=optimizer)
+        ...         loss_val = await loss_fn(output, example["target"])
+        ...         await loss_val.backward(optimizer=optimizer)
         ...     updates = await optimizer.step()
         ...     print(f"Updated {len(updates)} parameters")
 

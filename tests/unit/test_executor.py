@@ -9,6 +9,7 @@ import pytest
 from plait.execution.executor import run
 from plait.module import Module
 from plait.optimization.record import ForwardRecord
+from plait.values import unwrap
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Modules
@@ -882,7 +883,7 @@ class TestRunWithRecord:
         assert isinstance(result, tuple)
         assert len(result) == 2
         output, record = result
-        assert output == "hello"
+        assert unwrap(output) == "hello"
         assert isinstance(record, ForwardRecord)
 
     @pytest.mark.asyncio
@@ -1002,7 +1003,7 @@ class TestRunWithRecord:
             execution_id="record_test",
         )
 
-        assert output == "test_a_b_c"
+        assert unwrap(output) == "test_a_b_c"
         assert isinstance(record, ForwardRecord)
         # Checkpoint should also be created
         assert (tmp_path / "record_test.json").exists()
@@ -1027,7 +1028,7 @@ class TestRunWithRecord:
 
         output, record = await run(module, "test", record=True)
 
-        assert output == "test_a_b_c_outer"
+        assert unwrap(output) == "test_a_b_c_outer"
         assert isinstance(record, ForwardRecord)
         # Should have tracked all the nested modules
         assert len(record.graph.nodes) > 1

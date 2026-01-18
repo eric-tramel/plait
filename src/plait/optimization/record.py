@@ -22,7 +22,9 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
@@ -79,8 +81,9 @@ class ForwardRecord:
         [Parameter(...)]
 
     Note:
-        ForwardRecord instances should be passed to loss functions via
-        the `record=record` parameter to enable `feedback.backward()`.
+        ForwardRecord instances are registered on forward pass and linked
+        via tape ids stored in Value.meta. Backward uses those tape ids to
+        resolve records.
     """
 
     graph: InferenceGraph
@@ -134,63 +137,37 @@ class ForwardRecord:
         return self.module_map[node_id]
 
 
-@dataclass
-class TracedOutput[T]:
-    """Wrapper that carries ForwardRecord implicitly with output values.
+# =============================================================================
+# Tape Registry (ForwardRecord storage)
+# =============================================================================
 
-    TracedOutput enables PyTorch-like training mode where forward passes
-    automatically capture the computation record. When a module is in
-    training mode (via `module.train()`), outputs are wrapped in TracedOutput
-    instead of returning raw values. This eliminates manual record management
-    in training pipelines.
+_registry_lock = Lock()
+_record_registry: dict[str, ForwardRecord] = {}
 
-    The wrapper behaves transparently - `str()` and `repr()` delegate to the
-    underlying value, making it easy to inspect outputs during debugging.
-    Loss functions automatically extract the record from TracedOutput.
 
-    Attributes:
-        value: The actual output value from the forward pass.
-        _record: The ForwardRecord capturing the computation for backward().
+def register_record(record: ForwardRecord) -> str:
+    """Register a ForwardRecord and return its tape id."""
+    tape_id = uuid4().hex
+    with _registry_lock:
+        _record_registry[tape_id] = record
+    return tape_id
 
-    Example:
-        >>> # Training mode returns TracedOutput
-        >>> module.train()
-        >>> output = await module("Hello")
-        >>> isinstance(output, TracedOutput)
-        True
-        >>> output.value
-        'Response from LLM...'
-        >>>
-        >>> # Loss functions auto-extract records
-        >>> feedback = await loss_fn(output, target)  # No need to pass record
-        >>> await feedback.backward()  # Record attached automatically
-        >>>
-        >>> # str() and repr() delegate to value for transparency
-        >>> str(output)
-        'Response from LLM...'
 
-    Note:
-        Use `module.train()` to enable training mode and `module.eval()`
-        to disable it. In eval mode, raw values are returned without
-        TracedOutput wrapping.
-    """
+def get_record(tape_id: str) -> ForwardRecord:
+    """Retrieve a ForwardRecord by tape id."""
+    with _registry_lock:
+        try:
+            return _record_registry[tape_id]
+        except KeyError as exc:
+            raise KeyError(f"Unknown tape id: {tape_id}") from exc
 
-    value: T
-    _record: ForwardRecord
 
-    def __str__(self) -> str:
-        """Return string representation of the wrapped value.
+def get_records(tape_ids: list[str]) -> list[ForwardRecord]:
+    """Retrieve multiple ForwardRecords by tape id."""
+    return [get_record(tape_id) for tape_id in tape_ids]
 
-        Returns:
-            String representation of the value, making TracedOutput
-            transparent for debugging and logging.
-        """
-        return str(self.value)
 
-    def __repr__(self) -> str:
-        """Return repr of the wrapped value.
-
-        Returns:
-            Repr of the value for debugging purposes.
-        """
-        return f"TracedOutput({self.value!r})"
+def release_record(tape_id: str) -> None:
+    """Release a ForwardRecord from the registry."""
+    with _registry_lock:
+        _record_registry.pop(tape_id, None)

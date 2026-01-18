@@ -521,7 +521,7 @@ class TestLLMInferenceBackward:
         """Create a BackwardContext for testing."""
         from plait.graph import InferenceGraph
         from plait.optimization.backward import BackwardContext
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         graph = InferenceGraph(nodes={}, input_ids=[], output_ids=[])
         return BackwardContext(
@@ -530,7 +530,7 @@ class TestLLMInferenceBackward:
             output=output,
             graph=graph,
             all_results={},
-            downstream_feedback=[Feedback(content="test")],
+            downstream_feedback=[Value(ValueKind.STRUCTURED, [["test"]])],
         )
 
     def test_backward_is_async(self) -> None:
@@ -544,27 +544,31 @@ class TestLLMInferenceBackward:
         """LLMInference.backward() generates feedback for input prompt."""
         import asyncio
 
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         llm = LLMInference(alias="test")
-        feedback = Feedback(content="Response was too verbose", score=0.6)
+        feedback = Value(
+            ValueKind.STRUCTURED, [["Response was too verbose"]], meta={"score": 0.6}
+        )
         ctx = self._make_context({"prompt": "What is 2+2?"})
 
         result = asyncio.run(llm.backward(feedback, ctx))
 
         assert "prompt" in result.input_feedback
         prompt_feedback = result.input_feedback["prompt"]
-        assert "too verbose" in prompt_feedback.content
-        assert prompt_feedback.score == 0.6
+        assert prompt_feedback.payload == [["Response was too verbose"]]
+        assert prompt_feedback.meta["score"] == 0.6
 
     def test_backward_no_parameter_feedback_for_non_learnable(self) -> None:
         """No parameter feedback when system_prompt is not learnable."""
         import asyncio
 
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         llm = LLMInference(alias="test", system_prompt="Fixed prompt")
-        feedback = Feedback(content="Needs improvement", score=0.5)
+        feedback = Value(
+            ValueKind.STRUCTURED, [["Needs improvement"]], meta={"score": 0.5}
+        )
         ctx = self._make_context({"prompt": "Hello"})
 
         result = asyncio.run(llm.backward(feedback, ctx))
@@ -576,10 +580,10 @@ class TestLLMInferenceBackward:
         """No parameter feedback when system_prompt is None."""
         import asyncio
 
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         llm = LLMInference(alias="test")  # No system_prompt
-        feedback = Feedback(content="Test", score=0.7)
+        feedback = Value(ValueKind.STRUCTURED, [["Test"]], meta={"score": 0.7})
         ctx = self._make_context({"prompt": "Hello"})
 
         result = asyncio.run(llm.backward(feedback, ctx))
@@ -590,7 +594,7 @@ class TestLLMInferenceBackward:
         """Parameter feedback generated when system_prompt is learnable."""
         import asyncio
 
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         learnable_prompt = Parameter(
             value="You are a helpful assistant.",
@@ -598,7 +602,11 @@ class TestLLMInferenceBackward:
             requires_grad=True,
         )
         llm = LLMInference(alias="test", system_prompt=learnable_prompt)
-        feedback = Feedback(content="Response was too casual", score=0.4)
+        feedback = Value(
+            ValueKind.STRUCTURED,
+            [["Response was too casual"]],
+            meta={"score": 0.4},
+        )
         ctx = self._make_context(
             {"prompt": "What's up?"},
             output="Hey! Not much, just chillin'.",
@@ -621,13 +629,13 @@ class TestLLMInferenceBackward:
         """Parameter feedback includes score when present."""
         import asyncio
 
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         llm = LLMInference(
             alias="test",
             system_prompt=Parameter("Prompt", description="desc", requires_grad=True),
         )
-        feedback = Feedback(content="Test", score=0.65)
+        feedback = Value(ValueKind.STRUCTURED, [["Test"]], meta={"score": 0.65})
         ctx = self._make_context({"prompt": "Input"})
 
         result = asyncio.run(llm.backward(feedback, ctx))
@@ -638,13 +646,13 @@ class TestLLMInferenceBackward:
         """Parameter feedback truncates very long inputs/outputs."""
         import asyncio
 
-        from plait.optimization.feedback import Feedback
+        from plait.values import Value, ValueKind
 
         llm = LLMInference(
             alias="test",
             system_prompt=Parameter("Prompt", description="desc", requires_grad=True),
         )
-        feedback = Feedback(content="Test")
+        feedback = Value(ValueKind.STRUCTURED, [["Test"]])
 
         long_input = "x" * 1000
         long_output = "y" * 1000
@@ -657,24 +665,6 @@ class TestLLMInferenceBackward:
         assert "..." in param_fb
         # Should not contain the full 1000 characters
         assert "x" * 600 not in param_fb
-
-    def test_backward_preserves_feedback_type(self) -> None:
-        """Input feedback preserves the original feedback type."""
-        import asyncio
-
-        from plait.optimization.feedback import Feedback, FeedbackType
-
-        llm = LLMInference(alias="test")
-        feedback = Feedback(
-            content="Verifier check failed",
-            score=0.0,
-            feedback_type=FeedbackType.VERIFIER,
-        )
-        ctx = self._make_context({"prompt": "Test"})
-
-        result = asyncio.run(llm.backward(feedback, ctx))
-
-        assert result.input_feedback["prompt"].feedback_type == FeedbackType.VERIFIER
 
 
 # Import for type hints

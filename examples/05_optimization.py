@@ -3,9 +3,9 @@
 
 Demonstrates:
 - train()/eval() modes for implicit record management
-- TracedOutput: forward passes that carry ForwardRecord
+- Value outputs with tape ids for backward propagation
 - Loss functions: VerifierLoss, LLMRubricLoss, CompositeLoss
-- Backward pass: feedback propagation through computation graph
+- Backward pass: Value-based propagation through computation graph
 - SFAOptimizer: LLM-based parameter updates
 
 Requirements:
@@ -29,6 +29,7 @@ from plait.optimization import (
 )
 from plait.parameter import Parameter
 from plait.resources.config import OpenAIEndpointConfig, ResourceConfig
+from plait.values import Value, ValueKind, collect_records
 
 # --- Learnable Pipeline ---
 
@@ -93,6 +94,21 @@ QUALITY_RUBRIC = [
 # --- Training Loop ---
 
 
+def aggregate_losses(values: list[Value]) -> Value:
+    """Aggregate per-sample loss Values into a single Value."""
+    payload: list[list[str]] = []
+    scores: list[float] = []
+    for value in values:
+        payload.extend(value.payload)
+        score = value.meta.get("score")
+        if score is not None:
+            scores.append(float(score))
+    meta: dict[str, float] = {}
+    if scores:
+        meta["score"] = sum(scores) / len(scores)
+    return Value(kind=ValueKind.STRUCTURED, payload=payload, meta=meta)
+
+
 async def train() -> None:
     """Train the research assistant."""
     if not os.environ.get("OPENAI_API_KEY"):
@@ -129,7 +145,9 @@ async def train() -> None:
     )
     length_loss = VerifierLoss(check_length)
     loss_fn = CompositeLoss([(quality_loss, 0.7), (length_loss, 0.3)])
-    loss_fn.bind(resources)
+    bind_loss = getattr(loss_fn, "bind", None)
+    if callable(bind_loss):
+        bind_loss(resources)
 
     # Training data
     queries = [
@@ -161,12 +179,17 @@ async def train() -> None:
 
             optimizer.zero_feedback()
 
-            # Forward passes (return TracedOutput in train mode)
+            # Forward passes (return Value with tape ids in train mode)
             outputs = await asyncio.gather(*[pipeline(q) for q in queries])
 
-            # Compute loss (batch)
-            feedback = await loss_fn(outputs)
-            print(f"Average score: {feedback.score:.2f}")
+            # Compute loss (per-sample) and aggregate
+            loss_values = await asyncio.gather(*[loss_fn(out) for out in outputs])
+            loss_value = aggregate_losses(loss_values)
+            avg_score = loss_value.meta.get("score")
+            if avg_score is not None:
+                print(f"Average score: {avg_score:.2f}")
+            else:
+                print("Average score: n/a")
 
             def _snippet(text: str, limit: int = 200) -> str:
                 cleaned = " ".join(str(text).split())
@@ -174,7 +197,7 @@ async def train() -> None:
 
             async def _debug_backward_trace(
                 outputs=outputs,
-                feedback=feedback,
+                feedback=loss_value,
                 queries=queries,
             ) -> None:
                 from plait.optimization.backward import (
@@ -185,7 +208,7 @@ async def train() -> None:
 
                 print("\nBackward trace (per record):")
                 for idx, output in enumerate(outputs, start=1):
-                    record = output._record
+                    record = collect_records(output)[0]
                     query = queries[idx - 1]
                     print(f"\nRecord {idx}: {query}")
                     graph = record.graph
@@ -228,13 +251,14 @@ async def train() -> None:
                         print(
                             f"  Node {node_id} [{module_name}] params: {param_labels}"
                         )
-                        print(f"    combined_feedback: {_snippet(combined.content)}")
+                        print(f"    combined_feedback: {_snippet(combined.payload)}")
 
                         for param_name, param_fb in result.parameter_feedback.items():
-                            print(
-                                f"    param_feedback[{param_name}]: "
-                                f"{_snippet(param_fb)}"
-                            )
+                            if isinstance(param_fb, Value):
+                                snippet = _snippet(param_fb.payload)
+                            else:
+                                snippet = _snippet(param_fb)
+                            print(f"    param_feedback[{param_name}]: {snippet}")
 
                         for input_name, input_fb in result.input_feedback.items():
                             input_node_id = _resolve_input_node(
@@ -243,7 +267,7 @@ async def train() -> None:
                             target = input_node_id or "unknown"
                             print(
                                 f"    input_feedback[{input_name}] -> {target}: "
-                                f"{_snippet(input_fb.content)}"
+                                f"{_snippet(input_fb.payload)}"
                             )
 
                         for input_name, input_fb in result.input_feedback.items():
@@ -258,7 +282,7 @@ async def train() -> None:
             await _debug_backward_trace()
 
             # Backward pass (propagates to all parameters)
-            await feedback.backward(optimizer=optimizer)
+            await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
 
             print("\nParameter feedback buffers:")
             for param in pipeline.parameters():

@@ -213,7 +213,7 @@ with dspy.context(lm=self.smart_lm):
 
 ### Optimization Philosophy
 
-**plait**: Runtime optimization through backward passes. Feedback flows through
+**plait**: Runtime optimization through backward passes. Value flows through
 the graph and an LLM synthesizes parameter updates.
 
 ```python
@@ -224,7 +224,7 @@ optimizer = SFAOptimizer(module.parameters())
 for example in training_data:
     output = await module(example["input"])
     feedback = await loss_fn(output, target=example["target"])
-    await feedback.backward()
+    await output.backward(grad=loss_value)
 
 await optimizer.step()  # LLM reasons about improvements
 ```

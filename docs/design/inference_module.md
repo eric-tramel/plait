@@ -58,7 +58,7 @@ class Module:
 
     def backward(
         self,
-        feedback: Feedback,
+        feedback: Value,
         ctx: BackwardContext
     ) -> BackwardResult:
         """
@@ -165,8 +165,8 @@ class Module:
         4. Defaults
 
         When self.training is True:
-        - Single input: returns TracedOutput[T] with record attached
-        - Batch input: returns list[TracedOutput[T]]
+        - Single input: returns Value[T] with record attached
+        - Batch input: returns list[Value[T]]
 
         When self.training is False:
         - Single input: returns T (raw output)
@@ -509,19 +509,19 @@ implementation.
 
     def backward(
         self,
-        feedback: Feedback,
+        feedback: Value,
         ctx: BackwardContext
     ) -> BackwardResult:
         """Propagate feedback to input prompt and system prompt."""
         result = BackwardResult()
 
-        # Feedback for the input prompt
-        result.input_feedback["prompt"] = feedback.content
+        # Value for the input prompt
+        result.input_feedback["prompt"] = feedback.payload
 
-        # Feedback for system prompt parameter (if learnable)
+        # Value for system prompt parameter (if learnable)
         if self.system_prompt is not None and self.system_prompt.requires_grad:
             result.parameter_feedback["system_prompt"] = (
-                f"Given output feedback: {feedback.content}\n"
+                f"Given output feedback: {feedback.payload}\n"
                 f"Suggest improvements to the system prompt."
             )
 
@@ -676,21 +676,21 @@ class AssistantGeneration(Module):
 
     def backward(
         self,
-        feedback: Feedback,
+        feedback: Value,
         ctx: BackwardContext
     ) -> BackwardResult:
         """Generate feedback for the instructions parameter."""
         result = BackwardResult()
 
-        # Feedback for the input request
-        result.input_feedback["request"] = feedback.content
+        # Value for the input request
+        result.input_feedback["request"] = feedback.payload
 
         # Use LLM to generate parameter feedback
         if self.assistant_instructions.requires_grad:
             improvement_prompt = f"""
 Current instructions: {self.assistant_instructions.value}
 Output that was produced: {ctx.output}
-Feedback on output: {feedback.content}
+Value on output: {feedback.payload}
 
 What specific changes to the instructions would improve the output?
 """
@@ -714,8 +714,8 @@ plait provides multiple execution patterns. See `execution.md` → "Execution Pa
 | Sync single | `module.run_sync("x")` | `T` | Scripts, notebooks |
 | Sync batch | `module.run_sync([...])` | `list[T]` | Batch scripts |
 | Streaming | `async for r in module([...])` | `BatchResult` | Servers, progress |
-| Training single | `module.train(); await module("x")` | `TracedOutput[T]` | Training with backward |
-| Training batch | `module.train(); await module([...])` | `list[TracedOutput[T]]` | Batch training |
+| Training single | `module.train(); await module("x")` | `Value[T]` | Training with backward |
+| Training batch | `module.train(); await module([...])` | `list[Value[T]]` | Batch training |
 
 ### Bound Execution (Recommended)
 
@@ -771,23 +771,23 @@ async with ExecutionSettings(resources=config, streaming=True):
 
 ### Training Execution
 
-For training workflows, enable training mode to capture `ForwardRecord` via `TracedOutput`:
+For training workflows, enable training mode to capture `ForwardRecord` via `Value`:
 
 ```python
 # Enable training mode - outputs carry records implicitly
 pipeline.train()
 
-# Single input - returns TracedOutput
-output = await pipeline(input)  # TracedOutput[str]
+# Single input - returns Value
+output = await pipeline(input)  # Value[str]
 output.value                     # The actual string output
 output._record                   # ForwardRecord for backward()
 
-# Batch inputs - returns list[TracedOutput]
-outputs = await pipeline(batch_inputs)  # list[TracedOutput]
+# Batch inputs - returns list[Value]
+outputs = await pipeline(batch_inputs)  # list[Value]
 
 # Use in training loop (loss extracts records automatically)
 feedbacks = await loss_fn.batch(outputs, targets=targets)
-await Feedback.backward_batch(feedbacks, optimizer=optimizer)
+await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
 await optimizer.step()
 
 # Disable training mode for inference

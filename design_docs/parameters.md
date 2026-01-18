@@ -87,7 +87,7 @@ state.
 ## Optimization Lifecycle
 
 1. **Forward**: Parameters are read; values are lifted into `Value` with stable refs.
-2. **Backward**: Feedback is accumulated into `_feedback_buffer`.
+2. **Backward**: Value is accumulated into `_feedback_buffer`.
 3. **Step**: Optimizer computes updates and calls `apply_update()`.
 4. **Reset**: `zero_feedback()` clears feedback buffers between batches.
 

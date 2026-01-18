@@ -7,34 +7,27 @@ Parameters (prompts, instructions, etc.).
 
 The core workflow mirrors PyTorch:
     1. Forward pass with recording: `output, record = await run(module, input, record=True)`
-    2. Compute feedback: `feedback = await loss_fn(output, target, record=record)`
-    3. Backward pass: `await feedback.backward()`
+    2. Compute loss value: `loss_val = await loss_fn(output, target)`
+    3. Backward pass: `await loss_val.backward()`
     4. Update parameters: `await optimizer.step()`
 
 Example:
     >>> from plait import run
-    >>> from plait.optimization import ForwardRecord, Feedback, FeedbackType
+    >>> from plait.optimization import ForwardRecord
     >>>
     >>> # Execute with recording to enable backward pass
     >>> output, record = await run(module, "input text", record=True)
     >>> isinstance(record, ForwardRecord)
     True
     >>>
-    >>> # Feedback represents evaluation results
-    >>> feedback = Feedback(
-    ...     content="Response was helpful",
-    ...     score=0.9,
-    ...     feedback_type=FeedbackType.LLM_JUDGE,
-    ... )
-    >>> str(feedback)
-    '[0.90] Response was helpful'
+    >>> # Loss functions return Value objects
+    >>> loss_val = await loss_fn(output, target)
+    >>> await loss_val.backward()
 """
 
 from plait.optimization.backward import BackwardContext, BackwardResult
-from plait.optimization.feedback import Feedback, FeedbackType
 from plait.optimization.loss import (
     CompositeLoss,
-    ContrastiveLoss,
     HumanFeedbackLoss,
     HumanPreferenceLoss,
     HumanRankingLoss,
@@ -43,7 +36,6 @@ from plait.optimization.loss import (
     LLMPreferenceLoss,
     LLMRankingLoss,
     LLMRubricLoss,
-    Loss,
     PreferenceResponse,
     RankingResponse,
     RubricLevel,
@@ -51,20 +43,14 @@ from plait.optimization.loss import (
     VerifierLoss,
 )
 from plait.optimization.optimizer import Optimizer, SFAOptimizer
-from plait.optimization.record import ForwardRecord, TracedOutput
+from plait.optimization.record import ForwardRecord
 
 __all__ = [
     # Backward pass
     "BackwardContext",
     "BackwardResult",
-    # Feedback
-    "Feedback",
-    "FeedbackType",
     # Record
     "ForwardRecord",
-    "TracedOutput",
-    # Loss base class
-    "Loss",
     # Single-sample losses
     "VerifierLoss",
     "LLMJudge",
@@ -72,7 +58,6 @@ __all__ = [
     "LLMRubricLoss",
     "HumanRubricLoss",
     # Contrastive losses
-    "ContrastiveLoss",
     "LLMPreferenceLoss",
     "HumanPreferenceLoss",
     "LLMRankingLoss",

@@ -13,7 +13,7 @@ Backward: loss.backward() → gradients accumulate → optimizer.step()
 plait:
 ```
 Forward:  input → Modules → output
-Backward: feedback.backward() → feedback accumulates → optimizer.step()
+Backward: output.backward(grad=loss_value) → feedback accumulates → optimizer.step()
 ```
 
 The API mirrors PyTorch exactly:
@@ -32,9 +32,9 @@ optimizer.step()              # Single update from all gradients
 module.train()
 optimizer.zero_feedback()
 for example in batch:
-    output = await module(example.input)   # TracedOutput (record implicit)
+    output = await module(example.input)   # Value (record implicit)
     feedback = await loss_fn(output)       # Extracts record automatically
-    await feedback.backward()              # Feedback accumulates in Parameters
+    await output.backward(grad=feedback)              # Value accumulates in Parameters
 await optimizer.step()                     # Single update from all feedback
 ```
 
@@ -67,7 +67,7 @@ class Parameter:
         """
         Add feedback to buffer. Called by backward().
 
-        Feedback accumulates from two sources:
+        Value accumulates from two sources:
         1. Fan-out within a single graph (multiple downstream nodes)
         2. Multiple training examples in a mini-batch
         """
@@ -114,12 +114,12 @@ class CustomerSupport(Module):
         )
 ```
 
-### Feedback
+### Value
 
-Feedback represents evaluation of an output, analogous to a loss tensor in PyTorch:
+Value represents evaluation of an output, analogous to a loss tensor in PyTorch:
 
 ```python
-class FeedbackType(Enum):
+class ValueKind(Enum):
     HUMAN = "human"           # Human-provided feedback
     LLM_JUDGE = "llm_judge"   # LLM-as-a-judge evaluation
     VERIFIER = "verifier"     # Programmatic verification
@@ -127,9 +127,9 @@ class FeedbackType(Enum):
 
 
 @dataclass
-class Feedback:
+class Value:
     """
-    Feedback on a module output.
+    Value on a module output.
 
     Analogous to the loss tensor in PyTorch. Holds the evaluation result
     and (optionally) a reference to the forward pass record for backward().
@@ -137,7 +137,7 @@ class Feedback:
 
     content: str                              # The feedback text
     score: float | None = None                # Optional numeric score (0-1)
-    feedback_type: FeedbackType = FeedbackType.HUMAN
+    feedback_type: ValueKind = ValueKind.STRUCTURED
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # Internal: reference to forward pass for backward()
@@ -149,7 +149,7 @@ class Feedback:
         Propagate feedback backward through the computation graph.
 
         This is the primary API for backward passes, mirroring loss.backward()
-        in PyTorch. Feedback accumulates into Parameter._feedback_buffer.
+        in PyTorch. Value accumulates into Parameter._feedback_buffer.
 
         Args:
             optimizer: Optional optimizer providing reasoning LLM for
@@ -159,18 +159,18 @@ class Feedback:
         Raises:
             RuntimeError: If no ForwardRecord is attached. This happens when
                          the loss was computed on a raw value instead of a
-                         TracedOutput. Ensure module.train() is called before
+                         Value. Ensure module.train() is called before
                          the forward pass.
         """
         if self._record is None:
             raise RuntimeError(
                 "Cannot call backward() without a ForwardRecord. "
                 "Ensure module.train() is called before forward pass, "
-                "or pass a TracedOutput to the loss function."
+                "or pass a Value to the loss function."
             )
 
         opt = optimizer or self._optimizer
-        await _propagate_backward(
+        await _propagate_backward_value(
             feedback=self,
             record=self._record,
             reasoning_llm=opt.reasoning_llm if opt else None,
@@ -194,7 +194,7 @@ class ForwardRecord:
 
     Stores the computation graph and all intermediate values needed
     to propagate feedback during backward(). Created automatically
-    when module is in training mode and wrapped in TracedOutput.
+    when module is in training mode and wrapped in Value.
     """
 
     graph: InferenceGraph
@@ -208,13 +208,13 @@ class ForwardRecord:
     timing: dict[str, float] = field(default_factory=dict)
 ```
 
-### TracedOutput
+### Value
 
-When a module is in training mode, forward passes return `TracedOutput` instead of raw values. This carries the `ForwardRecord` implicitly, eliminating manual record management:
+When a module is in training mode, forward passes return `Value` instead of raw values. This carries the `ForwardRecord` implicitly, eliminating manual record management:
 
 ```python
 @dataclass
-class TracedOutput(Generic[T]):
+class Value(Generic[T]):
     """
     Output from a forward pass in training mode.
 
@@ -222,7 +222,7 @@ class TracedOutput(Generic[T]):
     for backward passes. This enables implicit record flow - users don't
     need to manage records manually.
 
-    In most contexts, TracedOutput behaves like the underlying value:
+    In most contexts, Value behaves like the underlying value:
     - str(traced_output) returns str(value)
     - Loss functions auto-extract the value and record
     - Can access .value explicitly when needed
@@ -235,15 +235,15 @@ class TracedOutput(Generic[T]):
         return str(self.value)
 
     def __repr__(self) -> str:
-        return f"TracedOutput({self.value!r})"
+        return f"Value({self.value!r})"
 ```
 
 **Training mode controls recording:**
 
 ```python
-# Training mode: returns TracedOutput with record attached
+# Training mode: returns Value with record attached
 module.train()
-output = await module(input)  # TracedOutput[str]
+output = await module(input)  # Value[str]
 output.value                   # The actual string output
 output._record                 # ForwardRecord for backward()
 
@@ -255,11 +255,11 @@ output = await module(input)  # str (raw value)
 **Loss functions auto-extract records:**
 
 ```python
-# Loss detects TracedOutput and extracts record automatically
-feedback = await loss_fn(output)  # Works with TracedOutput or raw value
+# Loss detects Value and extracts record automatically
+feedback = await loss_fn(output)  # Works with Value or raw value
 
 # Internally:
-if isinstance(output, TracedOutput):
+if isinstance(output, Value):
     actual_value = output.value
     record = output._record
 else:
@@ -292,8 +292,8 @@ class BackwardContext:
     graph: InferenceGraph
     all_results: dict[str, Any]  # All node outputs from forward
 
-    # Feedback from downstream nodes
-    downstream_feedback: list[Feedback]
+    # Value from downstream nodes
+    downstream_feedback: list[Value]
 
     # Optimizer-provided LLM for backward reasoning (optional)
     reasoning_llm: LLMInference | None = None
@@ -332,16 +332,16 @@ class BackwardResult:
     in parameters.
     """
 
-    # Feedback for each input (keyed by input name or position)
-    input_feedback: dict[str, Feedback] = field(default_factory=dict)
+    # Value for each input (keyed by input name or position)
+    input_feedback: dict[str, Value] = field(default_factory=dict)
 
-    # Feedback for each parameter (keyed by parameter name)
+    # Value for each parameter (keyed by parameter name)
     parameter_feedback: dict[str, str] = field(default_factory=dict)
 ```
 
 ## Loss Functions
 
-Loss functions evaluate outputs and produce Feedback. We provide a comprehensive taxonomy covering different evaluation strategies.
+Loss functions evaluate outputs and produce Value. We provide a comprehensive taxonomy covering different evaluation strategies.
 
 ### Loss Taxonomy
 
@@ -423,8 +423,8 @@ class Loss(ABC):
     """
     Abstract base class for loss functions.
 
-    Loss functions evaluate outputs and produce Feedback that can be
-    propagated backward through the graph via feedback.backward().
+    Loss functions evaluate outputs and produce Value that can be
+    propagated backward through the graph via output.backward(grad=loss_value).
 
     LLM-based losses use internal LLMInference modules with structured
     output (response_format) for reliable parsing. These modules are
@@ -439,7 +439,7 @@ class Loss(ABC):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         """
         Compute feedback for an output.
 
@@ -447,16 +447,16 @@ class Loss(ABC):
             output: The module output to evaluate.
             target: Optional target/expected output for comparison.
             record: ForwardRecord from run(..., record=True). Required
-                    for feedback.backward() to work.
+                    for output.backward(grad=loss_value) to work.
             context: Optional additional context for evaluation.
 
         Returns:
-            Feedback object. If record is provided, feedback.backward()
+            Value object. If record is provided, output.backward(grad=loss_value)
             can be called to propagate through the graph.
         """
         pass
 
-    def _attach_record(self, feedback: Feedback, record: ForwardRecord | None) -> Feedback:
+    def _attach_record(self, feedback: Value, record: ForwardRecord | None) -> Value:
         """Attach ForwardRecord to feedback for backward()."""
         if record is not None:
             feedback._record = record
@@ -489,7 +489,7 @@ class VerifierLoss(Loss):
         """
         Args:
             verifier: Function taking output and returning (passed, message).
-            success_feedback: Feedback message when verification passes.
+            success_feedback: Value message when verification passes.
         """
         self.verifier = verifier
         self.success_feedback = success_feedback
@@ -501,13 +501,13 @@ class VerifierLoss(Loss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         passed, message = self.verifier(output)
 
-        feedback = Feedback(
+        feedback = Value(
             content=message if not passed else self.success_feedback,
             score=1.0 if passed else 0.0,
-            feedback_type=FeedbackType.VERIFIER,
+            feedback_type=ValueKind.STRUCTURED,
         )
         return self._attach_record(feedback, record)
 ```
@@ -559,7 +559,7 @@ class LLMFeedbackLoss(Loss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         prompt = f"""
 Output to critique:
 {output}
@@ -573,10 +573,10 @@ Provide detailed, actionable feedback:
         # Use normal module call - returns string for freeform feedback
         response = await self.judge(prompt)
 
-        feedback = Feedback(
+        feedback = Value(
             content=response,
             score=None,  # No structured score
-            feedback_type=FeedbackType.LLM_JUDGE,
+            feedback_type=ValueKind.STRUCTURED,
         )
         return self._attach_record(feedback, record)
 ```
@@ -615,7 +615,7 @@ class HumanFeedbackLoss(Loss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         # Display output to user
         print("\n" + "=" * 60)
         print("OUTPUT TO EVALUATE:")
@@ -650,10 +650,10 @@ class HumanFeedbackLoss(Loss):
 
         content = "\n".join(lines) if lines else "No feedback provided."
 
-        feedback = Feedback(
+        feedback = Value(
             content=content,
             score=None,
-            feedback_type=FeedbackType.HUMAN,
+            feedback_type=ValueKind.STRUCTURED,
         )
         return self._attach_record(feedback, record)
 ```
@@ -739,7 +739,7 @@ Always provide a score, justification, and actionable feedback."""
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         prompt = f"""
 Output to evaluate:
 {output}
@@ -754,10 +754,10 @@ Output to evaluate:
 
         content = f"Justification: {response.justification}\n\nFeedback: {response.feedback}"
 
-        feedback = Feedback(
+        feedback = Value(
             content=content,
             score=normalized_score,
-            feedback_type=FeedbackType.LLM_JUDGE,
+            feedback_type=ValueKind.STRUCTURED,
             metadata={"raw_score": response.score, "criteria": self.criteria},
         )
         return self._attach_record(feedback, record)
@@ -801,7 +801,7 @@ class HumanRubricLoss(Loss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         # Display output and rubric
         print("\n" + "=" * 60)
         print(f"EVALUATE: {self.criteria}")
@@ -844,10 +844,10 @@ class HumanRubricLoss(Loss):
         # Normalize score to 0-1
         normalized_score = (score - self._min_score) / (self._max_score - self._min_score)
 
-        feedback = Feedback(
+        feedback = Value(
             content=feedback_text or f"Score: {score}/{self._max_score}",
             score=normalized_score,
-            feedback_type=FeedbackType.HUMAN,
+            feedback_type=ValueKind.STRUCTURED,
             metadata={"raw_score": score},
         )
         return self._attach_record(feedback, record)
@@ -910,7 +910,7 @@ class LLMPreferenceLoss(ContrastiveLoss):
     LLM pairwise preference comparison.
 
     Given two outputs (e.g., from current vs previous parameters),
-    the LLM selects which is better and explains why. Feedback is
+    the LLM selects which is better and explains why. Value is
     generated from the contrast. Uses structured output for reliable parsing.
     """
 
@@ -947,7 +947,7 @@ class LLMPreferenceLoss(ContrastiveLoss):
         record_a: ForwardRecord | None = None,
         record_b: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> tuple[Feedback, Feedback]:
+    ) -> tuple[Value, Value]:
         """
         Compare two outputs and return feedback for each.
 
@@ -972,32 +972,32 @@ Which output is better?
 
         # Generate contrastive feedback
         if response.winner == "A":
-            fb_a = Feedback(
+            fb_a = Value(
                 content=f"Preferred. Strengths: {response.a_strengths}",
                 score=1.0,
-                feedback_type=FeedbackType.LLM_JUDGE,
+                feedback_type=ValueKind.STRUCTURED,
             )
-            fb_b = Feedback(
+            fb_b = Value(
                 content=self._generate_contrastive_feedback(
                     output_a, output_b,
                     f"{response.reason}\n\nWeaknesses: {response.b_weaknesses}"
                 ),
                 score=0.0,
-                feedback_type=FeedbackType.LLM_JUDGE,
+                feedback_type=ValueKind.STRUCTURED,
             )
         else:
-            fb_a = Feedback(
+            fb_a = Value(
                 content=self._generate_contrastive_feedback(
                     output_b, output_a,
                     f"{response.reason}\n\nWeaknesses: {response.a_weaknesses}"
                 ),
                 score=0.0,
-                feedback_type=FeedbackType.LLM_JUDGE,
+                feedback_type=ValueKind.STRUCTURED,
             )
-            fb_b = Feedback(
+            fb_b = Value(
                 content=f"Preferred. Strengths: {response.b_strengths}",
                 score=1.0,
-                feedback_type=FeedbackType.LLM_JUDGE,
+                feedback_type=ValueKind.STRUCTURED,
             )
 
         # Attach records
@@ -1015,7 +1015,7 @@ Which output is better?
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         """Single-output interface (requires target as comparison)."""
         if target is None:
             raise ValueError("LLMPreferenceLoss requires target for comparison")
@@ -1057,7 +1057,7 @@ class HumanPreferenceLoss(ContrastiveLoss):
         record_a: ForwardRecord | None = None,
         record_b: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> tuple[Feedback, Feedback]:
+    ) -> tuple[Value, Value]:
         """Compare two outputs and return feedback for each."""
         print("\n" + "=" * 60)
         print(f"COMPARE: {self.criteria}")
@@ -1099,26 +1099,26 @@ class HumanPreferenceLoss(ContrastiveLoss):
         winner, loser = (output_a, output_b) if choice == "A" else (output_b, output_a)
 
         if choice == "A":
-            fb_a = Feedback(
+            fb_a = Value(
                 content=f"Preferred by human. Reason: {reason}",
                 score=1.0,
-                feedback_type=FeedbackType.HUMAN,
+                feedback_type=ValueKind.STRUCTURED,
             )
-            fb_b = Feedback(
+            fb_b = Value(
                 content=self._generate_contrastive_feedback(winner, loser, reason),
                 score=0.0,
-                feedback_type=FeedbackType.HUMAN,
+                feedback_type=ValueKind.STRUCTURED,
             )
         else:
-            fb_a = Feedback(
+            fb_a = Value(
                 content=self._generate_contrastive_feedback(winner, loser, reason),
                 score=0.0,
-                feedback_type=FeedbackType.HUMAN,
+                feedback_type=ValueKind.STRUCTURED,
             )
-            fb_b = Feedback(
+            fb_b = Value(
                 content=f"Preferred by human. Reason: {reason}",
                 score=1.0,
-                feedback_type=FeedbackType.HUMAN,
+                feedback_type=ValueKind.STRUCTURED,
             )
 
         if record_a:
@@ -1135,7 +1135,7 @@ class HumanPreferenceLoss(ContrastiveLoss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         """Single-output interface (requires target as comparison)."""
         if target is None:
             raise ValueError("HumanPreferenceLoss requires target for comparison")
@@ -1153,7 +1153,7 @@ class LLMRankingLoss(ContrastiveLoss):
     LLM ranking of multiple outputs.
 
     Given n outputs, the LLM ranks them from best to worst and
-    explains the ranking. Feedback is generated based on relative
+    explains the ranking. Value is generated based on relative
     position and comparison to better-ranked outputs. Uses structured
     output for reliable parsing.
     """
@@ -1192,7 +1192,7 @@ class LLMRankingLoss(ContrastiveLoss):
         *,
         records: list[ForwardRecord | None] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> list[Feedback]:
+    ) -> list[Value]:
         """
         Rank multiple outputs and return feedback for each.
 
@@ -1202,7 +1202,7 @@ class LLMRankingLoss(ContrastiveLoss):
             context: Optional context for ranking.
 
         Returns:
-            List of Feedback objects in same order as inputs.
+            List of Value objects in same order as inputs.
             Scores are normalized by rank (best=1.0, worst=0.0).
         """
         if len(outputs) < 2:
@@ -1243,10 +1243,10 @@ Rank these {len(outputs)} outputs from BEST to WORST.
                 content = f"Ranked #{rank}/{n}. {response.comparison}\n\n"
                 content += f"To improve, move toward qualities of higher-ranked outputs."
 
-            fb = Feedback(
+            fb = Value(
                 content=content,
                 score=score,
-                feedback_type=FeedbackType.LLM_JUDGE,
+                feedback_type=ValueKind.STRUCTURED,
                 metadata={"rank": rank, "total": n},
             )
 
@@ -1264,7 +1264,7 @@ Rank these {len(outputs)} outputs from BEST to WORST.
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         """Single-output interface - ranks against target."""
         if target is None:
             raise ValueError("LLMRankingLoss requires target for comparison")
@@ -1310,7 +1310,7 @@ class HumanRankingLoss(ContrastiveLoss):
         *,
         records: list[ForwardRecord | None] | None = None,
         context: dict[str, Any] | None = None,
-    ) -> list[Feedback]:
+    ) -> list[Value]:
         """Rank multiple outputs and return feedback for each."""
         if len(outputs) < 2:
             raise ValueError("Need at least 2 outputs to rank")
@@ -1369,10 +1369,10 @@ class HumanRankingLoss(ContrastiveLoss):
             else:
                 content = f"Ranked #{rank}/{n} by human.\n\n{feedback_text}"
 
-            fb = Feedback(
+            fb = Value(
                 content=content,
                 score=score,
-                feedback_type=FeedbackType.HUMAN,
+                feedback_type=ValueKind.STRUCTURED,
                 metadata={"rank": rank, "total": n},
             )
 
@@ -1390,7 +1390,7 @@ class HumanRankingLoss(ContrastiveLoss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         """Single-output interface."""
         if target is None:
             raise ValueError("HumanRankingLoss requires target for comparison")
@@ -1438,7 +1438,7 @@ class CompositeLoss(Loss):
         *,
         record: ForwardRecord | None = None,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         # Gather all feedback
         feedbacks = []
         weighted_score = 0.0
@@ -1458,23 +1458,23 @@ class CompositeLoss(Loss):
         else:
             combined = self._simple_aggregate(feedbacks)
 
-        feedback = Feedback(
+        feedback = Value(
             content=combined,
             score=weighted_score / total_weight if total_weight > 0 else None,
-            feedback_type=FeedbackType.COMPOSITE,
+            feedback_type=ValueKind.STRUCTURED,
         )
         return self._attach_record(feedback, record)
 
-    def _simple_aggregate(self, feedbacks: list[tuple[Feedback, float]]) -> str:
+    def _simple_aggregate(self, feedbacks: list[tuple[Value, float]]) -> str:
         parts = []
         for fb, weight in feedbacks:
             parts.append(f"[Weight: {weight}] {fb.content}")
         return "\n\n".join(parts)
 
-    async def _llm_aggregate(self, feedbacks: list[tuple[Feedback, float]]) -> str:
+    async def _llm_aggregate(self, feedbacks: list[tuple[Value, float]]) -> str:
         prompt = "Synthesize the following feedback into a coherent summary:\n\n"
         for fb, weight in feedbacks:
-            prompt += f"--- Feedback (weight: {weight}) ---\n{fb.content}\n\n"
+            prompt += f"--- Value (weight: {weight}) ---\n{fb.content}\n\n"
         prompt += "Provide a unified summary of the key points and suggestions."
         return await self.aggregator(prompt)
 ```
@@ -1547,7 +1547,7 @@ composite = CompositeLoss([
 class Module:
     async def backward(
         self,
-        feedback: Feedback,
+        feedback: Value,
         ctx: BackwardContext,
     ) -> BackwardResult:
         """
@@ -1578,7 +1578,7 @@ class Module:
 class LLMInference(Module):
     async def backward(
         self,
-        feedback: Feedback,
+        feedback: Value,
         ctx: BackwardContext,
     ) -> BackwardResult:
         """
@@ -1589,14 +1589,14 @@ class LLMInference(Module):
         """
         result = BackwardResult()
 
-        # Feedback for the input prompt
-        result.input_feedback["prompt"] = Feedback(
-            content=f"The LLM output received this feedback: {feedback.content}",
-            score=feedback.score,
+        # Value for the input prompt
+        result.input_feedback["prompt"] = Value(
+            content=f"The LLM output received this feedback: {feedback.payload}",
+            score=feedback.meta.get("score"),
             feedback_type=feedback.feedback_type,
         )
 
-        # Feedback for learnable parameters
+        # Value for learnable parameters
         if isinstance(self.system_prompt, Parameter) and self.system_prompt.requires_grad:
             result.parameter_feedback["system_prompt"] = f"""
 The LLM module with system prompt:
@@ -1608,8 +1608,8 @@ Received input: {ctx.inputs.get('prompt', '')[:500]}...
 
 Produced output: {str(ctx.output)[:500]}...
 
-Received this feedback: {feedback.content}
-{f"Score: {feedback.score}" if feedback.score is not None else ""}
+Received this feedback: {feedback.payload}
+{f"Score: {feedback.meta.get("score")}" if feedback.meta.get("score") is not None else ""}
 
 Suggest specific improvements to the system prompt that would address this feedback.
 """
@@ -1636,15 +1636,15 @@ class SmartResponder(Module):
 
     async def backward(
         self,
-        feedback: Feedback,
+        feedback: Value,
         ctx: BackwardContext,
     ) -> BackwardResult:
         result = BackwardResult()
 
         # Pass feedback to input
-        result.input_feedback["query"] = Feedback(
-            content=f"Response feedback: {feedback.content}",
-            score=feedback.score,
+        result.input_feedback["query"] = Value(
+            content=f"Response feedback: {feedback.payload}",
+            score=feedback.meta.get("score"),
         )
 
         # Use reasoning LLM for sophisticated parameter feedback
@@ -1659,8 +1659,8 @@ Current value: "{self.instructions.value}"
 Input query: {ctx.inputs.get('query', '')}
 Generated response: {ctx.output}
 
-Feedback received: {feedback.content}
-Score: {feedback.score}
+Value received: {feedback.payload}
+Score: {feedback.meta.get("score")}
 
 Provide specific, actionable suggestions for improving the instructions parameter.
 """)
@@ -1668,7 +1668,7 @@ Provide specific, actionable suggestions for improving the instructions paramete
         elif self.instructions.requires_grad:
             # Fallback without reasoning LLM
             result.parameter_feedback["instructions"] = (
-                f"Output received feedback: {feedback.content}. "
+                f"Output received feedback: {feedback.payload}. "
                 f"Consider adjusting instructions to address this."
             )
 
@@ -1758,7 +1758,7 @@ class Optimizer(ABC):
         Aggregate accumulated feedback and update parameters.
 
         Should be called after accumulating feedback from a mini-batch
-        of examples via feedback.backward().
+        of examples via output.backward(grad=loss_value).
 
         Returns:
             Dict mapping parameter names to their new values.
@@ -1788,12 +1788,12 @@ class Optimizer(ABC):
 
 ### SFAOptimizer
 
-Stochastic Feedback Ascent - conservative, incremental updates:
+Stochastic Value Ascent - conservative, incremental updates:
 
 ```python
 class SFAOptimizer(Optimizer):
     """
-    Stochastic Feedback Ascent optimizer.
+    Stochastic Value Ascent optimizer.
 
     Makes small, targeted changes based on accumulated feedback rather than
     aggressive rewrites. Good for fine-tuning working prompts.
@@ -1859,7 +1859,7 @@ Description: {param.description}
 Current value:
 {param.value}
 
-Feedback items:
+Value items:
 {chr(10).join(f"{i+1}. {fb}" for i, fb in enumerate(feedbacks))}
 
 Synthesize into a single summary that:
@@ -1939,11 +1939,11 @@ class MomentumOptimizer(Optimizer):
 
 ## Backward Propagation
 
-The `_propagate_backward` function handles graph traversal:
+The `_propagate_backward_value` function handles graph traversal:
 
 ```python
-async def _propagate_backward(
-    feedback: Feedback,
+async def _propagate_backward_value(
+    feedback: Value,
     record: ForwardRecord,
     reasoning_llm: LLMInference | None = None,
 ) -> None:
@@ -1959,7 +1959,7 @@ async def _propagate_backward(
         reasoning_llm: Optional LLM for backward reasoning.
     """
     graph = record.graph
-    feedback_map: dict[str, Feedback] = {}
+    feedback_map: dict[str, Value] = {}
 
     # Initialize with output feedback
     for output_id in graph.output_ids:
@@ -2013,7 +2013,7 @@ async def _propagate_backward(
                     param.accumulate_feedback(param_fb)
 
 
-def _combine_feedback(feedbacks: list[Feedback]) -> Feedback:
+def _combine_feedback(feedbacks: list[Value]) -> Value:
     """Combine multiple feedback items into one."""
     if len(feedbacks) == 1:
         return feedbacks[0]
@@ -2026,32 +2026,32 @@ def _combine_feedback(feedbacks: list[Feedback]) -> Feedback:
     scores = [fb.score for fb in feedbacks if fb.score is not None]
     avg_score = sum(scores) / len(scores) if scores else None
 
-    return Feedback(
+    return Value(
         content=combined_content,
         score=avg_score,
-        feedback_type=FeedbackType.COMPOSITE,
+        feedback_type=ValueKind.STRUCTURED,
     )
 ```
 
 ## Batch Training API
 
-Training requires three batch-native operations: forward passes, loss computation, and backward passes. Each operation has a clean batch interface for concurrent execution. Training mode (`module.train()`) enables automatic record capture via `TracedOutput`.
+Training requires three batch-native operations: forward passes, loss computation, and backward passes. Each operation has a clean batch interface for concurrent execution. Training mode (`module.train()`) enables automatic record capture via `Value`.
 
 ### Batch Forward (Training Mode)
 
-In training mode, forward passes return `TracedOutput` which carries the `ForwardRecord` implicitly:
+In training mode, forward passes return `Value` which carries the `ForwardRecord` implicitly:
 
 ```python
 # Enable training mode (records captured automatically)
 module.train()
 
-# Single input - returns TracedOutput
-output = await module(input)  # TracedOutput[str]
+# Single input - returns Value
+output = await module(input)  # Value[str]
 output.value                   # The actual string
 output._record                 # ForwardRecord (for debugging)
 
-# Batch inputs - returns list[TracedOutput]
-outputs = await module(batch_inputs)  # list[TracedOutput[str]]
+# Batch inputs - returns list[Value]
+outputs = await module(batch_inputs)  # list[Value[str]]
 ```
 
 For inference (no recording overhead):
@@ -2063,10 +2063,10 @@ output = await module(input)  # str (raw value)
 
 ### Batch Loss Computation (Aggregated)
 
-Loss functions follow PyTorch semantics: when given a batch of outputs, they return a **single aggregated Feedback** with a reduced score (like `reduction='mean'` in PyTorch). This Feedback holds references to all sample records, so `backward()` propagates through all samples:
+Loss functions follow PyTorch semantics: when given a batch of outputs, they return a **single aggregated Value** with a reduced score (like `reduction='mean'` in PyTorch). This Value holds references to all sample records, so `backward()` propagates through all samples:
 
 ```python
-class Feedback:
+class Value:
     content: str
     score: float | None = None  # Aggregated score (mean of batch)
 
@@ -2076,7 +2076,7 @@ class Feedback:
     async def backward(self, optimizer=None):
         """Propagate feedback through ALL attached records."""
         for record in self._records:
-            await _propagate_backward(self, record, optimizer)
+            await _propagate_backward_value(self, record, optimizer)
 ```
 
 Loss functions auto-detect batch input:
@@ -2089,17 +2089,17 @@ class Loss(ABC):
         target: Any | None = None,
         *,
         context: dict[str, Any] | None = None,
-    ) -> Feedback:
+    ) -> Value:
         """
-        Evaluate output(s) and return aggregated Feedback.
+        Evaluate output(s) and return aggregated Value.
 
         Args:
-            output: Single output or list of outputs (TracedOutput or raw).
+            output: Single output or list of outputs (Value or raw).
             target: Optional target (or list for batch).
             context: Optional context (or list for batch).
 
         Returns:
-            Single Feedback with aggregated score. For batches, holds all
+            Single Value with aggregated score. For batches, holds all
             records so backward() propagates through all samples.
         """
         # Auto-detect batch input
@@ -2118,8 +2118,8 @@ class Loss(ABC):
         outputs: list[Any],
         targets: Any | list[Any] | None,
         contexts: Any | list[dict] | None,
-    ) -> Feedback:
-        """Evaluate batch concurrently and aggregate into single Feedback."""
+    ) -> Value:
+        """Evaluate batch concurrently and aggregate into single Value."""
         # Normalize targets/contexts to lists
         n = len(outputs)
         targets_list = targets if isinstance(targets, list) else [targets] * n
@@ -2150,7 +2150,7 @@ class Loss(ABC):
             if record:
                 all_records.append(record)
 
-        return Feedback(
+        return Value(
             content=combined_content,
             score=avg_score,
             _records=all_records,  # backward() iterates through all
@@ -2161,9 +2161,9 @@ Usage (PyTorch-like):
 
 ```python
 module.train()
-outputs = await module(batch_inputs)   # list[TracedOutput]
-feedback = await loss_fn(outputs)      # Single Feedback (aggregated)
-await feedback.backward()              # Propagates to ALL samples
+outputs = await module(batch_inputs)   # list[Value]
+feedback = await loss_fn(outputs)      # Single Value (aggregated)
+await output.backward(grad=feedback)              # Propagates to ALL samples
 ```
 
 This matches PyTorch semantics exactly:
@@ -2173,8 +2173,8 @@ loss = criterion(model(batch_x), batch_y)  # Single scalar (reduced)
 loss.backward()                             # Gradients flow to all samples
 
 # plait
-feedback = await loss_fn(outputs)          # Single Feedback (reduced)
-await feedback.backward()                   # Feedback flows to all samples
+feedback = await loss_fn(outputs)          # Single Value (reduced)
+await output.backward(grad=feedback)                   # Value flows to all samples
 ```
 
 ---
@@ -2211,7 +2211,7 @@ async def train(
     """
     history = TrainingHistory()
 
-    # Enable training mode (returns TracedOutput with records)
+    # Enable training mode (returns Value with records)
     module.train()
 
     for epoch in range(epochs):
@@ -2229,26 +2229,26 @@ async def train(
             optimizer.zero_feedback()
 
             # ─────────────────────────────────────────────────────────
-            # Batch forward (concurrent, returns TracedOutput)
+            # Batch forward (concurrent, returns Value)
             # ─────────────────────────────────────────────────────────
             batch_inputs = [example["input"] for example in batch]
-            outputs = await module(batch_inputs)  # list[TracedOutput]
+            outputs = await module(batch_inputs)  # list[Value]
 
             # ─────────────────────────────────────────────────────────
-            # Batch loss → single aggregated Feedback (PyTorch-like)
+            # Batch loss → single aggregated Value (PyTorch-like)
             # ─────────────────────────────────────────────────────────
             feedback = await loss_fn(
                 outputs,  # List auto-detected as batch
                 target=[example.get("target") for example in batch],
                 context=[{"input": example["input"]} for example in batch],
             )
-            if feedback.score is not None:
-                epoch_scores.append(feedback.score)
+            if feedback.meta.get("score") is not None:
+                epoch_scores.append(feedback.meta.get("score"))
 
             # ─────────────────────────────────────────────────────────
             # Single backward call → propagates through ALL samples
             # ─────────────────────────────────────────────────────────
-            await feedback.backward(optimizer=optimizer)
+            await output.backward(grad=feedback, optimizer=optimizer)
 
             # Single optimizer step per batch
             updates = await optimizer.step()
@@ -2256,7 +2256,7 @@ async def train(
             history.record_step(
                 epoch=epoch,
                 batch_start=batch_start,
-                score=feedback.score,
+                score=feedback.meta.get("score"),
                 updates=updates,
             )
 
@@ -2278,14 +2278,14 @@ For cases requiring per-sample control (custom logging, early stopping per sampl
 ```python
 module.train()
 for example in batch:
-    output = await module(example["input"])  # TracedOutput
+    output = await module(example["input"])  # Value
     feedback = await loss_fn(output, context=example)  # Single sample
-    await feedback.backward(optimizer=optimizer)
+    await output.backward(grad=feedback, optimizer=optimizer)
 ```
 
-## Feedback Accumulation
+## Value Accumulation
 
-Feedback accumulates from two sources:
+Value accumulates from two sources:
 
 ### 1. Fan-out Within a Single Graph
 
@@ -2304,7 +2304,7 @@ When a node has multiple downstream dependents:
  └────┬───┘  └────┬───┘  └────┬───┘
       │           │           │
       ▼           ▼           ▼
- Feedback A  Feedback B  Feedback C
+ Value A  Value B  Value C
 
 One backward() call → P1._feedback_buffer gets 3 items
 ```
@@ -2474,7 +2474,7 @@ print(module.response_guidelines.value)
 # ═══════════════════════════════════════════════════════════════════
 
 # For more control, use the explicit batch loop:
-module.train()  # Enable recording via TracedOutput
+module.train()  # Enable recording via Value
 
 for epoch in range(3):
     for batch_start in range(0, len(dataset), 4):
@@ -2482,9 +2482,9 @@ for epoch in range(3):
 
         optimizer.zero_feedback()
 
-        # Batch forward (returns TracedOutput with records)
+        # Batch forward (returns Value with records)
         inputs = [example["input"] for example in batch]
-        outputs = await module(inputs)  # list[TracedOutput]
+        outputs = await module(inputs)  # list[Value]
 
         # Batch loss computation (extracts records automatically)
         feedbacks = await loss_fn.batch(
@@ -2493,7 +2493,7 @@ for epoch in range(3):
         )
 
         # Batch backward
-        await Feedback.backward_batch(feedbacks, optimizer=optimizer)
+        await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
 
         # Step - like optimizer.step() in PyTorch
         await optimizer.step()
@@ -2506,15 +2506,15 @@ module.eval()  # Disable recording for inference
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Parameter.description | Required when requires_grad=True | Enables generic optimization; forces documentation |
-| feedback.backward() | On Feedback object | Mirrors PyTorch loss.backward() |
+| output.backward(grad=loss_value) | On Value object | Mirrors PyTorch loss.backward() |
 | ForwardRecord | In-memory | Like autograd tape; simple and fast |
 | Mini-batch | Primary pattern | More robust updates; matches PyTorch |
 | Optimizer aliases | Fixed (`optimizer/*`) | Simple, predictable resource config |
 | backward() | Async | Consistent with framework; allows LLM reasoning |
-| Feedback accumulation | List in Parameter | Handles both fan-out and mini-batch naturally |
-| TracedOutput | Output carries record | Implicit flow; mirrors PyTorch autograd |
+| Value accumulation | List in Parameter | Handles both fan-out and mini-batch naturally |
+| Value | Output carries record | Implicit flow; mirrors PyTorch autograd |
 | Training mode | `module.train()` enables recording | PyTorch-like; clean separation of train/eval |
-| Loss auto-extraction | Detects TracedOutput | No manual record passing needed |
+| Loss auto-extraction | Detects Value | No manual record passing needed |
 | Loss.batch() | Default concurrent impl | Single-sample losses auto-parallelize |
-| Feedback.backward_batch() | Static method | Accumulation is append-only, safe to parallelize |
+| Value.backward() | Static method | Accumulation is append-only, safe to parallelize |
 | Aggregation | LLM-based | Natural language requires LLM to synthesize |

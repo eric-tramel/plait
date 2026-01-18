@@ -184,6 +184,15 @@ class TestParameterAccumulateFeedback:
         param.accumulate_feedback("")
         assert param.get_accumulated_feedback() == [""]
 
+    def test_accumulate_feedback_value_payload(self) -> None:
+        """Value payloads are flattened into feedback strings."""
+        from plait.values import Value, ValueKind
+
+        param = Parameter("value", description="Test description")
+        value = Value(ValueKind.STRUCTURED, [["a", "b"], ["c"]])
+        param.accumulate_feedback(value)
+        assert param.get_accumulated_feedback() == ["a", "b", "c"]
+
     def test_get_accumulated_feedback_returns_copy(self) -> None:
         """get_accumulated_feedback returns a copy, not the original list."""
         param = Parameter("value", description="Test description")

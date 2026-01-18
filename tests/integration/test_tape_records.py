@@ -5,6 +5,7 @@ import pytest
 from plait.execution.executor import run
 from plait.module import Module
 from plait.parameter import Parameter
+from plait.values import unwrap
 
 
 class Branch(Module):
@@ -48,7 +49,7 @@ async def test_per_record_tape_tracks_runtime_branch_parameters() -> None:
     left_output, left_record = await run(module, "hello", record=True)
     left_params = [p for params in left_record.node_parameters.values() for p in params]
 
-    assert "left_prompt" in left_output
+    assert "left_prompt" in unwrap(left_output)
     assert any(p is module.left.prompt for p in left_params)
     assert not any(p is module.right.prompt for p in left_params)
 
@@ -59,6 +60,6 @@ async def test_per_record_tape_tracks_runtime_branch_parameters() -> None:
         p for params in right_record.node_parameters.values() for p in params
     ]
 
-    assert "right_prompt" in right_output
+    assert "right_prompt" in unwrap(right_output)
     assert any(p is module.right.prompt for p in right_params)
     assert not any(p is module.left.prompt for p in right_params)

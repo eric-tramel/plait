@@ -65,12 +65,12 @@ from plait.optimization import (
     VerifierLoss,
 )
 from plait.optimization.backward import BackwardResult
-from plait.optimization.feedback import Feedback
 from plait.parameter import Parameter
 from plait.resources.config import (
     OpenAIEndpointConfig,
     ResourceConfig,
 )
+from plait.values import normalize_feedback_value
 
 # Initialize rich console
 console = Console()
@@ -172,21 +172,18 @@ class TemplateFormatter(Module):
         """Generate feedback for the template parameter.
 
         Args:
-            feedback: Feedback from downstream nodes.
+            feedback: Value feedback from downstream nodes.
             ctx: BackwardContext with inputs and output.
 
         Returns:
             BackwardResult with parameter feedback for the template.
         """
         result = BackwardResult()
+        normalized = normalize_feedback_value(feedback)
 
         # Pass feedback through to inputs (the template variables)
         for input_name in ctx.inputs:
-            result.input_feedback[input_name] = Feedback(
-                content=f"Template formatting received feedback: {feedback.content}",
-                score=feedback.score,
-                feedback_type=feedback.feedback_type,
-            )
+            result.input_feedback[input_name] = normalized
 
         # Generate feedback for the template parameter if learnable
         if self.template.requires_grad:
@@ -196,9 +193,9 @@ class TemplateFormatter(Module):
             )
             output_text = str(ctx.output)[:500]
 
-            score_info = (
-                f"Score: {feedback.score}" if feedback.score is not None else ""
-            )
+            score = normalized.meta.get("score")
+            score_info = f"Score: {score}" if score is not None else ""
+            feedback_text = str(normalized.payload)
 
             result.parameter_feedback["template"] = f"""
 The template parameter:
@@ -211,7 +208,7 @@ Was formatted with inputs: {input_summary}
 
 Produced output: {output_text}{"..." if len(str(ctx.output)) > 500 else ""}
 
-Received this feedback: {feedback.content}
+Received this feedback: {feedback_text}
 {score_info}
 
 Suggest specific improvements to the template that would address this feedback.
@@ -286,29 +283,26 @@ class RegexExtractor(Module):
         """Generate feedback for the regex pattern parameter.
 
         Args:
-            feedback: Feedback from downstream nodes.
+            feedback: Value feedback from downstream nodes.
             ctx: BackwardContext with inputs and output.
 
         Returns:
             BackwardResult with parameter feedback for the pattern.
         """
         result = BackwardResult()
+        normalized = normalize_feedback_value(feedback)
 
         # Pass feedback through to the input (the LLM response)
-        result.input_feedback["response"] = Feedback(
-            content=f"Regex extraction received feedback: {feedback.content}",
-            score=feedback.score,
-            feedback_type=feedback.feedback_type,
-        )
+        result.input_feedback["response"] = normalized
 
         # Generate feedback for the pattern parameter if learnable
         if self.pattern.requires_grad:
             input_text = str(ctx.inputs.get("response", ""))[:500]
             output_text = str(ctx.output)
 
-            score_info = (
-                f"Score: {feedback.score}" if feedback.score is not None else ""
-            )
+            score = normalized.meta.get("score")
+            score_info = f"Score: {score}" if score is not None else ""
+            feedback_text = str(normalized.payload)
 
             result.parameter_feedback["pattern"] = f"""
 The regex pattern:
@@ -320,7 +314,7 @@ Was applied to input: {input_text}{"..." if len(str(ctx.inputs.get("response", "
 
 Extracted output: {output_text}
 
-Received this feedback: {feedback.content}
+Received this feedback: {feedback_text}
 {score_info}
 
 Suggest specific improvements to the regex pattern that would address this feedback.

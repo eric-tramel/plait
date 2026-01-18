@@ -465,9 +465,8 @@ class Module:
     def training(self) -> bool:
         """Whether the module is in training mode.
 
-        In training mode, forward passes return TracedOutput objects
-        that carry the ForwardRecord implicitly, enabling automatic
-        record flow through the training pipeline.
+        In training mode, forward passes return Value objects with tape ids
+        attached, enabling automatic backward propagation.
 
         Returns:
             True if the module is in training mode, False otherwise.
@@ -485,10 +484,9 @@ class Module:
     def train(self, mode: bool = True) -> Self:
         """Set the module to training mode.
 
-        In training mode, forward passes return TracedOutput objects
-        that wrap the actual output with the ForwardRecord, enabling
-        implicit record flow through the training pipeline. This
-        eliminates manual record management.
+        In training mode, forward passes return Value objects with tape ids
+        attached, enabling implicit record flow through the training pipeline.
+        This eliminates manual record management.
 
         This method recursively sets all child modules to the same mode.
 
@@ -503,10 +501,8 @@ class Module:
             >>> module = MyModule().bind(resources)
             >>> module.train()  # Enable training mode
             >>> output = await module("Hello")
-            >>> isinstance(output, TracedOutput)
+            >>> hasattr(output, "meta") and "_tape_ids" in output.meta
             True
-            >>> output.value  # Access the actual value
-            'Response...'
 
         Example with chaining:
             >>> module.train().bind(resources)
@@ -514,7 +510,7 @@ class Module:
 
         Note:
             Use `.eval()` to switch back to evaluation mode where
-            raw values are returned without TracedOutput wrapping.
+            raw values are returned without tape wrapping.
         """
         object.__setattr__(self, "_training", mode)
         for child in self.children():
@@ -525,7 +521,7 @@ class Module:
         """Set the module to evaluation mode.
 
         In evaluation mode, forward passes return raw values without
-        TracedOutput wrapping. This is the default mode and is used
+        tape wrapping. This is the default mode and is used
         during inference when backward passes are not needed.
 
         This method recursively sets all child modules to evaluation mode.
@@ -537,7 +533,7 @@ class Module:
             >>> module.train()  # Enable training mode
             >>> module.eval()   # Disable training mode
             >>> output = await module("Hello")
-            >>> isinstance(output, str)  # Raw value, not TracedOutput
+            >>> isinstance(output, str)  # Raw value, not Value
             True
 
         Note:
@@ -704,13 +700,12 @@ class Module:
         feedback for specific inputs or parameters.
 
         This method is called during the backward pass initiated by
-        `feedback.backward()`. The ctx parameter provides access to
-        the forward pass context including inputs, outputs, and the
+        `Value.backward()`. The ctx parameter provides access to the
+        forward pass context including inputs, outputs, and the
         computation graph.
 
         Args:
-            feedback: Combined feedback from downstream nodes. This is
-                a Feedback object containing content, score, and metadata.
+            feedback: Combined feedback from downstream nodes as a Value.
             ctx: BackwardContext with inputs, output, graph structure,
                 and optional reasoning LLM for generating feedback.
 
@@ -738,12 +733,14 @@ class Module:
             - Using ctx.reason() for LLM-powered feedback generation
         """
         from plait.optimization.backward import BackwardResult
+        from plait.values import normalize_feedback_value
 
         result = BackwardResult()
+        normalized = normalize_feedback_value(feedback)
 
         # Pass feedback to all inputs unchanged
         for input_name in ctx.inputs:
-            result.input_feedback[input_name] = feedback
+            result.input_feedback[input_name] = normalized
 
         return result
 
@@ -867,8 +864,6 @@ class Module:
             try:
                 # In training mode, record the forward pass
                 if self._training:
-                    from plait.optimization.record import TracedOutput
-
                     output, record = await run(
                         self,
                         inp,
@@ -878,7 +873,8 @@ class Module:
                         **forward_kwargs,
                         **effective_config,
                     )
-                    result = TracedOutput(value=output, _record=record)
+                    _ = record
+                    result = output
                 else:
                     result = await run(
                         self,
@@ -1047,8 +1043,6 @@ class Module:
                 nonlocal completed
                 # In training mode, record the forward pass
                 if self._training:
-                    from plait.optimization.record import TracedOutput
-
                     output, record = await run(
                         self,
                         inp,
@@ -1058,7 +1052,8 @@ class Module:
                         **forward_kwargs,
                         **effective_config,
                     )
-                    result = TracedOutput(value=output, _record=record)
+                    _ = record
+                    result = output
                 else:
                     result = await run(
                         self,
@@ -1079,8 +1074,6 @@ class Module:
 
         # Single input execution
         if self._training:
-            from plait.optimization.record import TracedOutput
-
             output, record = await run(
                 self,
                 *args,
@@ -1089,7 +1082,8 @@ class Module:
                 **forward_kwargs,
                 **effective_config,
             )
-            return TracedOutput(value=output, _record=record)
+            _ = record
+            return output
 
         return await run(
             self,
@@ -1241,16 +1235,16 @@ class LLMInference(Module):
 
         Returns:
             BackwardResult with:
-            - input_feedback["prompt"]: Feedback for the input prompt
+            - input_feedback["prompt"]: Value feedback for the input prompt
             - parameter_feedback["system_prompt"]: Feedback for the system
               prompt if it's a learnable Parameter
 
         Example:
             >>> # LLMInference backward is called automatically during
-            >>> # feedback.backward() when the module is in the graph
+            >>> # Value.backward() when the module is in the graph
             >>> output, record = await run(llm_module, "Hello", record=True)
-            >>> feedback = await loss_fn(output, target, record=record)
-            >>> await feedback.backward()  # Calls llm_module.backward()
+            >>> loss_val = await loss_fn(output, target)
+            >>> await loss_val.backward()  # Calls llm_module.backward()
 
         Note:
             The parameter feedback includes:
@@ -1261,17 +1255,14 @@ class LLMInference(Module):
             This context helps the optimizer generate targeted improvements.
         """
         from plait.optimization.backward import BackwardResult
-        from plait.optimization.feedback import Feedback
-        from plait.parameter import Parameter
+        from plait.parameter import Parameter, extract_actions
+        from plait.values import normalize_feedback_value
 
         result = BackwardResult()
 
         # Feedback for the input prompt
-        result.input_feedback["prompt"] = Feedback(
-            content=f"The LLM output received this feedback: {feedback.content}",
-            score=feedback.score,
-            feedback_type=feedback.feedback_type,
-        )
+        normalized = normalize_feedback_value(feedback)
+        result.input_feedback["prompt"] = normalized
 
         # Feedback for learnable parameters
         if (
@@ -1283,9 +1274,11 @@ class LLMInference(Module):
             output_text = str(ctx.output)[:500]
 
             # Build detailed feedback for the system prompt parameter
-            score_info = (
-                f"Score: {feedback.score}" if feedback.score is not None else ""
-            )
+            actions = extract_actions(normalized)
+            feedback_text = "\n".join(actions) if actions else str(normalized.payload)
+            score_info = ""
+            if "score" in normalized.meta:
+                score_info = f"Score: {normalized.meta.get('score')}"
 
             result.parameter_feedback["system_prompt"] = f"""
 The LLM module with system prompt:
@@ -1297,7 +1290,7 @@ Received input: {input_text}{"..." if len(str(ctx.inputs.get("prompt", ""))) > 5
 
 Produced output: {output_text}{"..." if len(str(ctx.output)) > 500 else ""}
 
-Received this feedback: {feedback.content}
+Received this feedback: {feedback_text}
 {score_info}
 
 Suggest specific improvements to the system prompt that would address this feedback.
