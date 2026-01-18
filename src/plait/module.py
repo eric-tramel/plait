@@ -224,12 +224,18 @@ class Module:
             child_prefix = f"{prefix}.{name}" if prefix else name
             yield from child.named_modules(child_prefix)
 
-    def parameters(self) -> Iterator[Parameter]:
+    def parameters(self, remove_duplicate: bool = True) -> Iterator[Parameter]:
         """Iterate over all parameters in the module tree.
 
         Recursively yields parameters from this module and all
         descendant modules in depth-first order. Also yields parameters
         from ParameterList and ParameterDict containers.
+
+        Shared Parameter instances are de-duplicated by default, matching
+        PyTorch's behavior for shared parameters.
+
+        Args:
+            remove_duplicate: If True, yield each Parameter instance only once.
 
         Yields:
             All Parameter objects in the subtree.
@@ -245,12 +251,31 @@ class Module:
             >>> list(module.parameters())  # doctest: +ELLIPSIS
             [Parameter(value='test', ...)]
         """
-        yield from self._parameters.values()
+        seen: set[int] | None = set() if remove_duplicate else None
+        yield from self._iter_parameters(seen)
+
+    def _iter_parameters(self, seen: set[int] | None) -> Iterator[Parameter]:
+        """Internal parameter iteration with optional de-duplication."""
+        for param in self._parameters.values():
+            if seen is not None:
+                param_id = id(param)
+                if param_id in seen:
+                    continue
+                seen.add(param_id)
+            yield param
+
         # Yield parameters from ParameterList and ParameterDict containers
         for container in self._parameter_containers.values():
-            yield from container.parameters()
+            for param in container.parameters():
+                if seen is not None:
+                    param_id = id(param)
+                    if param_id in seen:
+                        continue
+                    seen.add(param_id)
+                yield param
+
         for child in self.children():
-            yield from child.parameters()
+            yield from child._iter_parameters(seen)
 
     def direct_parameters(self) -> Iterator[Parameter]:
         """Iterate over parameters directly owned by this module.
@@ -266,7 +291,11 @@ class Module:
         for container in self._parameter_containers.values():
             yield from container.parameters()
 
-    def named_parameters(self, prefix: str = "") -> Iterator[tuple[str, Parameter]]:
+    def named_parameters(
+        self,
+        prefix: str = "",
+        remove_duplicate: bool = True,
+    ) -> Iterator[tuple[str, Parameter]]:
         """Iterate over all parameters with hierarchical dot-separated names.
 
         Recursively yields (name, parameter) pairs from this module
@@ -276,6 +305,7 @@ class Module:
         Args:
             prefix: Prefix to prepend to parameter names. Used internally
                 for recursive calls to build hierarchical names.
+            remove_duplicate: If True, yield each Parameter instance only once.
 
         Yields:
             Tuples of (hierarchical_name, parameter).
@@ -297,16 +327,38 @@ class Module:
             >>> [(name, p.value) for name, p in outer.named_parameters()]
             [('bias', 'b'), ('inner.weight', 'w')]
         """
+        seen: set[int] | None = set() if remove_duplicate else None
+        yield from self._iter_named_parameters(prefix, seen)
+
+    def _iter_named_parameters(
+        self,
+        prefix: str,
+        seen: set[int] | None,
+    ) -> Iterator[tuple[str, Parameter]]:
+        """Internal named parameter iteration with optional de-duplication."""
         for name, param in self._parameters.items():
+            if seen is not None:
+                param_id = id(param)
+                if param_id in seen:
+                    continue
+                seen.add(param_id)
             param_name = f"{prefix}.{name}" if prefix else name
             yield param_name, param
+
         # Yield parameters from ParameterList and ParameterDict containers
         for name, container in self._parameter_containers.items():
             container_prefix = f"{prefix}.{name}" if prefix else name
-            yield from container.named_parameters(container_prefix)
+            for param_name, param in container.named_parameters(container_prefix):
+                if seen is not None:
+                    param_id = id(param)
+                    if param_id in seen:
+                        continue
+                    seen.add(param_id)
+                yield param_name, param
+
         for name, child in self.named_children():
             child_prefix = f"{prefix}.{name}" if prefix else name
-            yield from child.named_parameters(child_prefix)
+            yield from child._iter_named_parameters(child_prefix, seen)
 
     def _increment_state_version(self) -> None:
         """Increment the module state version.

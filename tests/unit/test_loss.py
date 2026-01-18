@@ -858,12 +858,12 @@ class TestStructuredOutputSchemas:
         response = RubricResponse(
             score=4,
             justification="The output was clear",
-            feedback="Consider adding more examples",
+            actionable_improvements=["Consider adding more examples"],
         )
 
         assert response.score == 4
         assert response.justification == "The output was clear"
-        assert response.feedback == "Consider adding more examples"
+        assert response.actionable_improvements == ["Consider adding more examples"]
 
     def test_preference_response_creation(self) -> None:
         """PreferenceResponse can be created with all fields."""
@@ -952,7 +952,7 @@ class TestHumanFeedbackLoss:
             with patch("builtins.print"):
                 feedback = await loss("test output")
 
-        assert feedback.content == "No feedback provided."
+        assert feedback.content == ""
 
     @pytest.mark.asyncio
     async def test_human_feedback_loss_with_traced_output(self) -> None:
@@ -1052,7 +1052,7 @@ class TestLLMRubricLoss:
             return_value={
                 "score": 4,
                 "justification": "Well done",
-                "feedback": "Add more examples",
+                "actionable_improvements": ["Add more examples"],
             }
         )
 
@@ -1075,7 +1075,7 @@ class TestLLMRubricLoss:
             return_value=RubricResponse(
                 score=5,
                 justification="Perfect",
-                feedback="No improvements needed",
+                actionable_improvements=[],
             )
         )
 
@@ -1091,7 +1091,11 @@ class TestLLMRubricLoss:
 
         loss = LLMRubricLoss(criteria="test", rubric=self._create_rubric())
         loss.judge = AsyncMock(
-            return_value={"score": 3, "justification": "OK", "feedback": "OK"}
+            return_value={
+                "score": 3,
+                "justification": "OK",
+                "actionable_improvements": ["Tighten the phrasing"],
+            }
         )
         record = ForwardRecord(
             graph=InferenceGraph(nodes={}, input_ids=[], output_ids=[]),

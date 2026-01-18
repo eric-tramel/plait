@@ -3,20 +3,20 @@
 ci: lint types test
 
 test:
-	uv run pytest
+	uv run --group dev -m pytest
 
 test-unit:
-	uv run pytest tests/unit
+	uv run --group dev -m pytest tests/unit
 
 test-integration:
-	uv run pytest tests/integration
+	uv run --group dev -m pytest tests/integration
 
 lint:
-	uv run ruff format .
-	uv run ruff check --fix .
+	uv run --group dev ruff format .
+	uv run --group dev ruff check --fix .
 
 types:
-	uv run ty check
+	uv run --group dev ty check
 
 example:
 	@for f in examples/[0-9]*.py; do \
@@ -25,11 +25,11 @@ example:
 	done
 
 docs:
-	uv run mkdocs build
+	uv run --group dev mkdocs build
 	cp index.html styles.css public/
 
 docs-serve:
-	uv run mkdocs serve
+	uv run --group dev mkdocs serve
 
 doctest:
 	@echo "=== Running plait vs Pydantic AI comparison ==="
