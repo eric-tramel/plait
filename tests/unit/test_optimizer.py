@@ -6,7 +6,7 @@ import pytest
 
 from plait.graph import GraphNode, InferenceGraph
 from plait.module import LLMInference, Module
-from plait.optimization.optimizer import Optimizer, SFAOptimizer
+from plait.optimization.optimizer import Optimizer, SFAOptimizer, _OptimizerLLMWrapper
 from plait.optimization.record import ForwardRecord
 from plait.parameter import Parameter
 
@@ -1446,3 +1446,9 @@ class TestOptimizationErrorExport:
 
         error = OptimizationError("test")
         assert isinstance(error, InfEngineError)
+
+
+def test_optimizer_llm_wrapper_forward() -> None:
+    wrapper = _OptimizerLLMWrapper(alias="optimizer/aggregator", system_prompt="test")
+    wrapper._module.llm = lambda prompt: f"echo:{prompt}"
+    assert wrapper._module.forward("hi") == "echo:hi"
