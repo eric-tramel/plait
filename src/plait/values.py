@@ -15,10 +15,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from importlib import import_module
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from plait.optimization.optimizer import Optimizer
+from typing import Any
 
 
 class ValueKind(str, Enum):
@@ -92,7 +89,6 @@ class Value:
 
     async def backward(
         self: Any,
-        optimizer: Optimizer | None = None,
         grad: Value | None = None,
         retain_graph: bool = False,
     ) -> None:
@@ -100,7 +96,8 @@ class Value:
 
         This is the primary entrypoint for backward passes. It collects tape
         ids from this Value (or structured containers) and propagates
-        feedback through each recorded forward pass.
+        feedback through each recorded forward pass. The active optimizer
+        (if any) is discovered automatically.
         """
         value = self
         tape_ids = collect_tape_ids(value)
@@ -117,9 +114,11 @@ class Value:
             grad_value = None
 
         from plait.optimization.backward import _propagate_backward_value
+        from plait.optimization.optimizer import get_active_optimizer
         from plait.optimization.record import get_records, release_record
 
         records = get_records(tape_ids)
+        optimizer = get_active_optimizer()
 
         import asyncio
 

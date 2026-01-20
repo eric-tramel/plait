@@ -1156,7 +1156,7 @@ async with ExecutionSettings(resources=config):
     feedbacks = await loss_fn.batch(outputs, targets=targets)
 
     # Batch backward (concurrent)
-    await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
+    await Value.backward(outputs, grad=loss_value)
 
     # Optimizer step
     await optimizer.step()

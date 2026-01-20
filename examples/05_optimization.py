@@ -282,7 +282,7 @@ async def train() -> None:
             await _debug_backward_trace()
 
             # Backward pass (propagates to all parameters)
-            await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
+            await Value.backward(outputs, grad=loss_value)
 
             print("\nParameter feedback buffers:")
             for param in pipeline.parameters():

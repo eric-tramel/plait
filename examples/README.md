@@ -93,7 +93,7 @@ loss_fn = LLMRubricLoss(criteria="...", rubric=[...], alias="judge")
 pipeline.train()  # Enable training mode
 output = await pipeline(query)  # Returns Value with tape ids
 loss_val = await loss_fn(output)
-await output.backward(grad=loss_val, optimizer=optimizer)
+await output.backward(grad=loss_val)
 await optimizer.step()
 pipeline.eval()  # Back to inference mode
 ```

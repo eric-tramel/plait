@@ -787,7 +787,7 @@ outputs = await pipeline(batch_inputs)  # list[Value]
 
 # Use in training loop (loss extracts records automatically)
 feedbacks = await loss_fn.batch(outputs, targets=targets)
-await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
+await Value.backward(outputs, grad=loss_value)
 await optimizer.step()
 
 # Disable training mode for inference

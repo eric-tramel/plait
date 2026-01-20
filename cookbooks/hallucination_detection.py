@@ -822,7 +822,7 @@ async def train_hallucination_detector() -> None:
                         all_feedback.append(feedback)
 
                         # Track accuracy
-                        if feedback.score == 1.0:
+                        if feedback.meta["score"] == 1.0:
                             batch_correct += 1
 
                     epoch_correct += batch_correct
@@ -844,13 +844,13 @@ async def train_hallucination_detector() -> None:
                     )
 
                     # ---------------------------------------------------------
-                    # Backward pass for each feedback
+                    # Backward pass for each sample using output tape ids
                     # ---------------------------------------------------------
                     progress.update(
                         batch_task, description=f"Epoch {epoch + 1} - Backward pass"
                     )
-                    for feedback in all_feedback:
-                        await feedback.backward(optimizer=optimizer)
+                    for output, feedback in zip(outputs, all_feedback, strict=True):
+                        await output.backward(grad=feedback)
 
                     # ---------------------------------------------------------
                     # Update parameters after each batch

@@ -116,71 +116,33 @@ class CustomerSupport(Module):
 
 ### Value
 
-Value represents evaluation of an output, analogous to a loss tensor in PyTorch:
+`plait.values.Value` is the single canonical container for both forward
+outputs and backward feedback. There is no optimizer-specific Value type.
+
+Key points:
+- `kind`: `ValueKind` discriminator (TEXT, STRUCTURED, etc.)
+- `payload`: underlying data
+- `ref`: optional graph node id
+- `meta`: metadata; tape ids live in `meta["_tape_ids"]`
+
+Feedback/loss Values use `ValueKind.STRUCTURED` with canonical payload
+shape `list[list[str]]`. Optional numeric scores live in `meta["score"]`.
 
 ```python
-class ValueKind(Enum):
-    HUMAN = "human"           # Human-provided feedback
-    LLM_JUDGE = "llm_judge"   # LLM-as-a-judge evaluation
-    VERIFIER = "verifier"     # Programmatic verification
-    COMPOSITE = "composite"   # Aggregated from multiple sources
+from plait.values import Value, ValueKind
 
-
-@dataclass
-class Value:
-    """
-    Value on a module output.
-
-    Analogous to the loss tensor in PyTorch. Holds the evaluation result
-    and (optionally) a reference to the forward pass record for backward().
-    """
-
-    content: str                              # The feedback text
-    score: float | None = None                # Optional numeric score (0-1)
-    feedback_type: ValueKind = ValueKind.STRUCTURED
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    # Internal: reference to forward pass for backward()
-    _record: ForwardRecord | None = field(default=None, repr=False)
-    _optimizer: Optimizer | None = field(default=None, repr=False)
-
-    async def backward(self, optimizer: Optimizer | None = None) -> None:
-        """
-        Propagate feedback backward through the computation graph.
-
-        This is the primary API for backward passes, mirroring loss.backward()
-        in PyTorch. Value accumulates into Parameter._feedback_buffer.
-
-        Args:
-            optimizer: Optional optimizer providing reasoning LLM for
-                       custom backward implementations. If not provided,
-                       uses self._optimizer if set.
-
-        Raises:
-            RuntimeError: If no ForwardRecord is attached. This happens when
-                         the loss was computed on a raw value instead of a
-                         Value. Ensure module.train() is called before
-                         the forward pass.
-        """
-        if self._record is None:
-            raise RuntimeError(
-                "Cannot call backward() without a ForwardRecord. "
-                "Ensure module.train() is called before forward pass, "
-                "or pass a Value to the loss function."
-            )
-
-        opt = optimizer or self._optimizer
-        await _propagate_backward_value(
-            feedback=self,
-            record=self._record,
-            reasoning_llm=opt.reasoning_llm if opt else None,
-        )
-
-    def __str__(self) -> str:
-        if self.score is not None:
-            return f"[{self.score:.2f}] {self.content}"
-        return self.content
+loss = Value(ValueKind.STRUCTURED, [["Too verbose"]], meta={"score": 0.2})
+await loss.backward()
 ```
+
+Note: Some legacy snippets below may use the shorthand
+`Value(content=..., score=..., feedback_type=...)`. That is equivalent to
+`Value(kind=ValueKind.STRUCTURED, payload=normalize_feedback_payload(content), meta={"score": score})`
+and still refers to the single `plait.values.Value` implementation.
+
+Backward discovers the active optimizer automatically (set when an optimizer
+is instantiated or bound). If multiple optimizers exist, use
+`with optimizer.activate():` to select one for a backward pass.
 
 ### ForwardRecord
 
@@ -208,66 +170,34 @@ class ForwardRecord:
     timing: dict[str, float] = field(default_factory=dict)
 ```
 
-### Value
+### Value (Training Mode)
 
-When a module is in training mode, forward passes return `Value` instead of raw values. This carries the `ForwardRecord` implicitly, eliminating manual record management:
-
-```python
-@dataclass
-class Value(Generic[T]):
-    """
-    Output from a forward pass in training mode.
-
-    Wraps the actual output value and carries the ForwardRecord needed
-    for backward passes. This enables implicit record flow - users don't
-    need to manage records manually.
-
-    In most contexts, Value behaves like the underlying value:
-    - str(traced_output) returns str(value)
-    - Loss functions auto-extract the value and record
-    - Can access .value explicitly when needed
-    """
-
-    value: T
-    _record: ForwardRecord
-
-    def __str__(self) -> str:
-        return str(self.value)
-
-    def __repr__(self) -> str:
-        return f"Value({self.value!r})"
-```
-
-**Training mode controls recording:**
+When a module is in training mode, forward passes return `Value` containers
+that carry tape ids in `meta["_tape_ids"]`. This eliminates manual record
+management while keeping the output shape intact (including nested
+structures).
 
 ```python
-# Training mode: returns Value with record attached
+# Training mode: returns Value with tape ids attached
 module.train()
-output = await module(input)  # Value[str]
-output.value                   # The actual string output
-output._record                 # ForwardRecord for backward()
+output = await module(input)
+output.payload
+output.meta["_tape_ids"]
 
 # Eval mode: returns raw value, no recording overhead
 module.eval()
-output = await module(input)  # str (raw value)
+output = await module(input)
 ```
 
-**Loss functions auto-extract records:**
+Loss functions consume outputs directly and return `Value` feedback:
 
 ```python
-# Loss detects Value and extracts record automatically
 feedback = await loss_fn(output)  # Works with Value or raw value
-
-# Internally:
-if isinstance(output, Value):
-    actual_value = output.value
-    record = output._record
-else:
-    actual_value = output
-    record = None
+await feedback.backward()
 ```
 
-This design mirrors PyTorch where tensors with `requires_grad=True` automatically participate in autograd, without explicit flags on each operation.
+This design mirrors PyTorch where tensors with `requires_grad=True` automatically
+participate in autograd, without explicit flags on each operation.
 
 ### BackwardContext
 
@@ -2016,21 +1946,19 @@ async def _propagate_backward_value(
 def _combine_feedback(feedbacks: list[Value]) -> Value:
     """Combine multiple feedback items into one."""
     if len(feedbacks) == 1:
-        return feedbacks[0]
+        return normalize_feedback_value(feedbacks[0])
 
-    # Simple concatenation with score averaging
-    combined_content = "\n\n".join(
-        f"[Downstream {i+1}] {fb.content}"
-        for i, fb in enumerate(feedbacks)
-    )
-    scores = [fb.score for fb in feedbacks if fb.score is not None]
-    avg_score = sum(scores) / len(scores) if scores else None
+    normalized = [normalize_feedback_value(fb) for fb in feedbacks]
+    combined_payload: list[list[str]] = []
+    for fb in normalized:
+        combined_payload.extend(fb.payload)
 
-    return Value(
-        content=combined_content,
-        score=avg_score,
-        feedback_type=ValueKind.STRUCTURED,
-    )
+    meta: dict[str, Any] = {}
+    scores = [fb.meta.get("score") for fb in normalized if "score" in fb.meta]
+    if scores:
+        meta["scores"] = scores
+
+    return Value(kind=ValueKind.STRUCTURED, payload=combined_payload, meta=meta)
 ```
 
 ## Batch Training API
@@ -2039,143 +1967,52 @@ Training requires three batch-native operations: forward passes, loss computatio
 
 ### Batch Forward (Training Mode)
 
-In training mode, forward passes return `Value` which carries the `ForwardRecord` implicitly:
+In training mode, forward passes return `Value` containers with tape ids
+attached in `meta["_tape_ids"]`:
 
 ```python
-# Enable training mode (records captured automatically)
 module.train()
 
 # Single input - returns Value
-output = await module(input)  # Value[str]
-output.value                   # The actual string
-output._record                 # ForwardRecord (for debugging)
+output = await module(input)
+output.payload
+output.meta["_tape_ids"]
 
 # Batch inputs - returns list[Value]
-outputs = await module(batch_inputs)  # list[Value[str]]
+outputs = await module(batch_inputs)
 ```
 
 For inference (no recording overhead):
 
 ```python
 module.eval()
-output = await module(input)  # str (raw value)
+output = await module(input)  # raw value
 ```
 
-### Batch Loss Computation (Aggregated)
+### Batch Loss Computation
 
-Loss functions follow PyTorch semantics: when given a batch of outputs, they return a **single aggregated Value** with a reduced score (like `reduction='mean'` in PyTorch). This Value holds references to all sample records, so `backward()` propagates through all samples:
-
-```python
-class Value:
-    content: str
-    score: float | None = None  # Aggregated score (mean of batch)
-
-    # Can hold multiple records for batch backward propagation
-    _records: list[ForwardRecord] = field(default_factory=list)
-
-    async def backward(self, optimizer=None):
-        """Propagate feedback through ALL attached records."""
-        for record in self._records:
-            await _propagate_backward_value(self, record, optimizer)
-```
-
-Loss functions auto-detect batch input:
-
-```python
-class Loss(ABC):
-    async def __call__(
-        self,
-        output: Any | list[Any],  # Single or batch
-        target: Any | None = None,
-        *,
-        context: dict[str, Any] | None = None,
-    ) -> Value:
-        """
-        Evaluate output(s) and return aggregated Value.
-
-        Args:
-            output: Single output or list of outputs (Value or raw).
-            target: Optional target (or list for batch).
-            context: Optional context (or list for batch).
-
-        Returns:
-            Single Value with aggregated score. For batches, holds all
-            records so backward() propagates through all samples.
-        """
-        # Auto-detect batch input
-        if isinstance(output, list):
-            return await self._evaluate_batch(output, target, context)
-
-        # Single sample
-        value, record = self._extract_value_and_record(output)
-        feedback = await self._evaluate_single(value, target, context)
-        if record:
-            feedback._records = [record]
-        return feedback
-
-    async def _evaluate_batch(
-        self,
-        outputs: list[Any],
-        targets: Any | list[Any] | None,
-        contexts: Any | list[dict] | None,
-    ) -> Value:
-        """Evaluate batch concurrently and aggregate into single Value."""
-        # Normalize targets/contexts to lists
-        n = len(outputs)
-        targets_list = targets if isinstance(targets, list) else [targets] * n
-        contexts_list = contexts if isinstance(contexts, list) else [contexts] * n
-
-        # Evaluate each sample concurrently
-        tasks = [
-            self._evaluate_single(
-                self._extract_value_and_record(out)[0],
-                targets_list[i],
-                contexts_list[i],
-            )
-            for i, out in enumerate(outputs)
-        ]
-        individual = await asyncio.gather(*tasks)
-
-        # Aggregate scores (mean reduction, like PyTorch)
-        scores = [f.score for f in individual if f.score is not None]
-        avg_score = sum(scores) / len(scores) if scores else None
-
-        # Aggregate content
-        combined_content = self._aggregate_content(individual)
-
-        # Collect ALL records for batch backward
-        all_records = []
-        for out in outputs:
-            _, record = self._extract_value_and_record(out)
-            if record:
-                all_records.append(record)
-
-        return Value(
-            content=combined_content,
-            score=avg_score,
-            _records=all_records,  # backward() iterates through all
-        )
-```
-
-Usage (PyTorch-like):
+Losses are async callables that return `Value` (typically
+`ValueKind.STRUCTURED` with `list[list[str]]` payloads). For batches, you can
+compute per-sample losses and call backward on each sample, or aggregate and
+propagate once using the outputs' tape ids.
 
 ```python
 module.train()
-outputs = await module(batch_inputs)   # list[Value]
-feedback = await loss_fn(outputs)      # Single Value (aggregated)
-await output.backward(grad=feedback)              # Propagates to ALL samples
+outputs = await module(batch_inputs)
+losses = [await loss_fn(out) for out in outputs]
+
+# Option 1: backward per sample
+for loss in losses:
+    await loss.backward()
+
+# Option 2: aggregate and propagate once using outputs' tapes
+combined_payload = [item for loss in losses for item in loss.payload]
+grad = Value(ValueKind.STRUCTURED, combined_payload)
+await Value.backward(outputs, grad=grad)
 ```
 
-This matches PyTorch semantics exactly:
-```python
-# PyTorch
-loss = criterion(model(batch_x), batch_y)  # Single scalar (reduced)
-loss.backward()                             # Gradients flow to all samples
-
-# plait
-feedback = await loss_fn(outputs)          # Single Value (reduced)
-await output.backward(grad=feedback)                   # Value flows to all samples
-```
+This keeps the API PyTorch-like while relying on a single canonical `Value`
+implementation.
 
 ---
 
@@ -2248,7 +2085,7 @@ async def train(
             # ─────────────────────────────────────────────────────────
             # Single backward call → propagates through ALL samples
             # ─────────────────────────────────────────────────────────
-            await output.backward(grad=feedback, optimizer=optimizer)
+            await output.backward(grad=feedback)
 
             # Single optimizer step per batch
             updates = await optimizer.step()
@@ -2280,7 +2117,7 @@ module.train()
 for example in batch:
     output = await module(example["input"])  # Value
     feedback = await loss_fn(output, context=example)  # Single sample
-    await output.backward(grad=feedback, optimizer=optimizer)
+    await output.backward(grad=feedback)
 ```
 
 ## Value Accumulation
@@ -2493,7 +2330,7 @@ for epoch in range(3):
         )
 
         # Batch backward
-        await Value.backward(outputs, grad=loss_value, optimizer=optimizer)
+        await Value.backward(outputs, grad=loss_value)
 
         # Step - like optimizer.step() in PyTorch
         await optimizer.step()

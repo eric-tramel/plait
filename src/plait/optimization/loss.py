@@ -22,14 +22,9 @@ if False:  # pragma: no cover - type checking imports only
 
 
 def _normalize_actions(actions: Any) -> list[str]:
-    if actions is None:
-        return []
-    if isinstance(actions, str):
-        stripped = actions.strip()
-        return [stripped] if stripped else []
-    if isinstance(actions, (list, tuple)):
-        return [str(item).strip() for item in actions if str(item).strip()]
-    return [str(actions).strip()] if str(actions).strip() else []
+    normalized = normalize_feedback_payload(actions)
+    flattened = [item.strip() for inner in normalized for item in inner]
+    return [item for item in flattened if item]
 
 
 def _flatten_payload(payload: Any) -> list[str]:

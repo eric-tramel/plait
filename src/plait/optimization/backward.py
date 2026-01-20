@@ -108,8 +108,8 @@ class BackwardContext:
 
         Raises:
             RuntimeError: If no reasoning LLM is available. This happens
-                when backward() is called without an optimizer, or when
-                the optimizer doesn't have a reasoning_llm configured.
+                when no active optimizer is configured, or when the
+                optimizer doesn't have a reasoning_llm configured.
 
         Example:
             >>> async def backward(self, feedback, ctx):
