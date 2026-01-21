@@ -89,7 +89,7 @@ class Value:
 
     async def backward(
         self: Any,
-        grad: Value | None = None,
+        grad: Value | list[Any] | tuple[Any, ...] | dict[str, Any] | None = None,
         retain_graph: bool = False,
     ) -> None:
         """Propagate feedback backward through recorded tapes.
@@ -98,11 +98,18 @@ class Value:
         ids from this Value (or structured containers) and propagates
         feedback through each recorded forward pass. The active optimizer
         (if any) is discovered automatically.
+
+        If calling backward() on a container of Values, you may pass a
+        list/tuple of grad Values (one per tape) or a dict keyed by tape id
+        to supply per-record feedback.
         """
         value = self
         tape_ids = collect_tape_ids(value)
         if not tape_ids:
             raise RuntimeError("Cannot backward() without tape")
+
+        per_record_grads: list[Value] | None = None
+        per_record_map: dict[str, Value] | None = None
 
         if isinstance(value, Value):
             root = value
@@ -110,8 +117,36 @@ class Value:
         else:
             if grad is None:
                 raise RuntimeError("Cannot backward() without Value loss")
-            root = normalize_feedback_value(grad)
-            grad_value = None
+            if isinstance(grad, dict):
+                if grad and set(grad.keys()).issubset(set(tape_ids)):
+                    if len(grad) != len(tape_ids):
+                        raise ValueError(
+                            "grad must include one entry per tape id when passing "
+                            "a dict to backward()"
+                        )
+                    per_record_map = {
+                        tape_id: normalize_feedback_value(grad[tape_id])
+                        for tape_id in tape_ids
+                    }
+                else:
+                    root = normalize_feedback_value(grad)
+                grad_value = None
+            elif isinstance(grad, (list, tuple)):
+                if len(grad) != len(tape_ids):
+                    raise ValueError(
+                        "grad length must match number of tapes when passing "
+                        "a list/tuple to backward()"
+                    )
+                per_record_grads = [normalize_feedback_value(item) for item in grad]
+                grad_value = None
+                root = (
+                    per_record_grads[0]
+                    if per_record_grads
+                    else normalize_feedback_value(grad)
+                )
+            else:
+                root = normalize_feedback_value(grad)
+                grad_value = None
 
         from plait.optimization.backward import _propagate_backward_value
         from plait.optimization.optimizer import get_active_optimizer
@@ -122,15 +157,34 @@ class Value:
 
         import asyncio
 
-        async def propagate_one(record: Any) -> None:
+        async def propagate_one(
+            record: Any, root_value: Value, grad_override: Value | None
+        ) -> None:
             await _propagate_backward_value(
-                root=root,
-                grad=grad_value,
+                root=root_value,
+                grad=grad_override,
                 record=record,
                 optimizer=optimizer,
             )
 
-        await asyncio.gather(*[propagate_one(record) for record in records])
+        if per_record_map is not None:
+            await asyncio.gather(
+                *[
+                    propagate_one(record, per_record_map[tape_id], None)
+                    for tape_id, record in zip(tape_ids, records, strict=True)
+                ]
+            )
+        elif per_record_grads is not None:
+            await asyncio.gather(
+                *[
+                    propagate_one(record, grad_item, None)
+                    for record, grad_item in zip(records, per_record_grads, strict=True)
+                ]
+            )
+        else:
+            await asyncio.gather(
+                *[propagate_one(record, root, grad_value) for record in records]
+            )
 
         if not retain_graph:
             for tape_id in tape_ids:

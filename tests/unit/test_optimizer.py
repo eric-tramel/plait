@@ -1471,3 +1471,18 @@ def test_optimizer_activate_sets_active() -> None:
         assert get_active_optimizer() is optimizer
 
     assert get_active_optimizer() is other
+
+
+def test_get_active_optimizer_falls_back_to_default() -> None:
+    from plait.optimization import optimizer as optimizer_module
+
+    param = Parameter("value", description="desc")
+    previous_default = optimizer_module._default_optimizer
+    token = optimizer_module._active_optimizer.set(None)
+    try:
+        optimizer = SFAOptimizer([param])
+        optimizer_module._active_optimizer.set(None)
+        assert get_active_optimizer() is optimizer
+    finally:
+        optimizer_module._default_optimizer = previous_default
+        optimizer_module._active_optimizer.reset(token)
