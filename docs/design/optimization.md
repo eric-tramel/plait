@@ -39,7 +39,9 @@ call `loss.backward()`.
 
 `Value.backward(grad=None, retain_graph=False)` collects tape ids from the
 Value (or nested structures) and propagates feedback through each recorded
-forward pass. It raises if no tape ids are attached.
+forward pass. It raises if no tape ids are attached. When calling backward()
+on a container of Values, you may pass per-record grads as a list/tuple
+matched to the collected tape ids, or as a dict keyed by tape id.
 
 ### ForwardRecord (Tape)
 
@@ -131,9 +133,11 @@ step.eval()
 ```
 
 Advanced: if you already have outputs with tape ids, you can still call
-`Value.backward(outputs, grad=combined_loss)` for aggregated feedback. If you
-manage multiple optimizers in the same process, ensure you call
-`optimizer.zero_feedback()` on the one you want active before backward.
+`Value.backward(outputs, grad=combined_loss)` for aggregated feedback, or pass
+per-record grads as `grad=[loss_a, loss_b]` (list/tuple) or
+`grad={tape_id: loss_val}` (dict). If you manage multiple optimizers in the
+same process, ensure you call `optimizer.zero_feedback()` on the one you want
+active before backward.
 
 ## Backward Context
 
