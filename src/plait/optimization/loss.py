@@ -1,16 +1,24 @@
-"""Loss functions for evaluating module outputs.
+"""Loss modules for evaluating module outputs.
 
-Losses are pure async functions that return Value objects with structured
-payloads (list[list[str]]) and optional score metadata.
+Losses are Module instances that return Value feedback (structured payloads)
+and can participate in tracing so loss outputs can call backward() directly.
 """
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
-from plait.values import Value, ValueKind, normalize_feedback_payload, unwrap
+from plait.module import Module
+from plait.values import (
+    Value,
+    ValueKind,
+    collect_tape_ids,
+    normalize_feedback_payload,
+    unwrap,
+)
 
 if False:  # pragma: no cover - type checking imports only
     pass
@@ -49,6 +57,116 @@ def _attach_attrs(fn: Any, **attrs: Any) -> Any:
     for key, value in attrs.items():
         setattr(fn, key, value)
     return fn
+
+
+def _attach_tape_ids(value: Any, tape_ids: list[str]) -> None:
+    if not tape_ids:
+        return
+
+    def _attach(obj: Any) -> None:
+        if isinstance(obj, Value):
+            ids = obj.meta.setdefault("_tape_ids", [])
+            for tape_id in tape_ids:
+                if tape_id not in ids:
+                    ids.append(tape_id)
+            _attach(obj.payload)
+        elif isinstance(obj, dict):
+            for item in obj.values():
+                _attach(item)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _attach(item)
+
+    _attach(value)
+
+
+class LossModule(Module):
+    """Module wrapper around a loss callable.
+
+    The wrapped loss callable is responsible for producing a Value with
+    structured feedback payloads. This wrapper:
+    - Allows loss callables to participate as graph nodes
+    - Propagates tape ids from input Values when invoked directly
+    - Passes feedback back to the primary output input during backward()
+    """
+
+    _loss_fn: Callable[..., Any]
+    _feedback_input: str | None
+
+    def __init__(
+        self,
+        loss_fn: Callable[..., Any],
+        *,
+        feedback_input: str | None = "output",
+    ) -> None:
+        super().__init__()
+        object.__setattr__(self, "_loss_fn", loss_fn)
+        object.__setattr__(self, "_feedback_input", feedback_input)
+
+    async def forward(self, *args: Any, **kwargs: Any) -> Value:
+        tape_ids = collect_tape_ids({"args": args, "kwargs": kwargs})
+        result = self._loss_fn(*args, **kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        if tape_ids:
+            _attach_tape_ids(result, tape_ids)
+        return result
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute the loss directly, avoiding nested runs during execution."""
+        from plait.tracing.context import get_trace_context
+
+        tracer = get_trace_context()
+        if tracer is not None:
+            return tracer.record_call(self, args, kwargs)
+        return self.forward(*args, **kwargs)
+
+    async def backward(self, feedback: Any, ctx: Any) -> Any:
+        from plait.optimization.backward import BackwardResult
+        from plait.values import normalize_feedback_value
+
+        result = BackwardResult()
+        normalized = normalize_feedback_value(feedback)
+
+        target_key = None
+        if self._feedback_input and self._feedback_input in ctx.inputs:
+            target_key = self._feedback_input
+        elif "arg_0" in ctx.inputs:
+            target_key = "0"
+        else:
+            for name in ctx.inputs:
+                if name.startswith("arg_") and name[4:].isdigit():
+                    target_key = name[4:]
+                    break
+            if target_key is None and ctx.inputs:
+                target_key = next(iter(ctx.inputs))
+
+        if target_key is not None:
+            result.input_feedback[target_key] = normalized
+
+        return result
+
+    def bind(
+        self, resources: Any, max_concurrent: int = 100, **kwargs: Any
+    ) -> LossModule:
+        super().bind(resources, max_concurrent=max_concurrent, **kwargs)
+        bind_method = getattr(self._loss_fn, "bind", None)
+        if callable(bind_method):
+            bind_method(resources)
+        return self
+
+    def __getattr__(self, name: str) -> Any:
+        loss_fn = object.__getattribute__(self, "_loss_fn")
+        return getattr(loss_fn, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"_loss_fn", "_feedback_input"}:
+            object.__setattr__(self, name, value)
+            return
+        loss_fn = self.__dict__.get("_loss_fn")
+        if loss_fn is not None and hasattr(loss_fn, name):
+            setattr(loss_fn, name, value)
+        super().__setattr__(name, value)
 
 
 def _parse_json_list(value: Any) -> list[str] | None:
@@ -172,7 +290,7 @@ class RankingResponse:
 def VerifierLoss(
     verifier: Callable[[Any], tuple[bool, str]],
     success_feedback: str = "Output passed verification.",
-) -> Callable[..., Any]:
+) -> LossModule:
     async def loss_fn(
         output: Any,
         target: Any | None = None,
@@ -186,13 +304,16 @@ def VerifierLoss(
         meta = {"verifier": True}
         return _value_from_actions(actions, score=1.0 if passed else 0.0, meta=meta)
 
-    return _attach_attrs(loss_fn, verifier=verifier, success_feedback=success_feedback)
+    loss_fn = _attach_attrs(
+        loss_fn, verifier=verifier, success_feedback=success_feedback
+    )
+    return LossModule(loss_fn)
 
 
 def LLMJudge(
     alias: str = "judge",
     criteria: str | None = None,
-) -> Callable[..., Any]:
+) -> LossModule:
     wrapper = _LossLLMWrapper(
         alias=alias,
         system_prompt=(
@@ -240,13 +361,14 @@ def LLMJudge(
         judge.bind(resources)
         return loss_fn
 
-    return _attach_attrs(loss_fn, bind=bind, judge=wrapper, criteria=criteria)
+    loss_fn = _attach_attrs(loss_fn, bind=bind, judge=wrapper, criteria=criteria)
+    return LossModule(loss_fn)
 
 
 def CompositeLoss(
     losses: list[tuple[Callable[..., Any], float]],
     aggregator: Any | None = None,
-) -> Callable[..., Any]:
+) -> LossModule:
     async def loss_fn(
         output: Any,
         target: Any | None = None,
@@ -302,13 +424,14 @@ def CompositeLoss(
             aggregator.bind(resources)
         return loss_fn
 
-    return _attach_attrs(loss_fn, bind=bind, losses=losses, aggregator=aggregator)
+    loss_fn = _attach_attrs(loss_fn, bind=bind, losses=losses, aggregator=aggregator)
+    return LossModule(loss_fn)
 
 
 def HumanFeedbackLoss(
     prompt_template: str | None = None,
     show_context: bool = True,
-) -> Callable[..., Any]:
+) -> LossModule:
     async def loss_fn(
         output: Any,
         target: Any | None = None,
@@ -354,16 +477,17 @@ def HumanFeedbackLoss(
         actions = _normalize_actions(lines)
         return _value_from_actions(actions)
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn, prompt_template=prompt_template, show_context=show_context
     )
+    return LossModule(loss_fn)
 
 
 def LLMRubricLoss(
     criteria: str,
     rubric: list[RubricLevel],
     alias: str = "judge",
-) -> Callable[..., Any]:
+) -> LossModule:
     rubric = sorted(rubric, key=lambda r: r.score)
     max_score = max(r.score for r in rubric)
     min_score = min(r.score for r in rubric)
@@ -504,7 +628,7 @@ You must respond with a JSON object containing exactly these fields:
         fallback_judge.bind(resources)
         return loss_fn
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn,
         bind=bind,
         criteria=criteria,
@@ -514,13 +638,14 @@ You must respond with a JSON object containing exactly these fields:
         _max_score=max_score,
         _min_score=min_score,
     )
+    return LossModule(loss_fn)
 
 
 def HumanRubricLoss(
     criteria: str,
     rubric: list[RubricLevel],
     require_feedback: bool = True,
-) -> Callable[..., Any]:
+) -> LossModule:
     rubric = sorted(rubric, key=lambda r: r.score)
     max_score = max(r.score for r in rubric)
     min_score = min(r.score for r in rubric)
@@ -575,7 +700,7 @@ def HumanRubricLoss(
             actions, meta={"score": normalized_score, "raw_score": score}
         )
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn,
         criteria=criteria,
         rubric=rubric,
@@ -583,6 +708,7 @@ def HumanRubricLoss(
         _max_score=max_score,
         _min_score=min_score,
     )
+    return LossModule(loss_fn)
 
 
 # =============================================================================
@@ -614,7 +740,7 @@ def _generate_contrastive_feedback(winner: Any, loser: Any, reason: str) -> str:
 def LLMPreferenceLoss(
     criteria: str,
     alias: str = "judge",
-) -> Callable[..., Any]:
+) -> LossModule:
     judge = _LossLLMWrapper(
         alias=alias,
         system_prompt=(
@@ -716,19 +842,20 @@ def LLMPreferenceLoss(
         judge.bind(resources)
         return loss_fn
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn,
         bind=bind,
         compare=compare,
         criteria=criteria,
         judge=judge,
     )
+    return LossModule(loss_fn)
 
 
 def HumanPreferenceLoss(
     criteria: str,
     require_reason: bool = True,
-) -> Callable[..., Any]:
+) -> LossModule:
     async def compare(
         output_a: Any,
         output_b: Any,
@@ -806,19 +933,20 @@ def HumanPreferenceLoss(
         fb_output, _ = await compare(output, target, context=context)
         return fb_output
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn,
         compare=compare,
         criteria=criteria,
         require_reason=require_reason,
     )
+    return LossModule(loss_fn)
 
 
 def LLMRankingLoss(
     criteria: str,
     n: int = 4,
     alias: str = "judge",
-) -> Callable[..., Any]:
+) -> LossModule:
     judge = _LossLLMWrapper(
         alias=alias,
         system_prompt=(
@@ -918,7 +1046,7 @@ def LLMRankingLoss(
         judge.bind(resources)
         return loss_fn
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn,
         bind=bind,
         rank=rank,
@@ -926,13 +1054,14 @@ def LLMRankingLoss(
         n=n,
         judge=judge,
     )
+    return LossModule(loss_fn)
 
 
 def HumanRankingLoss(
     criteria: str,
     n: int = 4,
     require_feedback: bool = True,
-) -> Callable[..., Any]:
+) -> LossModule:
     async def rank(
         outputs: list[Any],
         *,
@@ -1011,16 +1140,18 @@ def HumanRankingLoss(
         feedbacks = await rank(outputs, context=context)
         return feedbacks[0]
 
-    return _attach_attrs(
+    loss_fn = _attach_attrs(
         loss_fn,
         rank=rank,
         criteria=criteria,
         n=n,
         require_feedback=require_feedback,
     )
+    return LossModule(loss_fn)
 
 
 __all__ = [
+    "LossModule",
     "RubricLevel",
     "RubricResponse",
     "PreferenceResponse",

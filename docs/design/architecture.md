@@ -354,7 +354,9 @@ Both APIs follow the same internal flow:
 ### Backward Pass (Optimization)
 
 ```
-1. User provides feedback: optimizer.accumulate(output, loss)
+1. User computes loss inside the traced step and calls backward:
+   - loss = await step(input, target)
+   - await loss.backward()
 
 2. Value Propagation:
    - Start from output nodes

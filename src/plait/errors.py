@@ -86,7 +86,9 @@ class RateLimitError(InfEngineError):
         True
     """
 
-    def __init__(self, message: str, retry_after: float | None = None) -> None:
+    def __init__(
+        self, message: str = "Rate limit exceeded", retry_after: float | None = None
+    ) -> None:
         """Initialize the rate limit error.
 
         Args:

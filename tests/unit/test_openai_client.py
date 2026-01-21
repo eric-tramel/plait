@@ -18,7 +18,7 @@ from plait.clients.openai import OpenAIClient as OpenAIClientDirect
 from plait.clients.openai import (
     OpenAICompatibleClient as OpenAICompatibleClientDirect,
 )
-from plait.clients.openai import RateLimitError as RateLimitErrorDirect
+from plait.errors import RateLimitError as RateLimitErrorCore
 from plait.types import LLMRequest, LLMResponse
 
 
@@ -494,7 +494,7 @@ class TestOpenAIClientImports:
         """RateLimitError can be imported from plait.clients."""
         from plait.clients import RateLimitError as ImportedError
 
-        assert ImportedError is RateLimitErrorDirect
+        assert ImportedError is RateLimitErrorCore
 
     def test_import_from_openai_module(self) -> None:
         """OpenAIClient can be imported from plait.clients.openai."""

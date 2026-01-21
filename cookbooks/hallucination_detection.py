@@ -38,6 +38,7 @@ Run with:
 import asyncio
 import os
 import re
+import string
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -62,6 +63,7 @@ from plait.execution.context import ExecutionSettings
 from plait.module import LLMInference, Module
 from plait.optimization import (
     SFAOptimizer,
+    TrainingStep,
     VerifierLoss,
 )
 from plait.optimization.backward import BackwardResult
@@ -70,7 +72,7 @@ from plait.resources.config import (
     OpenAIEndpointConfig,
     ResourceConfig,
 )
-from plait.values import normalize_feedback_value
+from plait.values import normalize_feedback_value, unwrap
 
 # Initialize rich console
 console = Console()
@@ -116,6 +118,40 @@ class TemplateParameter(Parameter):
             requires_grad=requires_grad,
         )
         self.placeholders = placeholders
+
+    def apply_update(self, new_value: Any) -> None:
+        """Apply an optimizer update, enforcing placeholder integrity."""
+        if not isinstance(new_value, str):
+            super().apply_update(new_value)
+            return
+
+        formatter = string.Formatter()
+        found: set[str] = set()
+        try:
+            for _, field_name, _, _ in formatter.parse(new_value):
+                if not field_name:
+                    continue
+                root = field_name.split(".")[0].split("[")[0]
+                if root:
+                    found.add(root)
+        except ValueError:
+            console.print(
+                "[yellow]Template update rejected: invalid format string. "
+                "Keeping previous template.[/yellow]"
+            )
+            self._feedback_buffer.clear()
+            return
+
+        missing = [name for name in self.placeholders if name not in found]
+        if missing:
+            console.print(
+                "[yellow]Template update rejected: missing placeholders "
+                f"{missing}. Keeping previous template.[/yellow]"
+            )
+            self._feedback_buffer.clear()
+            return
+
+        super().apply_update(new_value)
 
     def as_module(self) -> "TemplateFormatter":
         """Return a module that formats this template.
@@ -256,7 +292,7 @@ class RegexExtractor(Module):
             extraction failed.
         """
         # Convert to string in case we get a TracedOutput
-        response_str = str(response)
+        response_str = str(unwrap(response))
 
         try:
             match = re.search(self.pattern.value, response_str, re.IGNORECASE)
@@ -433,7 +469,7 @@ def make_accuracy_verifier(
     def verify(output: str) -> tuple[bool, str]:
         """Verify if prediction matches ground truth."""
         # The output is already the extracted verdict from the RegexExtractor
-        prediction = str(output).strip().lower()
+        prediction = str(unwrap(output)).strip().lower()
 
         # Handle extraction failure
         if prediction == "unknown":
@@ -557,7 +593,7 @@ async def run_validation(
 
             # Check predictions (forward already returns extracted verdict)
             for sample, output in zip(batch, outputs, strict=True):
-                prediction = str(output).strip().lower()
+                prediction = str(unwrap(output)).strip().lower()
                 if prediction == sample["label"]:
                     correct += 1
                 total += 1
@@ -788,41 +824,32 @@ async def train_hallucination_detector() -> None:
                     optimizer.zero_feedback()
 
                     # ---------------------------------------------------------
-                    # Forward pass: run all samples in batch in parallel
+                    # Forward + loss (single traced step per sample)
                     # ---------------------------------------------------------
                     progress.update(
-                        batch_task, description=f"Epoch {epoch + 1} - Forward pass"
-                    )
-                    forward_tasks = [
-                        detector(
-                            sample["context"],
-                            sample["question"],
-                            sample["answer"],
-                        )
-                        for sample in batch
-                    ]
-                    outputs = await asyncio.gather(*forward_tasks)
-
-                    # ---------------------------------------------------------
-                    # Compute loss for each sample
-                    # ---------------------------------------------------------
-                    progress.update(
-                        batch_task, description=f"Epoch {epoch + 1} - Computing loss"
+                        batch_task,
+                        description=f"Epoch {epoch + 1} - Forward + loss",
                     )
                     batch_correct = 0
-                    all_feedback = []
 
-                    for sample, output in zip(batch, outputs, strict=True):
-                        # Create verifier for this sample's ground truth
+                    loss_tasks = []
+                    for sample in batch:
                         verifier = make_accuracy_verifier(sample["label"])
                         loss_fn = VerifierLoss(verifier)
+                        step = TrainingStep(detector, loss_fn)
+                        step.train()
+                        loss_tasks.append(
+                            step(
+                                sample["context"],
+                                sample["question"],
+                                sample["answer"],
+                            )
+                        )
 
-                        # Compute feedback
-                        feedback = await loss_fn(output)
-                        all_feedback.append(feedback)
+                    loss_values = await asyncio.gather(*loss_tasks)
 
-                        # Track accuracy
-                        if feedback.meta["score"] == 1.0:
+                    for loss in loss_values:
+                        if loss.meta.get("score") == 1.0:
                             batch_correct += 1
 
                     epoch_correct += batch_correct
@@ -844,13 +871,12 @@ async def train_hallucination_detector() -> None:
                     )
 
                     # ---------------------------------------------------------
-                    # Backward pass for each sample using output tape ids
+                    # Backward pass for each sample
                     # ---------------------------------------------------------
                     progress.update(
                         batch_task, description=f"Epoch {epoch + 1} - Backward pass"
                     )
-                    for output, feedback in zip(outputs, all_feedback, strict=True):
-                        await output.backward(grad=feedback)
+                    await asyncio.gather(*[loss.backward() for loss in loss_values])
 
                     # ---------------------------------------------------------
                     # Update parameters after each batch

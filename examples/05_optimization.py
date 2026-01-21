@@ -25,11 +25,12 @@ from plait.optimization import (
     LLMRubricLoss,
     RubricLevel,
     SFAOptimizer,
+    TrainingStep,
     VerifierLoss,
 )
 from plait.parameter import Parameter
 from plait.resources.config import OpenAIEndpointConfig, ResourceConfig
-from plait.values import Value, ValueKind, collect_records
+from plait.values import Value, collect_records
 
 # --- Learnable Pipeline ---
 
@@ -94,19 +95,12 @@ QUALITY_RUBRIC = [
 # --- Training Loop ---
 
 
-def aggregate_losses(values: list[Value]) -> Value:
-    """Aggregate per-sample loss Values into a single Value."""
-    payload: list[list[str]] = []
-    scores: list[float] = []
-    for value in values:
-        payload.extend(value.payload)
-        score = value.meta.get("score")
-        if score is not None:
-            scores.append(float(score))
-    meta: dict[str, float] = {}
-    if scores:
-        meta["score"] = sum(scores) / len(scores)
-    return Value(kind=ValueKind.STRUCTURED, payload=payload, meta=meta)
+def average_score(values: list[Value]) -> float | None:
+    """Compute the average score from loss Values, if available."""
+    scores = [float(v.meta["score"]) for v in values if "score" in v.meta]
+    if not scores:
+        return None
+    return sum(scores) / len(scores)
 
 
 async def train() -> None:
@@ -168,9 +162,11 @@ async def train() -> None:
         print(f"  {name}: {param_id}")
     print()
 
+    training_step = TrainingStep(pipeline, loss_fn)
+
     # Training loop
     async with ExecutionSettings(resources=resources):
-        pipeline.train()  # Enable training mode
+        training_step.train()  # Enable recording for loss.backward()
 
         for epoch in range(2):
             print(f"{'=' * 60}")
@@ -179,13 +175,9 @@ async def train() -> None:
 
             optimizer.zero_feedback()
 
-            # Forward passes (return Value with tape ids in train mode)
-            outputs = await asyncio.gather(*[pipeline(q) for q in queries])
-
-            # Compute loss (per-sample) and aggregate
-            loss_values = await asyncio.gather(*[loss_fn(out) for out in outputs])
-            loss_value = aggregate_losses(loss_values)
-            avg_score = loss_value.meta.get("score")
+            # Forward + loss in a single traced step
+            loss_values = await asyncio.gather(*[training_step(q) for q in queries])
+            avg_score = average_score(loss_values)
             if avg_score is not None:
                 print(f"Average score: {avg_score:.2f}")
             else:
@@ -196,8 +188,7 @@ async def train() -> None:
                 return cleaned if len(cleaned) <= limit else cleaned[:limit] + "..."
 
             async def _debug_backward_trace(
-                outputs=outputs,
-                feedback=loss_value,
+                losses=loss_values,
                 queries=queries,
             ) -> None:
                 from plait.optimization.backward import (
@@ -207,14 +198,12 @@ async def train() -> None:
                 )
 
                 print("\nBackward trace (per record):")
-                for idx, output in enumerate(outputs, start=1):
-                    record = collect_records(output)[0]
+                for idx, loss in enumerate(losses, start=1):
+                    record = collect_records(loss)[0]
                     query = queries[idx - 1]
                     print(f"\nRecord {idx}: {query}")
                     graph = record.graph
-                    feedback_map = {
-                        output_id: [feedback] for output_id in graph.output_ids
-                    }
+                    feedback_map = {output_id: [loss] for output_id in graph.output_ids}
 
                     for node_id in reversed(graph.topological_order()):
                         if node_id in graph.input_ids:
@@ -282,7 +271,7 @@ async def train() -> None:
             await _debug_backward_trace()
 
             # Backward pass (propagates to all parameters)
-            await Value.backward(outputs, grad=loss_value)
+            await asyncio.gather(*[loss.backward() for loss in loss_values])
 
             print("\nParameter feedback buffers:")
             for param in pipeline.parameters():
@@ -300,7 +289,7 @@ async def train() -> None:
                 for key, value in updates.items():
                     print(f"  {key}: {_snippet(value, 160)}")
 
-        pipeline.eval()  # Back to eval mode
+        training_step.eval()  # Back to eval mode
 
     print(f"\n{'=' * 60}")
     print("OPTIMIZED PROMPTS")

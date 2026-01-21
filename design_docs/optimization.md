@@ -141,8 +141,9 @@ Note: Some legacy snippets below may use the shorthand
 and still refers to the single `plait.values.Value` implementation.
 
 Backward discovers the active optimizer automatically (set when an optimizer
-is instantiated or bound). If multiple optimizers exist, use
-`with optimizer.activate():` to select one for a backward pass.
+is instantiated, bound, or has `zero_feedback()` called). Typical loops do
+not require any explicit activation. If multiple optimizers exist, call
+`optimizer.zero_feedback()` on the one you want active before backward.
 
 ### ForwardRecord
 

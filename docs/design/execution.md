@@ -1124,47 +1124,48 @@ Batch execution runs all inputs concurrently (up to `max_concurrent`), not seque
 
 ### Batch Execution for Training
 
-For training workflows, enable training mode to capture `ForwardRecord` via `Value`:
+For training workflows, compose the model and loss into a `TrainingStep` so
+the loss Value is part of the traced graph:
 
 ```python
-# Enable training mode - outputs carry records implicitly
-pipeline.train()
+step = TrainingStep(pipeline, loss_fn)
 
-# Single input - returns Value
-output = await pipeline(input)  # Value[str]
-output.value                     # The actual string
-output._record                   # ForwardRecord for backward()
+# Enable recording so loss.backward() works
+step.train()
+
+# Single input - returns loss Value
+loss = await step(input, target)
+loss.meta["_tape_ids"]           # Tape ids for backward()
 
 # Batch inputs - returns list[Value]
-outputs = await pipeline(batch_inputs)  # list[Value]
+losses = await asyncio.gather(
+    *[step(x, target=t) for x, t in zip(batch_inputs, targets, strict=True)]
+)
 
 # Disable training mode for inference
-pipeline.eval()
-output = await pipeline(input)  # str (raw value, no record)
+step.eval()
 ```
 
 Example training loop:
 
 ```python
+optimizer = SFAOptimizer(pipeline.parameters()).bind(config)
+step = TrainingStep(pipeline, loss_fn)
+
 async with ExecutionSettings(resources=config):
-    pipeline.train()
+    step.train()
+    optimizer.zero_feedback()
 
-    # Batch forward (returns Value with records)
-    outputs = await pipeline(batch_inputs)
+    losses = await asyncio.gather(
+        *[step(x, target=t) for x, t in zip(batch_inputs, targets, strict=True)]
+    )
+    await asyncio.gather(*[loss.backward() for loss in losses])
 
-    # Batch loss (extracts records from Value automatically)
-    feedbacks = await loss_fn.batch(outputs, targets=targets)
-
-    # Batch backward (concurrent)
-    await Value.backward(outputs, grad=loss_value)
-
-    # Optimizer step
     await optimizer.step()
-
-    pipeline.eval()
+    step.eval()
 ```
 
-See `optimization.md` → "Batch Training API" for complete details.
+See `optimization.md` for complete details.
 
 ### Streaming Execution
 

@@ -22,9 +22,10 @@ Example:
     >>>
     >>> # Training loop
     >>> optimizer.zero_feedback()
+    >>> step = TrainingStep(module, loss_fn)
+    >>> step.train()
     >>> for example in batch:
-    ...     output, record = await run(module, example["input"], record=True)
-    ...     loss_val = await loss_fn(output, example["target"])
+    ...     loss_val = await step(example["input"], target=example["target"])
     ...     await loss_val.backward()
     >>> updates = await optimizer.step()
 """
@@ -55,11 +56,13 @@ _active_optimizer: ContextVar[Optimizer | None] = ContextVar(
     "plait_active_optimizer",
     default=None,
 )
+_default_optimizer: Optimizer | None = None
 
 
 def get_active_optimizer() -> Optimizer | None:
     """Return the active optimizer for backward passes, if set."""
-    return _active_optimizer.get()
+    active = _active_optimizer.get()
+    return active if active is not None else _default_optimizer
 
 
 @contextmanager
@@ -213,6 +216,8 @@ class Optimizer(ABC):
             )
 
         self._bound = False
+        global _default_optimizer
+        _default_optimizer = self
         _active_optimizer.set(self)
 
     def bind(self, resources: ResourceConfig | ResourceManager) -> Self:
@@ -245,6 +250,8 @@ class Optimizer(ABC):
         if self.reasoning_llm:
             self.reasoning_llm.bind(resources)
         self._bound = True
+        global _default_optimizer
+        _default_optimizer = self
         _active_optimizer.set(self)
         return self
 
@@ -271,6 +278,8 @@ class Optimizer(ABC):
             ...         await loss_val.backward()
             ...     await optimizer.step()
         """
+        global _default_optimizer
+        _default_optimizer = self
         for param in self.params:
             param.zero_feedback()
         self._records.clear()

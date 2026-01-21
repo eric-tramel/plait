@@ -6,22 +6,18 @@ feedback is propagated through the computation graph to improve
 Parameters (prompts, instructions, etc.).
 
 The core workflow mirrors PyTorch:
-    1. Forward pass with recording: `output, record = await run(module, input, record=True)`
-    2. Compute loss value: `loss_val = await loss_fn(output, target)`
-    3. Backward pass: `await loss_val.backward()`
+    1. Compose model + loss into a traced step (TrainingStep)
+    2. Forward pass: `loss = await step(input, target)`
+    3. Backward pass: `await loss.backward()`
     4. Update parameters: `await optimizer.step()`
 
 Example:
     >>> from plait import run
-    >>> from plait.optimization import ForwardRecord
+    >>> from plait.optimization import ForwardRecord, TrainingStep
     >>>
     >>> # Execute with recording to enable backward pass
-    >>> output, record = await run(module, "input text", record=True)
-    >>> isinstance(record, ForwardRecord)
-    True
-    >>>
-    >>> # Loss functions return Value objects
-    >>> loss_val = await loss_fn(output, target)
+    >>> step = TrainingStep(module, loss_fn)
+    >>> loss_val = await step("input text", target)
     >>> await loss_val.backward()
 """
 
@@ -36,6 +32,7 @@ from plait.optimization.loss import (
     LLMPreferenceLoss,
     LLMRankingLoss,
     LLMRubricLoss,
+    LossModule,
     PreferenceResponse,
     RankingResponse,
     RubricLevel,
@@ -44,6 +41,7 @@ from plait.optimization.loss import (
 )
 from plait.optimization.optimizer import Optimizer, SFAOptimizer
 from plait.optimization.record import ForwardRecord
+from plait.optimization.training import TrainingStep
 
 __all__ = [
     # Backward pass
@@ -51,12 +49,14 @@ __all__ = [
     "BackwardResult",
     # Record
     "ForwardRecord",
+    "TrainingStep",
     # Single-sample losses
     "VerifierLoss",
     "LLMJudge",
     "HumanFeedbackLoss",
     "LLMRubricLoss",
     "HumanRubricLoss",
+    "LossModule",
     # Contrastive losses
     "LLMPreferenceLoss",
     "HumanPreferenceLoss",

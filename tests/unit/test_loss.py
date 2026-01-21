@@ -1,4 +1,4 @@
-"""Tests for functional loss API returning Value objects."""
+"""Tests for loss module API returning Value objects."""
 
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -18,6 +18,7 @@ from plait.optimization.loss import (
     RubricLevel,
     VerifierLoss,
 )
+from plait.values import Value, ValueKind
 
 
 @pytest.mark.asyncio
@@ -34,6 +35,15 @@ async def test_verifier_loss_pass_and_fail() -> None:
     bad_val = await loss_fn("no")
     assert bad_val.meta["score"] == 0.0
     assert bad_val.payload == [["bad"]]
+
+
+@pytest.mark.asyncio
+async def test_loss_module_propagates_tape_ids() -> None:
+    loss_fn = VerifierLoss(lambda x: (False, "bad"))
+    value = Value(ValueKind.TEXT, "ok", meta={"_tape_ids": ["tape123"]})
+
+    loss_val = await loss_fn(value)
+    assert "tape123" in loss_val.meta.get("_tape_ids", [])
 
 
 @pytest.mark.asyncio

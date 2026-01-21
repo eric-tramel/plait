@@ -165,7 +165,7 @@ class Module:
         4. Defaults
 
         When self.training is True:
-        - Single input: returns Value[T] with record attached
+        - Single input: returns Value[T] with tape ids in meta
         - Batch input: returns list[Value[T]]
 
         When self.training is False:
@@ -771,31 +771,48 @@ async with ExecutionSettings(resources=config, streaming=True):
 
 ### Training Execution
 
-For training workflows, enable training mode to capture `ForwardRecord` via `Value`:
+For training workflows, compose the model and loss into a `TrainingStep` so
+the loss Value is part of the traced graph:
 
 ```python
-# Enable training mode - outputs carry records implicitly
-pipeline.train()
+step = TrainingStep(pipeline, loss_fn)
 
-# Single input - returns Value
-output = await pipeline(input)  # Value[str]
-output.value                     # The actual string output
-output._record                   # ForwardRecord for backward()
+# Enable recording so loss.backward() works
+step.train()
+
+# Single input - returns loss Value
+loss = await step(input, target)
+loss.meta["_tape_ids"]           # Tape ids for backward()
 
 # Batch inputs - returns list[Value]
-outputs = await pipeline(batch_inputs)  # list[Value]
-
-# Use in training loop (loss extracts records automatically)
-feedbacks = await loss_fn.batch(outputs, targets=targets)
-await Value.backward(outputs, grad=loss_value)
-await optimizer.step()
+losses = await asyncio.gather(
+    *[step(x, target=t) for x, t in zip(batch_inputs, targets, strict=True)]
+)
 
 # Disable training mode for inference
-pipeline.eval()
-output = await pipeline(input)  # str (raw value, no overhead)
+step.eval()
 ```
 
-See `optimization.md` → "Batch Training API" for complete training documentation.
+Example training loop:
+
+```python
+optimizer = SFAOptimizer(pipeline.parameters()).bind(resources)
+step = TrainingStep(pipeline, loss_fn)
+
+async with ExecutionSettings(resources=resources):
+    step.train()
+    optimizer.zero_feedback()
+
+    losses = await asyncio.gather(
+        *[step(x, target=t) for x, t in zip(batch_inputs, targets, strict=True)]
+    )
+    await asyncio.gather(*[loss.backward() for loss in losses])
+
+    await optimizer.step()
+    step.eval()
+```
+
+See `optimization.md` for complete training documentation.
 
 ### Using run() for Advanced Control
 
