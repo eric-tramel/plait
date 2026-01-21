@@ -8,7 +8,7 @@ to Parameters throughout the module tree.
 The core components are:
 - BackwardContext: Information available to modules during backward pass
 - BackwardResult: Result of a module's backward pass
-- _propagate_backward: Function to traverse graph in reverse topological order
+- _propagate_backward_value: Function to traverse graph in reverse topological order
 
 Example:
     >>> from plait.optimization.backward import BackwardContext, BackwardResult
@@ -36,10 +36,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from plait.graph import InferenceGraph
-    from plait.module import LLMInference
-    from plait.optimization.feedback import Feedback
     from plait.optimization.optimizer import Optimizer
     from plait.optimization.record import ForwardRecord
+    from plait.values import Value
 
 
 @dataclass
@@ -65,8 +64,8 @@ class BackwardContext:
             generating sophisticated feedback during backward pass.
 
     Example:
-        >>> # Context is created by _propagate_backward and passed to backward()
-        >>> async def backward(self, feedback: Feedback, ctx: BackwardContext):
+        >>> # Context is created by _propagate_backward_value and passed to backward()
+        >>> async def backward(self, feedback: Value, ctx: BackwardContext):
         ...     # Access what this module received as input
         ...     input_text = ctx.inputs.get("prompt", "")
         ...
@@ -88,10 +87,10 @@ class BackwardContext:
     all_results: dict[str, Any]
 
     # Feedback from downstream nodes
-    downstream_feedback: list[Feedback]
+    downstream_feedback: list[Value]
 
     # Optimizer-provided LLM for backward reasoning (optional)
-    reasoning_llm: LLMInference | None = None
+    reasoning_llm: Any | None = None
 
     async def reason(self, prompt: str) -> str:
         """Use the optimizer's LLM for backward-pass reasoning.
@@ -109,14 +108,14 @@ class BackwardContext:
 
         Raises:
             RuntimeError: If no reasoning LLM is available. This happens
-                when backward() is called without an optimizer, or when
-                the optimizer doesn't have a reasoning_llm configured.
+                when no active optimizer is configured, or when the
+                optimizer doesn't have a reasoning_llm configured.
 
         Example:
             >>> async def backward(self, feedback, ctx):
             ...     if ctx.reasoning_llm:
             ...         analysis = await ctx.reason(
-            ...             f"Given feedback: {feedback.content}\\n"
+            ...             f"Given feedback: {feedback.payload}\\n"
             ...             f"How should we improve the system prompt?"
             ...         )
             ...         # Use analysis to generate parameter feedback
@@ -140,7 +139,7 @@ class BackwardResult:
     BackwardResult that specifies how feedback should flow.
 
     Attributes:
-        input_feedback: Dictionary mapping input names to Feedback
+        input_feedback: Dictionary mapping input names to Value
             objects that should be propagated to upstream nodes.
             Keys should match the input names from the forward pass.
         parameter_feedback: Dictionary mapping parameter names to
@@ -153,10 +152,7 @@ class BackwardResult:
         ...     result = BackwardResult()
         ...
         ...     # Propagate feedback to the input node
-        ...     result.input_feedback["prompt"] = Feedback(
-        ...         content=f"Downstream received: {feedback.content}",
-        ...         score=feedback.score,
-        ...     )
+        ...     result.input_feedback["prompt"] = feedback
         ...
         ...     # Accumulate feedback for a learnable parameter
         ...     result.parameter_feedback["system_prompt"] = (
@@ -168,49 +164,46 @@ class BackwardResult:
     """
 
     # Feedback for each input (keyed by input name or position)
-    input_feedback: dict[str, Feedback] = field(default_factory=dict)
+    input_feedback: dict[str, Value] = field(default_factory=dict)
 
     # Feedback for each parameter (keyed by parameter name)
-    parameter_feedback: dict[str, str] = field(default_factory=dict)
+    parameter_feedback: dict[str, Value | str] = field(default_factory=dict)
 
 
-def _combine_feedback(feedbacks: list[Feedback]) -> Feedback:
+def _combine_feedback(feedbacks: list[Value]) -> Value:
     """Combine multiple feedback items into one.
 
     When a node has multiple downstream dependents, their feedback
     needs to be combined before being passed to the node's backward().
-    This function concatenates feedback content and averages scores.
+    This function concatenates feedback payloads and preserves score metadata.
 
     Args:
-        feedbacks: List of Feedback objects to combine.
+        feedbacks: List of Value feedback objects to combine.
 
     Returns:
-        A single Feedback object with combined content and averaged score.
+        A single Value with concatenated payloads and merged metadata.
 
     Example:
-        >>> fb1 = Feedback(content="Too verbose", score=0.6)
-        >>> fb2 = Feedback(content="Good structure", score=0.8)
+        >>> fb1 = Value(kind=ValueKind.STRUCTURED, payload=[["Too verbose"]])
+        >>> fb2 = Value(kind=ValueKind.STRUCTURED, payload=[["Good structure"]])
         >>> combined = _combine_feedback([fb1, fb2])
-        >>> combined.score
-        0.7
     """
-    from plait.optimization.feedback import Feedback, FeedbackType
+    from plait.values import Value, ValueKind, normalize_feedback_value
 
     if len(feedbacks) == 1:
-        return feedbacks[0]
+        return normalize_feedback_value(feedbacks[0])
 
-    # Simple concatenation with score averaging
-    combined_content = "\n\n".join(
-        f"[Downstream {i + 1}] {fb.content}" for i, fb in enumerate(feedbacks)
-    )
-    scores = [fb.score for fb in feedbacks if fb.score is not None]
-    avg_score = sum(scores) / len(scores) if scores else None
+    normalized = [normalize_feedback_value(fb) for fb in feedbacks]
+    combined_payload: list[list[str]] = []
+    for fb in normalized:
+        combined_payload.extend(fb.payload)
 
-    return Feedback(
-        content=combined_content,
-        score=avg_score,
-        feedback_type=FeedbackType.COMPOSITE,
-    )
+    meta: dict[str, Any] = {}
+    scores = [fb.meta.get("score") for fb in normalized if "score" in fb.meta]
+    if scores:
+        meta["scores"] = scores
+
+    return Value(kind=ValueKind.STRUCTURED, payload=combined_payload, meta=meta)
 
 
 def _resolve_input_node(
@@ -291,10 +284,10 @@ def _build_dependents_map(graph: InferenceGraph) -> dict[str, list[str]]:
     return dependents
 
 
-async def _propagate_backward(
-    feedback: Feedback,
+async def _propagate_backward_value(
+    root: Value,
+    grad: Value | None,
     record: ForwardRecord,
-    reasoning_llm: LLMInference | None = None,
     optimizer: Optimizer | None = None,
 ) -> None:
     """Propagate feedback backward through a traced graph.
@@ -315,30 +308,32 @@ async def _propagate_backward(
        f. Accumulate parameter feedback into Parameters
 
     Args:
-        feedback: The feedback to propagate (from loss function).
+        root: The loss Value to propagate.
+        grad: Optional override feedback Value. If None, uses root.
         record: ForwardRecord from the forward pass containing graph,
             node inputs/outputs, and module map.
-        reasoning_llm: Optional LLM for backward reasoning, typically
-            provided by the optimizer.
         optimizer: Optional optimizer to capture the record for ordered
             parameter updates in step().
 
     Example:
-        >>> # Called internally by Feedback.backward()
-        >>> await feedback.backward()
-        >>>
-        >>> # Or with explicit optimizer
-        >>> await feedback.backward(optimizer=my_optimizer)
+        >>> # Called internally by Value.backward()
+        >>> await loss_value.backward()
     """
     # Capture record for topological ordering in step()
     if optimizer is not None:
         optimizer.capture_record(record)
     graph = record.graph
-    feedback_map: dict[str, list[Feedback]] = {}
+    from plait.values import normalize_feedback_value
+
+    feedback_map: dict[str, list[Value]] = {}
+
+    root_feedback = normalize_feedback_value(root if grad is None else grad)
 
     # Initialize with output feedback
     for output_id in graph.output_ids:
-        feedback_map.setdefault(output_id, []).append(feedback)
+        feedback_map.setdefault(output_id, []).append(root_feedback)
+
+    reasoning_llm = optimizer.reasoning_llm if optimizer is not None else None
 
     # Process in reverse topological order
     for node_id in reversed(graph.topological_order()):
@@ -371,9 +366,10 @@ async def _propagate_backward(
 
         # Distribute input feedback to upstream nodes
         for input_name, input_fb in result.input_feedback.items():
+            combined_input = _combine_feedback([input_fb])
             input_node_id = _resolve_input_node(node_id, input_name, record)
             if input_node_id:
-                feedback_map.setdefault(input_node_id, []).append(input_fb)
+                feedback_map.setdefault(input_node_id, []).append(combined_input)
 
         # Accumulate parameter feedback
         for param_name, param_fb in result.parameter_feedback.items():

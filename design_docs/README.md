@@ -126,11 +126,11 @@ DevTools, exposing concurrency, endpoint utilization, and idle “bubbles”.
 **Why it matters**: async performance problems are difficult to diagnose without
 a timeline keyed to graph nodes and resource slots.
 
-### Feedback-driven optimization
+### Value-driven optimization
 
 Optimization mirrors PyTorch’s loop:
-- losses produce `Feedback`
-- `feedback.backward()` propagates through captured forward records
+- losses produce `Value`
+- `output.backward(grad=loss_value)` propagates through captured forward records
 - parameters accumulate feedback
 - `optimizer.step()` updates parameters
 
@@ -153,7 +153,7 @@ At a high level:
    priority-queue `Scheduler`. `LLMInference` calls go through `ResourceManager`
    using alias-bound endpoints.
 4. **(Optional) Optimization**: training-mode execution attaches forward records;
-   losses produce `Feedback`; `feedback.backward()` propagates feedback through
+   losses produce `Value`; `output.backward(grad=loss_value)` propagates feedback through
    the graph; `optimizer.step()` applies ordered updates.
 
 See **[Architecture](./architecture.md)** for the full overview.
@@ -170,7 +170,7 @@ If you’re new to the design, read these in order:
 6. **[Tracing](./tracing.md)** - How DAGs are captured from code
 7. **[Execution](./execution.md)** - Scheduler, state, error handling, checkpointing
 8. **[Resources](./resources.md)** - Endpoint configuration and pooling
-9. **[Optimization](./optimization.md)** - Feedback/backward/optimizers
+9. **[Optimization](./optimization.md)** - Value/backward/optimizers
 10. **[Profiling](./profiling.md)** - Performance visualization and analysis
 
 ## PyTorch Parallels
@@ -198,7 +198,7 @@ plait/
 │       ├── tracing/            # Tracer + trace context (Value-driven)
 │       ├── execution/          # Scheduler, ExecutionState, checkpoints
 │       ├── resources/          # ResourceConfig/ResourceManager, rate limiting
-│       ├── optimization/       # Loss/Feedback/Optimizer, backward propagation
+│       ├── optimization/       # Loss/Value/Optimizer, backward propagation
 │       ├── profiling/          # Chrome Trace output
 │       └── clients/            # Provider clients (e.g., OpenAI)
 ├── tests/

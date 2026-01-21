@@ -878,7 +878,7 @@ async def run(
     Returns:
         The output of the module's forward() method, with `Value` wrappers
         unwrapped for user-facing APIs. If module.training is True, returns
-        TracedOutput with record attached.
+        Value with record attached.
     """
     # Create resource manager if needed
     if isinstance(resources, ResourceConfig):
@@ -1124,19 +1124,19 @@ Batch execution runs all inputs concurrently (up to `max_concurrent`), not seque
 
 ### Batch Execution for Training
 
-For training workflows, enable training mode to capture `ForwardRecord` via `TracedOutput`:
+For training workflows, enable training mode to capture `ForwardRecord` via `Value`:
 
 ```python
 # Enable training mode - outputs carry records implicitly
 pipeline.train()
 
-# Single input - returns TracedOutput
-output = await pipeline(input)  # TracedOutput[str]
+# Single input - returns Value
+output = await pipeline(input)  # Value[str]
 output.value                     # The actual string
 output._record                   # ForwardRecord for backward()
 
-# Batch inputs - returns list[TracedOutput]
-outputs = await pipeline(batch_inputs)  # list[TracedOutput]
+# Batch inputs - returns list[Value]
+outputs = await pipeline(batch_inputs)  # list[Value]
 
 # Disable training mode for inference
 pipeline.eval()
@@ -1149,14 +1149,14 @@ Example training loop:
 async with ExecutionSettings(resources=config):
     pipeline.train()
 
-    # Batch forward (returns TracedOutput with records)
+    # Batch forward (returns Value with records)
     outputs = await pipeline(batch_inputs)
 
-    # Batch loss (extracts records from TracedOutput automatically)
+    # Batch loss (extracts records from Value automatically)
     feedbacks = await loss_fn.batch(outputs, targets=targets)
 
     # Batch backward (concurrent)
-    await Feedback.backward_batch(feedbacks, optimizer=optimizer)
+    await Value.backward(outputs, grad=loss_value)
 
     # Optimizer step
     await optimizer.step()

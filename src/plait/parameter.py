@@ -13,6 +13,24 @@ from uuid import uuid4
 
 if TYPE_CHECKING:
     from plait.module import Module
+    from plait.values import Value
+
+
+def extract_actions(value: Value) -> list[str]:
+    """Extract actionable feedback strings from a Value payload."""
+    payload = value.payload
+    if isinstance(payload, list):
+        if payload and all(isinstance(item, list) for item in payload):
+            actions: list[str] = []
+            for inner in payload:
+                actions.extend([str(item) for item in inner if str(item)])
+            return actions
+        return [str(item) for item in payload if str(item)]
+    if isinstance(payload, str):
+        return [payload] if payload else []
+    if payload is None:
+        return []
+    return [str(payload)]
 
 
 @dataclass
@@ -118,16 +136,25 @@ class Parameter:
         parts.append(self._name)
         return ".".join(parts)
 
-    def accumulate_feedback(self, feedback: str) -> None:
+    def accumulate_feedback(self, feedback: str | Value) -> None:
         """Collect feedback from backward passes.
 
         Feedback is only accumulated if requires_grad is True.
 
         Args:
-            feedback: The feedback string to accumulate.
+            feedback: The feedback string or Value to accumulate.
         """
         if self.requires_grad:
-            self._feedback_buffer.append(feedback)
+            if hasattr(feedback, "payload"):
+                try:
+                    from plait.values import Value
+                except ModuleNotFoundError:
+                    Value = None  # type: ignore[assignment]
+                if Value is not None and isinstance(feedback, Value):
+                    actions = extract_actions(feedback)
+                    self._feedback_buffer.extend(actions)
+                    return
+            self._feedback_buffer.append(str(feedback))
 
     def get_accumulated_feedback(self) -> list[str]:
         """Get all accumulated feedback.

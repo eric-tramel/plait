@@ -16,36 +16,8 @@ import openai
 import openai.types.chat
 
 from plait.clients.base import LLMClient
+from plait.errors import RateLimitError
 from plait.types import LLMRequest, LLMResponse
-
-
-class RateLimitError(Exception):
-    """Raised when the API returns a rate limit error (429).
-
-    This exception wraps rate limit errors from providers and includes
-    the retry-after hint when available. The scheduler can use this
-    information to delay and requeue the task.
-
-    Args:
-        retry_after: Optional number of seconds to wait before retrying.
-            May be None if the provider did not include this header.
-        message: Optional error message. Defaults to a generic message.
-
-    Example:
-        >>> try:
-        ...     await client.complete(request)
-        ... except RateLimitError as e:
-        ...     if e.retry_after:
-        ...         await asyncio.sleep(e.retry_after)
-    """
-
-    def __init__(
-        self,
-        retry_after: float | None = None,
-        message: str = "Rate limit exceeded",
-    ):
-        super().__init__(message)
-        self.retry_after = retry_after
 
 
 class OpenAIClient(LLMClient):
@@ -128,7 +100,7 @@ class OpenAIClient(LLMClient):
 
         except openai.RateLimitError as e:
             retry_after = self._extract_retry_after(e)
-            raise RateLimitError(retry_after=retry_after) from e
+            raise RateLimitError("Rate limit exceeded", retry_after=retry_after) from e
 
     def _build_messages(self, request: LLMRequest) -> list[dict[str, Any]]:
         """Build the messages list from the request.

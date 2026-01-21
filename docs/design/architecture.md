@@ -75,7 +75,7 @@ class Module:
         """Define the inference computation."""
         raise NotImplementedError
 
-    def backward(self, feedback: Feedback, ctx: BackwardContext) -> BackwardResult:
+    def backward(self, feedback: Value, ctx: BackwardContext) -> BackwardResult:
         """Propagate feedback to inputs and parameters."""
         raise NotImplementedError
 ```
@@ -354,9 +354,11 @@ Both APIs follow the same internal flow:
 ### Backward Pass (Optimization)
 
 ```
-1. User provides feedback: optimizer.accumulate(output, loss)
+1. User computes loss inside the traced step and calls backward:
+   - loss = await step(input, target)
+   - await loss.backward()
 
-2. Feedback Propagation:
+2. Value Propagation:
    - Start from output nodes
    - For each node in reverse topological order:
      - Call module.backward(feedback, context)

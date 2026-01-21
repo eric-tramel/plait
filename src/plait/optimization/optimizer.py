@@ -22,10 +22,11 @@ Example:
     >>>
     >>> # Training loop
     >>> optimizer.zero_feedback()
+    >>> step = TrainingStep(module, loss_fn)
+    >>> step.train()
     >>> for example in batch:
-    ...     output, record = await run(module, example["input"], record=True)
-    ...     feedback = await loss_fn(output, example["target"], record=record)
-    ...     await feedback.backward(optimizer=optimizer)
+    ...     loss_val = await step(example["input"], target=example["target"])
+    ...     await loss_val.backward()
     >>> updates = await optimizer.step()
 """
 
@@ -35,7 +36,9 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Self
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any, Self
 
 from plait.errors import OptimizationError
 
@@ -48,6 +51,28 @@ if TYPE_CHECKING:
     from plait.resources.manager import ResourceManager
 
 logger = logging.getLogger(__name__)
+
+_active_optimizer: ContextVar[Optimizer | None] = ContextVar(
+    "plait_active_optimizer",
+    default=None,
+)
+_default_optimizer: Optimizer | None = None
+
+
+def get_active_optimizer() -> Optimizer | None:
+    """Return the active optimizer for backward passes, if set."""
+    active = _active_optimizer.get()
+    return active if active is not None else _default_optimizer
+
+
+@contextmanager
+def use_optimizer(optimizer: Optimizer) -> Any:
+    """Temporarily set the active optimizer for backward passes."""
+    token = _active_optimizer.set(optimizer)
+    try:
+        yield optimizer
+    finally:
+        _active_optimizer.reset(token)
 
 
 class _OptimizerLLMWrapper:
@@ -191,6 +216,9 @@ class Optimizer(ABC):
             )
 
         self._bound = False
+        global _default_optimizer
+        _default_optimizer = self
+        _active_optimizer.set(self)
 
     def bind(self, resources: ResourceConfig | ResourceManager) -> Self:
         """Bind optimizer's internal LLMs to resources.
@@ -222,7 +250,14 @@ class Optimizer(ABC):
         if self.reasoning_llm:
             self.reasoning_llm.bind(resources)
         self._bound = True
+        global _default_optimizer
+        _default_optimizer = self
+        _active_optimizer.set(self)
         return self
+
+    def activate(self) -> Any:
+        """Return a context manager that sets this optimizer as active."""
+        return use_optimizer(self)
 
     def zero_feedback(self) -> None:
         """Clear all parameter feedback buffers and accumulated records.
@@ -240,9 +275,11 @@ class Optimizer(ABC):
             ...     optimizer.zero_feedback()
             ...     for example in batch:
             ...         # Forward, loss, backward
-            ...         await feedback.backward(optimizer=optimizer)
+            ...         await loss_val.backward()
             ...     await optimizer.step()
         """
+        global _default_optimizer
+        _default_optimizer = self
         for param in self.params:
             param.zero_feedback()
         self._records.clear()
@@ -250,7 +287,7 @@ class Optimizer(ABC):
     def capture_record(self, record: ForwardRecord) -> None:
         """Capture a ForwardRecord during backward pass.
 
-        Called by _propagate_backward() to provide graph context for
+        Called by _propagate_backward_value() to provide graph context for
         ordered parameter updates in step(). The captured records are
         used to determine topological ordering and upstream dependencies.
 
@@ -268,7 +305,7 @@ class Optimizer(ABC):
         """Aggregate accumulated feedback and update parameters.
 
         Should be called after accumulating feedback from a mini-batch
-        of examples via feedback.backward(). This method processes all
+        of examples via Value.backward(). This method processes all
         accumulated feedback and generates updated parameter values.
 
         Parameters are updated in forward topological order based on the
@@ -373,8 +410,8 @@ class SFAOptimizer(Optimizer):
         ...     optimizer.zero_feedback()
         ...     for example in batch:
         ...         output, record = await run(module, example["input"], record=True)
-        ...         feedback = await loss_fn(output, example["target"], record=record)
-        ...         await feedback.backward(optimizer=optimizer)
+        ...         loss_val = await loss_fn(output, example["target"])
+    ...         await loss_val.backward()
         ...     updates = await optimizer.step()
         ...     print(f"Updated {len(updates)} parameters")
 

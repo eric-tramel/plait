@@ -38,6 +38,7 @@ Run with:
 import asyncio
 import os
 import re
+import string
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -62,15 +63,16 @@ from plait.execution.context import ExecutionSettings
 from plait.module import LLMInference, Module
 from plait.optimization import (
     SFAOptimizer,
+    TrainingStep,
     VerifierLoss,
 )
 from plait.optimization.backward import BackwardResult
-from plait.optimization.feedback import Feedback
 from plait.parameter import Parameter
 from plait.resources.config import (
     OpenAIEndpointConfig,
     ResourceConfig,
 )
+from plait.values import normalize_feedback_value, unwrap
 
 # Initialize rich console
 console = Console()
@@ -116,6 +118,40 @@ class TemplateParameter(Parameter):
             requires_grad=requires_grad,
         )
         self.placeholders = placeholders
+
+    def apply_update(self, new_value: Any) -> None:
+        """Apply an optimizer update, enforcing placeholder integrity."""
+        if not isinstance(new_value, str):
+            super().apply_update(new_value)
+            return
+
+        formatter = string.Formatter()
+        found: set[str] = set()
+        try:
+            for _, field_name, _, _ in formatter.parse(new_value):
+                if not field_name:
+                    continue
+                root = field_name.split(".")[0].split("[")[0]
+                if root:
+                    found.add(root)
+        except ValueError:
+            console.print(
+                "[yellow]Template update rejected: invalid format string. "
+                "Keeping previous template.[/yellow]"
+            )
+            self._feedback_buffer.clear()
+            return
+
+        missing = [name for name in self.placeholders if name not in found]
+        if missing:
+            console.print(
+                "[yellow]Template update rejected: missing placeholders "
+                f"{missing}. Keeping previous template.[/yellow]"
+            )
+            self._feedback_buffer.clear()
+            return
+
+        super().apply_update(new_value)
 
     def as_module(self) -> "TemplateFormatter":
         """Return a module that formats this template.
@@ -172,21 +208,18 @@ class TemplateFormatter(Module):
         """Generate feedback for the template parameter.
 
         Args:
-            feedback: Feedback from downstream nodes.
+            feedback: Value feedback from downstream nodes.
             ctx: BackwardContext with inputs and output.
 
         Returns:
             BackwardResult with parameter feedback for the template.
         """
         result = BackwardResult()
+        normalized = normalize_feedback_value(feedback)
 
         # Pass feedback through to inputs (the template variables)
         for input_name in ctx.inputs:
-            result.input_feedback[input_name] = Feedback(
-                content=f"Template formatting received feedback: {feedback.content}",
-                score=feedback.score,
-                feedback_type=feedback.feedback_type,
-            )
+            result.input_feedback[input_name] = normalized
 
         # Generate feedback for the template parameter if learnable
         if self.template.requires_grad:
@@ -196,9 +229,9 @@ class TemplateFormatter(Module):
             )
             output_text = str(ctx.output)[:500]
 
-            score_info = (
-                f"Score: {feedback.score}" if feedback.score is not None else ""
-            )
+            score = normalized.meta.get("score")
+            score_info = f"Score: {score}" if score is not None else ""
+            feedback_text = str(normalized.payload)
 
             result.parameter_feedback["template"] = f"""
 The template parameter:
@@ -211,7 +244,7 @@ Was formatted with inputs: {input_summary}
 
 Produced output: {output_text}{"..." if len(str(ctx.output)) > 500 else ""}
 
-Received this feedback: {feedback.content}
+Received this feedback: {feedback_text}
 {score_info}
 
 Suggest specific improvements to the template that would address this feedback.
@@ -259,7 +292,7 @@ class RegexExtractor(Module):
             extraction failed.
         """
         # Convert to string in case we get a TracedOutput
-        response_str = str(response)
+        response_str = str(unwrap(response))
 
         try:
             match = re.search(self.pattern.value, response_str, re.IGNORECASE)
@@ -286,29 +319,26 @@ class RegexExtractor(Module):
         """Generate feedback for the regex pattern parameter.
 
         Args:
-            feedback: Feedback from downstream nodes.
+            feedback: Value feedback from downstream nodes.
             ctx: BackwardContext with inputs and output.
 
         Returns:
             BackwardResult with parameter feedback for the pattern.
         """
         result = BackwardResult()
+        normalized = normalize_feedback_value(feedback)
 
         # Pass feedback through to the input (the LLM response)
-        result.input_feedback["response"] = Feedback(
-            content=f"Regex extraction received feedback: {feedback.content}",
-            score=feedback.score,
-            feedback_type=feedback.feedback_type,
-        )
+        result.input_feedback["response"] = normalized
 
         # Generate feedback for the pattern parameter if learnable
         if self.pattern.requires_grad:
             input_text = str(ctx.inputs.get("response", ""))[:500]
             output_text = str(ctx.output)
 
-            score_info = (
-                f"Score: {feedback.score}" if feedback.score is not None else ""
-            )
+            score = normalized.meta.get("score")
+            score_info = f"Score: {score}" if score is not None else ""
+            feedback_text = str(normalized.payload)
 
             result.parameter_feedback["pattern"] = f"""
 The regex pattern:
@@ -320,7 +350,7 @@ Was applied to input: {input_text}{"..." if len(str(ctx.inputs.get("response", "
 
 Extracted output: {output_text}
 
-Received this feedback: {feedback.content}
+Received this feedback: {feedback_text}
 {score_info}
 
 Suggest specific improvements to the regex pattern that would address this feedback.
@@ -439,7 +469,7 @@ def make_accuracy_verifier(
     def verify(output: str) -> tuple[bool, str]:
         """Verify if prediction matches ground truth."""
         # The output is already the extracted verdict from the RegexExtractor
-        prediction = str(output).strip().lower()
+        prediction = str(unwrap(output)).strip().lower()
 
         # Handle extraction failure
         if prediction == "unknown":
@@ -563,7 +593,7 @@ async def run_validation(
 
             # Check predictions (forward already returns extracted verdict)
             for sample, output in zip(batch, outputs, strict=True):
-                prediction = str(output).strip().lower()
+                prediction = str(unwrap(output)).strip().lower()
                 if prediction == sample["label"]:
                     correct += 1
                 total += 1
@@ -794,41 +824,32 @@ async def train_hallucination_detector() -> None:
                     optimizer.zero_feedback()
 
                     # ---------------------------------------------------------
-                    # Forward pass: run all samples in batch in parallel
+                    # Forward + loss (single traced step per sample)
                     # ---------------------------------------------------------
                     progress.update(
-                        batch_task, description=f"Epoch {epoch + 1} - Forward pass"
-                    )
-                    forward_tasks = [
-                        detector(
-                            sample["context"],
-                            sample["question"],
-                            sample["answer"],
-                        )
-                        for sample in batch
-                    ]
-                    outputs = await asyncio.gather(*forward_tasks)
-
-                    # ---------------------------------------------------------
-                    # Compute loss for each sample
-                    # ---------------------------------------------------------
-                    progress.update(
-                        batch_task, description=f"Epoch {epoch + 1} - Computing loss"
+                        batch_task,
+                        description=f"Epoch {epoch + 1} - Forward + loss",
                     )
                     batch_correct = 0
-                    all_feedback = []
 
-                    for sample, output in zip(batch, outputs, strict=True):
-                        # Create verifier for this sample's ground truth
+                    loss_tasks = []
+                    for sample in batch:
                         verifier = make_accuracy_verifier(sample["label"])
                         loss_fn = VerifierLoss(verifier)
+                        step = TrainingStep(detector, loss_fn)
+                        step.train()
+                        loss_tasks.append(
+                            step(
+                                sample["context"],
+                                sample["question"],
+                                sample["answer"],
+                            )
+                        )
 
-                        # Compute feedback
-                        feedback = await loss_fn(output)
-                        all_feedback.append(feedback)
+                    loss_values = await asyncio.gather(*loss_tasks)
 
-                        # Track accuracy
-                        if feedback.score == 1.0:
+                    for loss in loss_values:
+                        if loss.meta.get("score") == 1.0:
                             batch_correct += 1
 
                     epoch_correct += batch_correct
@@ -850,13 +871,12 @@ async def train_hallucination_detector() -> None:
                     )
 
                     # ---------------------------------------------------------
-                    # Backward pass for each feedback
+                    # Backward pass for each sample
                     # ---------------------------------------------------------
                     progress.update(
                         batch_task, description=f"Epoch {epoch + 1} - Backward pass"
                     )
-                    for feedback in all_feedback:
-                        await feedback.backward(optimizer=optimizer)
+                    await asyncio.gather(*[loss.backward() for loss in loss_values])
 
                     # ---------------------------------------------------------
                     # Update parameters after each batch

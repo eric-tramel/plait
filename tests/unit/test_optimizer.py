@@ -6,7 +6,12 @@ import pytest
 
 from plait.graph import GraphNode, InferenceGraph
 from plait.module import LLMInference, Module
-from plait.optimization.optimizer import Optimizer, SFAOptimizer
+from plait.optimization.optimizer import (
+    Optimizer,
+    SFAOptimizer,
+    _OptimizerLLMWrapper,
+    get_active_optimizer,
+)
 from plait.optimization.record import ForwardRecord
 from plait.parameter import Parameter
 
@@ -1446,3 +1451,38 @@ class TestOptimizationErrorExport:
 
         error = OptimizationError("test")
         assert isinstance(error, InfEngineError)
+
+
+def test_optimizer_llm_wrapper_forward() -> None:
+    wrapper = _OptimizerLLMWrapper(alias="optimizer/aggregator", system_prompt="test")
+    wrapper._module.llm = lambda prompt: f"echo:{prompt}"
+    assert wrapper._module.forward("hi") == "echo:hi"
+
+
+def test_optimizer_activate_sets_active() -> None:
+    param = Parameter("value", description="desc")
+    optimizer = SFAOptimizer([param])
+    assert get_active_optimizer() is optimizer
+
+    other = SFAOptimizer([])
+    assert get_active_optimizer() is other
+
+    with optimizer.activate():
+        assert get_active_optimizer() is optimizer
+
+    assert get_active_optimizer() is other
+
+
+def test_get_active_optimizer_falls_back_to_default() -> None:
+    from plait.optimization import optimizer as optimizer_module
+
+    param = Parameter("value", description="desc")
+    previous_default = optimizer_module._default_optimizer
+    token = optimizer_module._active_optimizer.set(None)
+    try:
+        optimizer = SFAOptimizer([param])
+        optimizer_module._active_optimizer.set(None)
+        assert get_active_optimizer() is optimizer
+    finally:
+        optimizer_module._default_optimizer = previous_default
+        optimizer_module._active_optimizer.reset(token)

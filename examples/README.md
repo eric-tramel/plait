@@ -85,17 +85,17 @@ async with ExecutionSettings(resources=config):
 ### Optimization (05_optimization.py)
 
 ```python
-from plait.optimization import SFAOptimizer, LLMRubricLoss
+from plait.optimization import SFAOptimizer, LLMRubricLoss, TrainingStep
 
 optimizer = SFAOptimizer(pipeline.parameters())
-loss_fn = LLMRubricLoss(criteria="...", rubric=[...], alias="judge")
+loss_fn = LLMRubricLoss(criteria="...", rubric=[...], alias="judge").bind(config)
+step = TrainingStep(pipeline, loss_fn)
 
-pipeline.train()  # Enable training mode
-output = await pipeline(query)  # Returns TracedOutput
-feedback = await loss_fn(output)
-await feedback.backward(optimizer=optimizer)
+step.train()  # Enable recording for loss.backward()
+loss_val = await step(query)
+await loss_val.backward()
 await optimizer.step()
-pipeline.eval()  # Back to inference mode
+step.eval()  # Back to inference mode
 ```
 
 ## Resource Configuration

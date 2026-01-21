@@ -91,7 +91,7 @@ class Optimizer(ABC):
     def capture_record(self, record: ForwardRecord) -> None:
         """Capture a ForwardRecord during backward pass.
 
-        Called by _propagate_backward() to provide graph context
+        Called by _propagate_backward_value() to provide graph context
         for ordered parameter updates in step().
 
         Args:
@@ -107,11 +107,11 @@ class Optimizer(ABC):
 
 #### Backward Propagation Captures Record
 
-In `backward.py`, `_propagate_backward` passes the record to the optimizer:
+In `backward.py`, `_propagate_backward_value` passes the record to the optimizer:
 
 ```python
-async def _propagate_backward(
-    feedback: Feedback,
+async def _propagate_backward_value(
+    feedback: Value,
     record: ForwardRecord,
     optimizer: Optimizer | None = None,
 ) -> None:
@@ -560,11 +560,11 @@ class FormattedPipeline(Module):
 
 ```
 Step 1: Update format_spec
-  Feedback: "Users prefer YAML format"
+  Value: "Users prefer YAML format"
   → Updated to: "Output as YAML with keys: name, age, city"
 
 Step 2: Update validator_rules (no visibility!)
-  Feedback: "Validation is too strict"
+  Value: "Validation is too strict"
   → Updated to: "Verify output is valid JSON, allow extra keys"
 
 RESULT: format_spec expects YAML, validator expects JSON → BROKEN
@@ -574,11 +574,11 @@ RESULT: format_spec expects YAML, validator expects JSON → BROKEN
 
 ```
 Step 1 (Level 0): Update format_spec
-  Feedback: "Users prefer YAML format"
+  Value: "Users prefer YAML format"
   → Updated to: "Output as YAML with keys: name, age, city"
 
 Step 2 (Level 1): Update validator_rules (sees upstream change!)
-  Feedback: "Validation is too strict"
+  Value: "Validation is too strict"
   Upstream Context:
     format_spec changed from JSON to YAML
   → Updated to: "Verify output is valid YAML, allow extra keys"

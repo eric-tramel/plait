@@ -129,7 +129,8 @@ async def run(
             value directly. If multiple outputs, returns a dictionary
             mapping output node IDs to their values.
         If record=True: A tuple of (output, ForwardRecord) where output
-            is as above and ForwardRecord contains execution data for
+            is Value-wrapped (Value or container of Values) with tape ids
+            attached, and ForwardRecord contains execution data for
             backward propagation.
 
     Raises:
@@ -185,8 +186,8 @@ async def run(
         >>> # Execute with recording enabled for optimization
         >>> output, record = await run(pipeline, "input", resources=resources, record=True)
         >>> # record contains graph, inputs, outputs for backward()
-        >>> feedback = await loss_fn(output, target, record=record)
-        >>> await feedback.backward()
+        >>> loss_val = await loss_fn(output, target)
+        >>> await loss_val.backward()
     """
     from plait.execution.context import get_execution_settings
 
@@ -260,7 +261,11 @@ async def run(
     # Build and return ForwardRecord if recording is enabled
     if record:
         forward_record = _build_forward_record(graph, state)
-        return output, forward_record
+        from plait.values import attach_tape, valueify
+
+        wrapped_output = valueify(output)
+        wrapped_output = attach_tape(wrapped_output, forward_record)
+        return wrapped_output, forward_record
 
     return output
 

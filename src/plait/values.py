@@ -10,13 +10,12 @@ tracking without parsing positional/keyword arguments.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from enum import Enum
 from importlib import import_module
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 
 class ValueKind(str, Enum):
@@ -87,6 +86,114 @@ class Value:
     payload: Any
     ref: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+
+    async def backward(
+        self: Any,
+        grad: Value | list[Any] | tuple[Any, ...] | dict[str, Any] | None = None,
+        retain_graph: bool = False,
+    ) -> None:
+        """Propagate feedback backward through recorded tapes.
+
+        This is the primary entrypoint for backward passes. It collects tape
+        ids from this Value (or structured containers) and propagates
+        feedback through each recorded forward pass. The active optimizer
+        (if any) is discovered automatically.
+
+        If calling backward() on a container of Values, you may pass a
+        list/tuple of grad Values (one per tape) or a dict keyed by tape id
+        to supply per-record feedback.
+        """
+        value = self
+        tape_ids = collect_tape_ids(value)
+        if not tape_ids:
+            raise RuntimeError("Cannot backward() without tape")
+
+        per_record_grads: list[Value] | None = None
+        per_record_map: dict[str, Value] | None = None
+
+        if isinstance(value, Value):
+            root = value
+            grad_value = normalize_feedback_value(grad) if grad is not None else None
+        else:
+            if grad is None:
+                raise RuntimeError("Cannot backward() without Value loss")
+            if isinstance(grad, dict):
+                if grad and set(grad.keys()).issubset(set(tape_ids)):
+                    if len(grad) != len(tape_ids):
+                        raise ValueError(
+                            "grad must include one entry per tape id when passing "
+                            "a dict to backward()"
+                        )
+                    per_record_map = {
+                        tape_id: normalize_feedback_value(grad[tape_id])
+                        for tape_id in tape_ids
+                    }
+                else:
+                    root = normalize_feedback_value(grad)
+                grad_value = None
+            elif isinstance(grad, (list, tuple)):
+                if len(grad) != len(tape_ids):
+                    raise ValueError(
+                        "grad length must match number of tapes when passing "
+                        "a list/tuple to backward()"
+                    )
+                per_record_grads = [normalize_feedback_value(item) for item in grad]
+                grad_value = None
+                root = (
+                    per_record_grads[0]
+                    if per_record_grads
+                    else normalize_feedback_value(grad)
+                )
+            else:
+                root = normalize_feedback_value(grad)
+                grad_value = None
+
+        from plait.optimization.backward import _propagate_backward_value
+        from plait.optimization.optimizer import get_active_optimizer
+        from plait.optimization.record import get_records, release_record
+
+        records = get_records(tape_ids)
+        optimizer = get_active_optimizer()
+
+        import asyncio
+
+        async def propagate_one(
+            record: Any, root_value: Value, grad_override: Value | None
+        ) -> None:
+            await _propagate_backward_value(
+                root=root_value,
+                grad=grad_override,
+                record=record,
+                optimizer=optimizer,
+            )
+
+        if per_record_map is not None:
+            await asyncio.gather(
+                *[
+                    propagate_one(record, per_record_map[tape_id], None)
+                    for tape_id, record in zip(tape_ids, records, strict=True)
+                ]
+            )
+        elif per_record_grads is not None:
+            await asyncio.gather(
+                *[
+                    propagate_one(record, grad_item, None)
+                    for record, grad_item in zip(records, per_record_grads, strict=True)
+                ]
+            )
+        else:
+            await asyncio.gather(
+                *[propagate_one(record, root, grad_value) for record in records]
+            )
+
+        if not retain_graph:
+            for tape_id in tape_ids:
+                release_record(tape_id)
+            _detach_tape_ids(value)
+
+    def detach_tape(self) -> None:
+        """Detach tape ids from this Value and release records."""
+        _detach_tape_ids(self, release=True)
 
     def __getitem__(self, key: str | int) -> Value:
         """Graph-aware structured access (delegates to F.select).
@@ -275,6 +382,27 @@ class ValueRef:
     ref: str
 
 
+# =============================================================================
+# no_grad context
+# =============================================================================
+
+_no_grad_flag: ContextVar[bool] = ContextVar("plait_no_grad", default=False)
+
+
+@contextmanager
+def no_grad() -> Any:
+    """Disable tape attachment inside the context."""
+    token = _no_grad_flag.set(True)
+    try:
+        yield
+    finally:
+        _no_grad_flag.reset(token)
+
+
+def _no_grad_enabled() -> bool:
+    return _no_grad_flag.get()
+
+
 def _infer_kind(x: Any) -> ValueKind:
     """Infer the appropriate ValueKind for a Python value.
 
@@ -398,6 +526,128 @@ def valueify(x: Any, *, kind: ValueKind | None = None) -> Any:
     # Raw value - wrap with inferred or provided kind
     inferred_kind = _infer_kind(x)
     return Value(kind=inferred_kind, payload=x)
+
+
+def normalize_feedback_payload(payload: Any) -> list[list[str]]:
+    """Normalize feedback payload to canonical list[list[str]] shape."""
+    if payload is None:
+        return []
+    if isinstance(payload, Value):
+        payload = payload.payload
+    if payload == []:
+        return []
+    if isinstance(payload, str):
+        return [[payload]] if payload else []
+    if isinstance(payload, (list, tuple)):
+        if not payload:
+            return []
+        if all(isinstance(item, (list, tuple)) for item in payload):
+            normalized: list[list[str]] = []
+            for inner in payload:
+                inner_list = [str(item) for item in inner if str(item)]
+                if inner_list:
+                    normalized.append(inner_list)
+            return normalized
+        # Treat as list[str]
+        items = [str(item) for item in payload if str(item)]
+        return [items] if items else []
+    return [[str(payload)]]
+
+
+def normalize_feedback_value(value: Value | Any) -> Value:
+    """Normalize a Value (or raw payload) into a structured feedback Value."""
+    if isinstance(value, Value):
+        meta = {k: v for k, v in value.meta.items() if k != "_tape_ids"}
+        payload = normalize_feedback_payload(value.payload)
+        return Value(
+            kind=ValueKind.STRUCTURED, payload=payload, ref=value.ref, meta=meta
+        )
+    payload = normalize_feedback_payload(value)
+    return Value(kind=ValueKind.STRUCTURED, payload=payload)
+
+
+def attach_tape(value: Any, record: Any) -> Any:
+    """Attach a tape id to Value meta recursively."""
+    if _no_grad_enabled():
+        return value
+
+    from plait.optimization.record import register_record
+
+    tape_id = register_record(record)
+
+    def _attach(obj: Any) -> None:
+        if isinstance(obj, Value):
+            tape_ids = obj.meta.setdefault("_tape_ids", [])
+            if tape_id not in tape_ids:
+                tape_ids.append(tape_id)
+            _attach(obj.payload)
+        elif isinstance(obj, dict):
+            for item in obj.values():
+                _attach(item)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _attach(item)
+
+    _attach(value)
+    return value
+
+
+def collect_tape_ids(value: Any) -> list[str]:
+    """Collect tape ids from Value/meta in nested structures."""
+    tape_ids: list[str] = []
+    seen: set[str] = set()
+
+    def _collect(obj: Any) -> None:
+        if isinstance(obj, Value):
+            ids = obj.meta.get("_tape_ids")
+            if isinstance(ids, list):
+                for tape_id in ids:
+                    if tape_id not in seen:
+                        seen.add(tape_id)
+                        tape_ids.append(tape_id)
+            _collect(obj.payload)
+        elif isinstance(obj, dict):
+            for item in obj.values():
+                _collect(item)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _collect(item)
+
+    _collect(value)
+    return tape_ids
+
+
+def collect_records(value: Any) -> list[Any]:
+    """Resolve tape ids to ForwardRecords."""
+    from plait.optimization.record import get_records
+
+    return get_records(collect_tape_ids(value))
+
+
+def _detach_tape_ids(value: Any, *, release: bool = False) -> None:
+    from plait.optimization.record import release_record
+
+    tape_ids = collect_tape_ids(value)
+    if release:
+        for tape_id in tape_ids:
+            release_record(tape_id)
+
+    def _clear(obj: Any) -> None:
+        if isinstance(obj, Value):
+            obj.meta.pop("_tape_ids", None)
+            _clear(obj.payload)
+        elif isinstance(obj, dict):
+            for item in obj.values():
+                _clear(item)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _clear(item)
+
+    _clear(value)
+
+
+# Grad alias for compatibility with PyTorch-like APIs
+Grad = Value
 
 
 def unwrap(x: Any) -> Any:

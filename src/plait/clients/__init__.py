@@ -11,10 +11,7 @@ Supported providers:
 """
 
 from plait.clients.base import LLMClient
-from plait.clients.openai import (
-    OpenAIClient,
-    OpenAICompatibleClient,
-    RateLimitError,
-)
+from plait.clients.openai import OpenAIClient, OpenAICompatibleClient
+from plait.errors import RateLimitError
 
 __all__ = ["LLMClient", "OpenAIClient", "OpenAICompatibleClient", "RateLimitError"]

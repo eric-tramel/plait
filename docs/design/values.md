@@ -62,7 +62,8 @@ class Value:
 - **payload**: The raw value (string, dict, response object, exception, bytes).
 - **kind**: A discriminant for downstream handling and formatting.
 - **ref**: Optional graph node ID that produced this value.
-- **meta**: Optional metadata (model alias, tokens, schema, source, cost).
+- **meta**: Optional metadata (model alias, tokens, schema, source, cost). When
+  training, tape ids are stored in `meta["_tape_ids"]`.
 
 ## Parameters vs Values
 
@@ -159,6 +160,29 @@ During execution:
   `forward()` implementations or LLM clients.
 - Outputs are re-wrapped as `Value` with an appropriate `kind` and `ref`.
 
+## Optimization and Tape Ids
+
+When training is enabled (`module.train()` or `run(..., record=True)`), outputs
+carry tape ids in `Value.meta["_tape_ids"]`. These ids refer to stored forward
+records (tapes) used during backward propagation.
+
+Backward propagation is initiated from `Value` objects:
+
+```python
+# Use TrainingStep so loss is part of the traced graph
+step = TrainingStep(module, loss_fn)
+step.train()
+
+loss = await step(input, target)
+await loss.backward()
+
+# Advanced: manual aggregation when you already have output tapes
+await Value.backward(outputs, grad=combined_loss)
+```
+
+If no tape ids are present, `backward()` raises. Use `detach_tape()` to release
+records early if needed.
+
 ## Batches and Collections (First-Class)
 
 Batches, iterables, and mappings are first-class citizens. The runtime treats
@@ -185,17 +209,8 @@ output = {
 refs = collect_refs(output)  # -> ["n1", "n2"]
 ```
 
-Optional extension for explicit batch semantics:
-
-```python
-@dataclass
-class ValueBatch:
-    items: list[Value]
-    meta: dict[str, Any] = field(default_factory=dict)  # batch_id, size, etc.
-```
-
-`ValueBatch` is useful when the batch itself has semantics (batch_id, ordering
-constraints, aggregation), but plain lists/tuples are sufficient for most cases.
+There is no special batch container type; plain lists/tuples are the canonical
+way to represent batches of `Value`.
 
 ## Structured Access (getitem)
 

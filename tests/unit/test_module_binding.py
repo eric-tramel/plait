@@ -1101,9 +1101,10 @@ class TestTrainingModeExecution:
     """Tests for training mode affecting execution output."""
 
     @pytest.mark.asyncio
-    async def test_training_mode_returns_traced_output(self) -> None:
-        """Training mode returns TracedOutput wrapper."""
-        from plait.optimization.record import ForwardRecord, TracedOutput
+    async def test_training_mode_returns_value_with_tape(self) -> None:
+        """Training mode returns Value with tape ids."""
+        from plait.optimization.record import ForwardRecord
+        from plait.values import Value, ValueKind, attach_tape
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1115,21 +1116,21 @@ class TestTrainingModeExecution:
 
         async def async_run_with_record(*args: Any, **kwargs: Any) -> Any:
             if kwargs.get("record"):
-                return ("RESULT", mock_record)
+                value = Value(ValueKind.TEXT, "RESULT")
+                return (attach_tape(value, mock_record), mock_record)
             return "RESULT"
 
         with patch("plait.execution.executor.run", side_effect=async_run_with_record):
             result = await module("hello")
 
-        # Should be TracedOutput
-        assert isinstance(result, TracedOutput)
-        assert result.value == "RESULT"
-        assert result._record is mock_record
+        assert isinstance(result, Value)
+        assert result.payload == "RESULT"
+        assert result.meta.get("_tape_ids")
 
     @pytest.mark.asyncio
     async def test_eval_mode_returns_raw_value(self) -> None:
-        """Eval mode returns raw value, not TracedOutput."""
-        from plait.optimization.record import TracedOutput
+        """Eval mode returns raw value, not Value."""
+        from plait.values import Value
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1143,8 +1144,8 @@ class TestTrainingModeExecution:
         with patch("plait.execution.executor.run", side_effect=async_run):
             result = await module("hello")
 
-        # Should be raw value, not TracedOutput
-        assert not isinstance(result, TracedOutput)
+        # Should be raw value, not Value
+        assert not isinstance(result, Value)
         assert result == "RESULT"
 
     @pytest.mark.asyncio
@@ -1174,9 +1175,10 @@ class TestTrainingModeExecution:
         assert calls_kwargs[0]["record"] is True
 
     @pytest.mark.asyncio
-    async def test_training_mode_batch_returns_traced_outputs(self) -> None:
-        """Training mode with batch input returns list of TracedOutput."""
-        from plait.optimization.record import ForwardRecord, TracedOutput
+    async def test_training_mode_batch_returns_values(self) -> None:
+        """Training mode with batch input returns list of Value objects."""
+        from plait.optimization.record import ForwardRecord
+        from plait.values import Value, ValueKind, attach_tape
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1190,23 +1192,26 @@ class TestTrainingModeExecution:
             call_count += 1
             if kwargs.get("record"):
                 mock_record = MagicMock(spec=ForwardRecord)
-                return (f"RESULT_{call_count}", mock_record)
+                value = Value(ValueKind.TEXT, f"RESULT_{call_count}")
+                return (attach_tape(value, mock_record), mock_record)
             return f"RESULT_{call_count}"
 
         with patch("plait.execution.executor.run", side_effect=async_run):
             results = await module(["a", "b", "c"])
 
-        # Should be a list of TracedOutput
+        # Should be a list of Value
         assert len(results) == 3
         for i, result in enumerate(results, 1):
-            assert isinstance(result, TracedOutput)
-            assert result.value == f"RESULT_{i}"
+            assert isinstance(result, Value)
+            assert result.payload == f"RESULT_{i}"
+            assert result.meta.get("_tape_ids")
 
     @pytest.mark.asyncio
-    async def test_training_mode_streaming_returns_traced_outputs(self) -> None:
-        """Training mode with streaming returns TracedOutput in BatchResults."""
+    async def test_training_mode_streaming_returns_values(self) -> None:
+        """Training mode with streaming returns Value in BatchResults."""
         from plait.execution.types import BatchResult
-        from plait.optimization.record import ForwardRecord, TracedOutput
+        from plait.optimization.record import ForwardRecord
+        from plait.values import Value, ValueKind, attach_tape
 
         module = SimpleModule()
         mock_resources = MagicMock()
@@ -1220,7 +1225,8 @@ class TestTrainingModeExecution:
             call_count += 1
             if kwargs.get("record"):
                 mock_record = MagicMock(spec=ForwardRecord)
-                return (f"RESULT_{call_count}", mock_record)
+                value = Value(ValueKind.TEXT, f"RESULT_{call_count}")
+                return (attach_tape(value, mock_record), mock_record)
             return f"RESULT_{call_count}"
 
         with patch("plait.execution.executor.run", side_effect=async_run):
@@ -1231,11 +1237,12 @@ class TestTrainingModeExecution:
                 async for batch_result in result:
                     results.append(batch_result)
 
-        # Should have 3 results, each with TracedOutput
+        # Should have 3 results, each with Value
         assert len(results) == 3
         for r in results:
             assert isinstance(r, BatchResult)
-            assert isinstance(r.output, TracedOutput)
+            assert isinstance(r.output, Value)
+            assert r.output.meta.get("_tape_ids")
 
 
 class TestTrainingModeMethodChaining:
@@ -1260,14 +1267,16 @@ class TestTrainingModeMethodChaining:
     @pytest.mark.asyncio
     async def test_fluent_training_workflow(self) -> None:
         """Test complete fluent API workflow."""
-        from plait.optimization.record import ForwardRecord, TracedOutput
+        from plait.optimization.record import ForwardRecord
+        from plait.values import Value, ValueKind, attach_tape
 
         mock_resources = MagicMock()
         mock_record = MagicMock(spec=ForwardRecord)
 
         async def async_run(*args: Any, **kwargs: Any) -> Any:
             if kwargs.get("record"):
-                return ("TRAINED_RESULT", mock_record)
+                value = Value(ValueKind.TEXT, "TRAINED_RESULT")
+                return (attach_tape(value, mock_record), mock_record)
             return "EVAL_RESULT"
 
         with patch("plait.execution.executor.run", side_effect=async_run):
@@ -1275,5 +1284,6 @@ class TestTrainingModeMethodChaining:
             module = SimpleModule().bind(resources=mock_resources).train()
             result = await module("input")
 
-        assert isinstance(result, TracedOutput)
-        assert result.value == "TRAINED_RESULT"
+        assert isinstance(result, Value)
+        assert result.payload == "TRAINED_RESULT"
+        assert result.meta.get("_tape_ids")
